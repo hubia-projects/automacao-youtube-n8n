@@ -2,12 +2,10 @@ const path = require("path");
 const fs = require("fs-extra");
 const ffmpeg = require("fluent-ffmpeg");
 const ffmpegPath = require("ffmpeg-static");
-const ffprobePath = require("ffprobe-static").path;
 const { ensureVideoStructure, loadState, updateState } = require("./stateService");
 const { escapeSubtitlePath } = require("../utils/fileUtils");
 
 ffmpeg.setFfmpegPath(ffmpegPath);
-ffmpeg.setFfprobePath(ffprobePath);
 
 const isVideoFile = (filePath = "") => /\.(mp4|mov|webm|mkv|avi)$/i.test(filePath);
 const isImageFile = (filePath = "") => /\.(jpg|jpeg|png|webp)$/i.test(filePath);

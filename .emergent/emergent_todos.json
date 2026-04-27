@@ -1,14 +1,14 @@
 [
   {
-    "content": "Phase 1: Implement core POC endpoints (ideas, approve, script, audio, render, state) with hybrid mock support",
-    "status": "in_progress"
+    "content": "Phase 3: Add integration healthchecks and real-key validation scripts",
+    "status": "completed"
   },
   {
-    "content": "Phase 1: Create POC n8n workflows (W1/W2/W3) validating payload handoff",
-    "status": "in_progress"
+    "content": "Phase 3: Run E2E mock tests and handoff verification",
+    "status": "completed"
   },
   {
-    "content": "Phase 1: Run POC tests and fix until green",
-    "status": "in_progress"
+    "content": "Phase 3: Fix testing-agent reported duration issue fallback for non-supported architectures",
+    "status": "completed"
   }
 ]

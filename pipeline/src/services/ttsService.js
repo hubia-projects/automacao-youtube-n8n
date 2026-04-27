@@ -1,7 +1,6 @@
 const fs = require("fs-extra");
 const axios = require("axios");
 const ffmpegPath = require("ffmpeg-static");
-const ffprobePath = require("ffprobe-static").path;
 const ffmpeg = require("fluent-ffmpeg");
 const { config } = require("../config/env");
 const { ensureVideoStructure, updateState, loadState } = require("./stateService");
@@ -9,15 +8,22 @@ const { ttsWithOpenAI } = require("./openaiService");
 const { logger } = require("../utils/logger");
 
 ffmpeg.setFfmpegPath(ffmpegPath);
-ffmpeg.setFfprobePath(ffprobePath);
 
 const hasElevenLabs = () => Boolean(config.ELEVENLABS_API_KEY);
 
-const getAudioDuration = async (audioPath) =>
+const estimateDurationFromText = (text = "") => {
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(30, Math.round(words / 2.4));
+};
+
+const getAudioDuration = async (audioPath, fallbackText = "") =>
   new Promise((resolve) => {
     ffmpeg.ffprobe(audioPath, (error, metadata) => {
-      if (error) return resolve(0);
-      resolve(Number(metadata?.format?.duration || 0));
+      if (!error) {
+        const duration = Number(metadata?.format?.duration || 0);
+        if (duration > 0) return resolve(duration);
+      }
+      resolve(estimateDurationFromText(fallbackText));
     });
   });
 
@@ -106,7 +112,7 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "elevenlabs
     usedProvider = "mock";
   }
 
-  const duration = await getAudioDuration(paths.audioPath);
+  const duration = await getAudioDuration(paths.audioPath, text);
 
   const nextState = await updateState(
     videoId,
