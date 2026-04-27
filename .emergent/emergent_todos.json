@@ -1,0 +1,22 @@
+[
+  {
+    "content": "Phase 1: Gather integration playbook for OpenAI, ElevenLabs, Telegram, stock APIs, and YouTube Data API",
+    "status": "in_progress"
+  },
+  {
+    "content": "Phase 1: Scaffold Node/Express modular project with restart-safe state manager and output structure",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 1: Implement core POC endpoints (ideas, approve, script, audio, render, state) with hybrid mock support",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 1: Create POC n8n workflows (W1/W2/W3) validating payload handoff",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 1: Run POC tests and fix until green",
+    "status": "pending"
+  }
+]
