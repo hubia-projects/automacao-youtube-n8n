@@ -1,0 +1,118 @@
+{
+  "name": "Workflow 3 — Render and YouTube Preparation",
+  "nodes": [
+    {
+      "id": "start_workflow",
+      "name": "Start",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [220, 220],
+      "parameters": {}
+    },
+    {
+      "id": "render_video",
+      "name": "Render Video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 220],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/render",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"video_id\":$json.video_id,\"mock_mode\":{{$env.MOCK_MODE === 'true'}}}"
+      }
+    },
+    {
+      "id": "generate_metadata",
+      "name": "Generate Metadata",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [780, 220],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/metadata/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"video_id\":$json.video_id,\"mock_mode\":{{$env.MOCK_MODE === 'true'}}}"
+      }
+    },
+    {
+      "id": "wait_final_approval",
+      "name": "Wait Final Approval",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1060, 220],
+      "parameters": {
+        "resume": "webhook"
+      }
+    },
+    {
+      "id": "save_approval",
+      "name": "Save Approval",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 220],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/final/approve",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"video_id\":$json.body.video_id,\"approved\":$json.body.approved === true,\"note\":$json.body.note || \"\",\"mock_mode\":{{$env.MOCK_MODE === 'true'}}}"
+      }
+    },
+    {
+      "id": "if_approved",
+      "name": "If Approved",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1580, 220],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.approved}}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "youtube_upload",
+      "name": "Upload to YouTube",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1840, 140],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/youtube/upload",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"video_id\":$json.video_id,\"privacy_status\":\"private\",\"mock_mode\":{{$env.MOCK_MODE === 'true'}}}"
+      }
+    },
+    {
+      "id": "mark_revision",
+      "name": "Mark Needs Revision",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1840, 300],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Start": { "main": [[{ "node": "Render Video", "type": "main", "index": 0 }]] },
+    "Render Video": { "main": [[{ "node": "Generate Metadata", "type": "main", "index": 0 }]] },
+    "Generate Metadata": { "main": [[{ "node": "Wait Final Approval", "type": "main", "index": 0 }]] },
+    "Wait Final Approval": { "main": [[{ "node": "Save Approval", "type": "main", "index": 0 }]] },
+    "Save Approval": { "main": [[{ "node": "If Approved", "type": "main", "index": 0 }]] },
+    "If Approved": {
+      "main": [
+        [{ "node": "Upload to YouTube", "type": "main", "index": 0 }],
+        [{ "node": "Mark Needs Revision", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}

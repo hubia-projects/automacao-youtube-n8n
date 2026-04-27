@@ -1,0 +1,114 @@
+{
+  "video_id": "2942a61c-c40c-45d6-a606-75fb2b704baf",
+  "idea_id": null,
+  "topic": "Melhores cidades para nômades digitais iniciantes",
+  "angle": "internet, segurança, custo e qualidade de vida",
+  "status": "ideas_generated",
+  "current_step": "ideas_generated",
+  "approved": false,
+  "selected_idea": null,
+  "ideas": [
+    {
+      "idea_id": "01adf4f7-8ca2-40a9-9add-2bef85378147",
+      "topic": "Melhores cidades para nômades digitais iniciantes",
+      "angle": "internet, segurança, custo e qualidade de vida",
+      "scores": {
+        "search_demand": 94,
+        "evergreen": 81,
+        "retention": 72,
+        "monetization": 61,
+        "visual_assets": 94,
+        "factual_risk": 5
+      },
+      "notes": "Pontuação baseada em demanda, evergreen, retenção e risco factual.",
+      "total_score": 82
+    },
+    {
+      "idea_id": "ae6ce99c-8602-4b81-a660-2f27c2fcc69c",
+      "topic": "Cidades subestimadas da Europa que parecem filme",
+      "angle": "curiosidades, visual incrível e roteiro econômico",
+      "scores": {
+        "search_demand": 78,
+        "evergreen": 75,
+        "retention": 90,
+        "monetization": 88,
+        "visual_assets": 71,
+        "factual_risk": 25
+      },
+      "notes": "Pontuação baseada em demanda, evergreen, retenção e risco factual.",
+      "total_score": 81
+    },
+    {
+      "idea_id": "770ae012-f443-4f6f-91d9-48e114587188",
+      "topic": "Top 12 cidades com melhor custo-benefício para morar fora",
+      "angle": "comparativo prático com riscos e oportunidades",
+      "scores": {
+        "search_demand": 88,
+        "evergreen": 88,
+        "retention": 68,
+        "monetization": 75,
+        "visual_assets": 74,
+        "factual_risk": 11
+      },
+      "notes": "Pontuação baseada em demanda, evergreen, retenção e risco factual.",
+      "total_score": 79
+    },
+    {
+      "idea_id": "f0237d3d-f04e-4a4e-96c4-c3604ee42eac",
+      "topic": "Destinos mais bonitos e baratos da América do Sul",
+      "angle": "paisagens, logística e orçamento real",
+      "scores": {
+        "search_demand": 86,
+        "evergreen": 71,
+        "retention": 75,
+        "monetization": 68,
+        "visual_assets": 81,
+        "factual_risk": 15
+      },
+      "notes": "Pontuação baseada em demanda, evergreen, retenção e risco factual.",
+      "total_score": 77
+    },
+    {
+      "idea_id": "a876d2cf-7aa9-412d-b51c-08058a8f8f65",
+      "topic": "10 países baratos para viajar em 2026",
+      "angle": "ranking com custo de vida e dicas práticas",
+      "scores": {
+        "search_demand": 78,
+        "evergreen": 65,
+        "retention": 72,
+        "monetization": 87,
+        "visual_assets": 77,
+        "factual_risk": 13
+      },
+      "notes": "Pontuação baseada em demanda, evergreen, retenção e risco factual.",
+      "total_score": 75
+    }
+  ],
+  "research_json": {},
+  "outline_json": {},
+  "script_text": "",
+  "script_path": "",
+  "audio_path": "",
+  "duration_seconds": 0,
+  "caption_path_srt": "",
+  "caption_path_vtt": "",
+  "assets_json": {
+    "visual_keywords": [],
+    "search_queries": [],
+    "items": [],
+    "fallback_plan": [],
+    "missing_assets": false
+  },
+  "render_path": "",
+  "thumbnail_path": "",
+  "youtube_title": "",
+  "youtube_description": "",
+  "youtube_tags": [],
+  "youtube_chapters": [],
+  "youtube_video_id": "",
+  "youtube_url": "",
+  "error_message": "",
+  "state_path": "/app/pipeline/output/draft/2942a61c-c40c-45d6-a606-75fb2b704baf/state.json",
+  "created_at": "2026-04-27T16:44:16.350Z",
+  "updated_at": "2026-04-27T16:44:16.353Z"
+}

@@ -1,0 +1,220 @@
+{
+  "video_id": "fa77b18d-83b3-4c74-b7e5-7ce3779d5eb2",
+  "idea_id": "d99f894a-ec12-4c6a-9d93-c6ecae6048ba",
+  "topic": "Destinos mais bonitos e baratos da América do Sul",
+  "angle": "paisagens, logística e orçamento real",
+  "status": "render_generated",
+  "current_step": "render_generated",
+  "approved": false,
+  "selected_idea": {
+    "idea_id": "d99f894a-ec12-4c6a-9d93-c6ecae6048ba",
+    "topic": "Destinos mais bonitos e baratos da América do Sul",
+    "angle": "paisagens, logística e orçamento real",
+    "scores": {
+      "search_demand": 79,
+      "evergreen": 89,
+      "retention": 93,
+      "monetization": 75,
+      "visual_assets": 75,
+      "factual_risk": 8
+    },
+    "notes": "Pontuação baseada em demanda, evergreen, retenção e risco factual.",
+    "total_score": 84
+  },
+  "ideas": [
+    {
+      "idea_id": "d99f894a-ec12-4c6a-9d93-c6ecae6048ba",
+      "topic": "Destinos mais bonitos e baratos da América do Sul",
+      "angle": "paisagens, logística e orçamento real",
+      "scores": {
+        "search_demand": 79,
+        "evergreen": 89,
+        "retention": 93,
+        "monetization": 75,
+        "visual_assets": 75,
+        "factual_risk": 8
+      },
+      "notes": "Pontuação baseada em demanda, evergreen, retenção e risco factual.",
+      "total_score": 84
+    },
+    {
+      "idea_id": "00e7893d-423d-4565-8584-1385f31d499f",
+      "topic": "Cidades subestimadas da Europa que parecem filme",
+      "angle": "curiosidades, visual incrível e roteiro econômico",
+      "scores": {
+        "search_demand": 80,
+        "evergreen": 95,
+        "retention": 71,
+        "monetization": 68,
+        "visual_assets": 74,
+        "factual_risk": 11
+      },
+      "notes": "Pontuação baseada em demanda, evergreen, retenção e risco factual.",
+      "total_score": 79
+    },
+    {
+      "idea_id": "9413d0c4-cc6d-44b7-90f0-a26f0d6f03cc",
+      "topic": "10 países baratos para viajar em 2026",
+      "angle": "ranking com custo de vida e dicas práticas",
+      "scores": {
+        "search_demand": 81,
+        "evergreen": 66,
+        "retention": 80,
+        "monetization": 62,
+        "visual_assets": 88,
+        "factual_risk": 23
+      },
+      "notes": "Pontuação baseada em demanda, evergreen, retenção e risco factual.",
+      "total_score": 76
+    },
+    {
+      "idea_id": "3989d321-8102-4fac-8a91-0fdf475b85db",
+      "topic": "Melhores cidades para nômades digitais iniciantes",
+      "angle": "internet, segurança, custo e qualidade de vida",
+      "scores": {
+        "search_demand": 87,
+        "evergreen": 68,
+        "retention": 83,
+        "monetization": 64,
+        "visual_assets": 72,
+        "factual_risk": 25
+      },
+      "notes": "Pontuação baseada em demanda, evergreen, retenção e risco factual.",
+      "total_score": 76
+    },
+    {
+      "idea_id": "1b3f155e-f7be-4412-8ebb-f31b7dbb25be",
+      "topic": "Top 12 cidades com melhor custo-benefício para morar fora",
+      "angle": "comparativo prático com riscos e oportunidades",
+      "scores": {
+        "search_demand": 74,
+        "evergreen": 67,
+        "retention": 78,
+        "monetization": 61,
+        "visual_assets": 89,
+        "factual_risk": 5
+      },
+      "notes": "Pontuação baseada em demanda, evergreen, retenção e risco factual.",
+      "total_score": 75
+    }
+  ],
+  "research_json": {
+    "facts": [
+      "Comparar custo médio diário por viajante",
+      "Citar sazonalidade e impacto no preço",
+      "Apontar logística de chegada e deslocamento"
+    ],
+    "risks": [
+      "Desatualização de preços",
+      "Generalizações sem fonte"
+    ],
+    "sources": [
+      "Numbeo",
+      "Google Travel",
+      "dados oficiais de turismo"
+    ]
+  },
+  "outline_json": {
+    "sections": [
+      {
+        "title": "Abertura e contexto",
+        "objective": "Criar curiosidade imediata"
+      },
+      {
+        "title": "Panorama prático",
+        "objective": "Entregar utilidade para o público"
+      },
+      {
+        "title": "Top pontos imperdíveis",
+        "objective": "Elevar retenção com lista visual"
+      },
+      {
+        "title": "Fechamento e CTA",
+        "objective": "Consolidar valor e incentivar ação"
+      }
+    ]
+  },
+  "script_text": "# Destinos mais bonitos e baratos da América do Sul\n\n## Intro Hook\nSe você quer viajar melhor e gastar menos, este vídeo sobre Destinos mais bonitos e baratos da América do Sul vai te poupar tempo e dinheiro.\n\n## 1. Abertura e contexto\n\nHoje você vai descobrir por que Destinos mais bonitos e baratos da América do Sul está chamando tanta atenção e como isso pode transformar sua próxima viagem.\n\nTransição: Vamos avançar para o próximo ponto com foco prático.\n## 2. Panorama prático\n\nVamos analisar custos, melhor época, logística e riscos para você planejar com confiança.\n\nTransição: Vamos avançar para o próximo ponto com foco prático.\n## 3. Top pontos imperdíveis\n\nAgora o ranking que você realmente quer ver: os lugares que entregam experiência memorável sem estourar o orçamento.\n\nTransição: Vamos avançar para o próximo ponto com foco prático.\n## 4. Fechamento e CTA\n\nSe este guia te ajudou, salve para usar no planejamento e compartilhe com quem vai viajar com você.\n\nTransição: Vamos avançar para o próximo ponto com foco prático.\n\n## Encerramento\nObrigado por assistir. Comente qual destino você quer ver no próximo vídeo.",
+  "script_path": "/app/pipeline/output/draft/fa77b18d-83b3-4c74-b7e5-7ce3779d5eb2/script.md",
+  "audio_path": "/app/pipeline/output/draft/fa77b18d-83b3-4c74-b7e5-7ce3779d5eb2/audio/narration.mp3",
+  "duration_seconds": 0,
+  "caption_path_srt": "/app/pipeline/output/draft/fa77b18d-83b3-4c74-b7e5-7ce3779d5eb2/captions/subtitles.srt",
+  "caption_path_vtt": "/app/pipeline/output/draft/fa77b18d-83b3-4c74-b7e5-7ce3779d5eb2/captions/subtitles.vtt",
+  "assets_json": {
+    "visual_keywords": [
+      "vamos",
+      "próximo",
+      "prático",
+      "destinos",
+      "bonitos",
+      "baratos"
+    ],
+    "search_queries": [
+      "vamos travel",
+      "próximo travel",
+      "prático travel",
+      "destinos travel"
+    ],
+    "items": [
+      {
+        "provider": "mock",
+        "type": "image",
+        "query": "vamos travel",
+        "source_url": "generated-local",
+        "local_path": "/app/pipeline/output/draft/fa77b18d-83b3-4c74-b7e5-7ce3779d5eb2/assets/raw/mock-asset-1.png"
+      },
+      {
+        "provider": "mock",
+        "type": "image",
+        "query": "próximo travel",
+        "source_url": "generated-local",
+        "local_path": "/app/pipeline/output/draft/fa77b18d-83b3-4c74-b7e5-7ce3779d5eb2/assets/raw/mock-asset-2.png"
+      },
+      {
+        "provider": "mock",
+        "type": "image",
+        "query": "prático travel",
+        "source_url": "generated-local",
+        "local_path": "/app/pipeline/output/draft/fa77b18d-83b3-4c74-b7e5-7ce3779d5eb2/assets/raw/mock-asset-3.png"
+      },
+      {
+        "provider": "mock",
+        "type": "image",
+        "query": "destinos travel",
+        "source_url": "generated-local",
+        "local_path": "/app/pipeline/output/draft/fa77b18d-83b3-4c74-b7e5-7ce3779d5eb2/assets/raw/mock-asset-4.png"
+      }
+    ],
+    "fallback_plan": [
+      "Usar mapas animados para introdução",
+      "B-roll de paisagens e ruas locais",
+      "Blocos com custos e dicas práticas em texto",
+      "Encerramento com checklist visual"
+    ],
+    "missing_assets": true
+  },
+  "render_path": "/app/pipeline/output/draft/fa77b18d-83b3-4c74-b7e5-7ce3779d5eb2/render/final.mp4",
+  "thumbnail_path": "",
+  "youtube_title": "Destinos mais bonitos e baratos da América do Sul: Guia Completo para Viajar Melhor em 2026",
+  "youtube_description": "Neste vídeo você encontra um guia prático sobre Destinos mais bonitos e baratos da América do Sul, com custos, dicas, curiosidades e planejamento para viajar com inteligência.",
+  "youtube_tags": [
+    "Destinos mais bonitos e baratos da América do Sul",
+    "viagem",
+    "turismo",
+    "cidades",
+    "ranking de destinos"
+  ],
+  "youtube_chapters": [
+    "00:00 Introdução",
+    "00:45 Panorama",
+    "03:30 Custos e logística",
+    "06:20 Ranking de lugares",
+    "09:30 Conclusão"
+  ],
+  "youtube_video_id": "",
+  "youtube_url": "",
+  "error_message": "",
+  "state_path": "/app/pipeline/output/draft/fa77b18d-83b3-4c74-b7e5-7ce3779d5eb2/state.json",
+  "created_at": "2026-04-27T16:46:09.619Z",
+  "updated_at": "2026-04-27T16:46:27.422Z"
+}

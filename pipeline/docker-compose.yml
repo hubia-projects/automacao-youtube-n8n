@@ -1,0 +1,44 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: yt-pipeline-app
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    volumes:
+      - ./output:/app/pipeline/output
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./n8n:/app/n8n
+    restart: unless-stopped
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: yt-pipeline-n8n
+    ports:
+      - "5678:5678"
+    env_file:
+      - .env
+    environment:
+      - GENERIC_TIMEZONE=America/Sao_Paulo
+      - TZ=America/Sao_Paulo
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - N8N_RUNNERS_ENABLED=true
+      - WEBHOOK_URL=http://localhost:5678
+      - BACKEND_BASE_URL=http://app:8080
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n:/workflows
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  n8n_data:

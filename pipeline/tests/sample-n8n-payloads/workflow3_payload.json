@@ -1,0 +1,13 @@
+{
+  "video_id": "replace-with-video-id",
+  "topic": "Cidades subestimadas da Europa",
+  "state_path": "/output/draft/replace-with-video-id/state.json",
+  "script_text": "Roteiro completo em português...",
+  "audio_path": "/output/draft/replace-with-video-id/audio/narration.mp3",
+  "caption_path_srt": "/output/draft/replace-with-video-id/captions/subtitles.srt",
+  "assets_json": {
+    "visual_keywords": ["viagem", "europa", "cidade"],
+    "search_queries": ["europe city travel"],
+    "items": []
+  }
+}

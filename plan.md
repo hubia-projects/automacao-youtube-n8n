@@ -101,3 +101,29 @@ Steps:
 - Hybrid mode works: missing API keys degrade gracefully (fallback/mocks) without breaking state.
 - Upload is **never executed** unless `approved=true` is explicitly set via final approval endpoint; otherwise status becomes `needs_revision`.
 - Repo includes Docker setup, README runbook, workflow JSON exports, and test scripts verifying W1→W2→W3 handoffs.
+
+## 5. Progress Update (2026-04-27)
+
+### Phase 1 Status: ✅ Completed
+- Core POC implemented with restart-safe state snapshots and atomic writes.
+- Core endpoints validated in isolation (`ideas -> approve -> script -> audio -> render -> state`).
+- `yarn test:poc` passing with generated artifacts and playable mock render.
+- Handoff integrity validated (`yarn test:handoff`) for Workflow 1→2 and 2→3 payloads.
+
+### Phase 2 Status: ✅ Completed (MVP scope)
+- All required API endpoints implemented under `/api/videos/*`.
+- Real integrations wired via environment variables (OpenAI, ElevenLabs, Pexels, Pixabay, Telegram, YouTube).
+- Hybrid mode active: mock fallback when keys are absent or provider fails.
+- n8n orchestrator workflow JSON exports completed (3 workflows).
+- Docker artifacts and full README runbook completed.
+
+### Phase 3 Status: ✅ Completed (initial hardening)
+- Automated scripts delivered: `test:poc`, `test:e2e:mock`, `test:handoff`, `test:integrations`.
+- Integration healthcheck endpoint added: `GET /api/health/integrations`.
+- E2E mock validated successfully with full pipeline and final approval gate before upload.
+
+### Current Next Actions
+1. User fills `.env` locally with real keys.
+2. Run `yarn test:integrations` and `curl /api/health/integrations`.
+3. Import n8n workflows and execute real/hybrid weekly run.
+4. Optional next iteration: richer thumbnail generation and advanced timeline transitions.

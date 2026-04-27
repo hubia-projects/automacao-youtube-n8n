@@ -1,0 +1,75 @@
+{
+  "name": "Workflow 2 — Audio, Captions and Assets",
+  "nodes": [
+    {
+      "id": "start_workflow",
+      "name": "Start",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [220, 200],
+      "parameters": {}
+    },
+    {
+      "id": "generate_audio",
+      "name": "Generate Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/audio/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"video_id\":$json.video_id,\"provider\":\"elevenlabs\",\"mock_mode\":{{$env.MOCK_MODE === 'true'}}}"
+      }
+    },
+    {
+      "id": "generate_captions",
+      "name": "Generate Captions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [780, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/captions/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"video_id\":$json.video_id,\"mock_mode\":{{$env.MOCK_MODE === 'true'}}}"
+      }
+    },
+    {
+      "id": "search_assets",
+      "name": "Search Assets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1060, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/assets/search",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"video_id\":$json.video_id,\"mock_mode\":{{$env.MOCK_MODE === 'true'}}}"
+      }
+    },
+    {
+      "id": "call_workflow3",
+      "name": "Call Workflow 3",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1340, 200],
+      "parameters": {
+        "workflowId": "Workflow 3 — Render and YouTube Preparation",
+        "mode": "each",
+        "input": "json",
+        "jsonData": "={{$json.handoff_payload_workflow_3}}"
+      }
+    }
+  ],
+  "connections": {
+    "Start": { "main": [[{ "node": "Generate Audio", "type": "main", "index": 0 }]] },
+    "Generate Audio": { "main": [[{ "node": "Generate Captions", "type": "main", "index": 0 }]] },
+    "Generate Captions": { "main": [[{ "node": "Search Assets", "type": "main", "index": 0 }]] },
+    "Search Assets": { "main": [[{ "node": "Call Workflow 3", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "pipeline",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test:poc": "node tests/poc-core-test.js",
+    "test:e2e:mock": "node tests/e2e-mock-test.js",
+    "test:handoff": "node tests/handoff-test.js",
+    "test:integrations": "node tests/real-integration-check.js"
+  },
+  "dependencies": {
+    "axios": "^1.15.2",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "ffmpeg-static": "^5.3.0",
+    "ffprobe-static": "^3.1.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "form-data": "^4.0.5",
+    "fs-extra": "^11.3.4",
+    "googleapis": "^171.4.0",
+    "node-cron": "^4.2.1",
+    "openai": "^6.34.0",
+    "uuid": "^14.0.0",
+    "zod": "^4.3.6"
+  }
+}

@@ -1,0 +1,114 @@
+{
+  "video_id": "47526ded-c43b-4459-a4ed-55eec9a0fe86",
+  "idea_id": null,
+  "topic": "10 países baratos para viajar em 2026",
+  "angle": "ranking com custo de vida e dicas práticas",
+  "status": "ideas_generated",
+  "current_step": "ideas_generated",
+  "approved": false,
+  "selected_idea": null,
+  "ideas": [
+    {
+      "idea_id": "e41a9aa1-1e9e-48f1-905e-5268a209c8a0",
+      "topic": "10 países baratos para viajar em 2026",
+      "angle": "ranking com custo de vida e dicas práticas",
+      "scores": {
+        "search_demand": 86,
+        "evergreen": 82,
+        "retention": 88,
+        "monetization": 74,
+        "visual_assets": 93,
+        "factual_risk": 11
+      },
+      "notes": "Pontuação baseada em demanda, evergreen, retenção e risco factual.",
+      "total_score": 85
+    },
+    {
+      "idea_id": "181c1f0f-e21a-4ad7-9f9b-58fd3be98fd0",
+      "topic": "Destinos mais bonitos e baratos da América do Sul",
+      "angle": "paisagens, logística e orçamento real",
+      "scores": {
+        "search_demand": 88,
+        "evergreen": 95,
+        "retention": 72,
+        "monetization": 71,
+        "visual_assets": 91,
+        "factual_risk": 22
+      },
+      "notes": "Pontuação baseada em demanda, evergreen, retenção e risco factual.",
+      "total_score": 83
+    },
+    {
+      "idea_id": "d7b9be57-5d4e-437e-976a-76f3680539cf",
+      "topic": "Top 12 cidades com melhor custo-benefício para morar fora",
+      "angle": "comparativo prático com riscos e oportunidades",
+      "scores": {
+        "search_demand": 84,
+        "evergreen": 73,
+        "retention": 93,
+        "monetization": 63,
+        "visual_assets": 81,
+        "factual_risk": 22
+      },
+      "notes": "Pontuação baseada em demanda, evergreen, retenção e risco factual.",
+      "total_score": 80
+    },
+    {
+      "idea_id": "f391c8f8-6c6a-4af2-8e1d-09bc3bbd5be4",
+      "topic": "Melhores cidades para nômades digitais iniciantes",
+      "angle": "internet, segurança, custo e qualidade de vida",
+      "scores": {
+        "search_demand": 73,
+        "evergreen": 91,
+        "retention": 71,
+        "monetization": 86,
+        "visual_assets": 78,
+        "factual_risk": 7
+      },
+      "notes": "Pontuação baseada em demanda, evergreen, retenção e risco factual.",
+      "total_score": 79
+    },
+    {
+      "idea_id": "986b3787-bcf9-4d61-9ca7-d3858f8e016e",
+      "topic": "Cidades subestimadas da Europa que parecem filme",
+      "angle": "curiosidades, visual incrível e roteiro econômico",
+      "scores": {
+        "search_demand": 91,
+        "evergreen": 75,
+        "retention": 72,
+        "monetization": 65,
+        "visual_assets": 81,
+        "factual_risk": 16
+      },
+      "notes": "Pontuação baseada em demanda, evergreen, retenção e risco factual.",
+      "total_score": 78
+    }
+  ],
+  "research_json": {},
+  "outline_json": {},
+  "script_text": "",
+  "script_path": "",
+  "audio_path": "",
+  "duration_seconds": 0,
+  "caption_path_srt": "",
+  "caption_path_vtt": "",
+  "assets_json": {
+    "visual_keywords": [],
+    "search_queries": [],
+    "items": [],
+    "fallback_plan": [],
+    "missing_assets": false
+  },
+  "render_path": "",
+  "thumbnail_path": "",
+  "youtube_title": "",
+  "youtube_description": "",
+  "youtube_tags": [],
+  "youtube_chapters": [],
+  "youtube_video_id": "",
+  "youtube_url": "",
+  "error_message": "",
+  "state_path": "/app/pipeline/output/draft/47526ded-c43b-4459-a4ed-55eec9a0fe86/state.json",
+  "created_at": "2026-04-27T16:42:58.346Z",
+  "updated_at": "2026-04-27T16:42:58.347Z"
+}

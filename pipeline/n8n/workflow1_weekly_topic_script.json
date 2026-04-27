@@ -1,0 +1,90 @@
+{
+  "name": "Workflow 1 — Weekly Topic + Script",
+  "nodes": [
+    {
+      "id": "cron_weekly",
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 200],
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "weeks", "triggerAtDay": ["monday"], "triggerAtHour": 9 }]
+        }
+      }
+    },
+    {
+      "id": "generate_ideas",
+      "name": "Generate Ideas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/ideas/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"count\":5,\"mock_mode\":{{$env.MOCK_MODE === 'true'}}}"
+      }
+    },
+    {
+      "id": "wait_approval",
+      "name": "Wait Idea Approval",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [760, 200],
+      "parameters": {
+        "resume": "webhook"
+      }
+    },
+    {
+      "id": "approve_idea",
+      "name": "Approve Idea",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1020, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/ideas/approve",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"video_id\": $json.body.video_id, \"idea_number\": Number($json.body.idea_number), \"mock_mode\": {{$env.MOCK_MODE === 'true'}}}"
+      }
+    },
+    {
+      "id": "generate_script",
+      "name": "Generate Script",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1280, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/script/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"video_id\": $json.video_id || $json.body.video_id, \"mock_mode\": {{$env.MOCK_MODE === 'true'}}}"
+      }
+    },
+    {
+      "id": "call_workflow2",
+      "name": "Call Workflow 2",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1540, 200],
+      "parameters": {
+        "workflowId": "Workflow 2 — Audio, Captions and Assets",
+        "mode": "each",
+        "input": "json",
+        "jsonData": "={{$json.handoff_payload_workflow_2}}"
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Trigger": { "main": [[{ "node": "Generate Ideas", "type": "main", "index": 0 }]] },
+    "Generate Ideas": { "main": [[{ "node": "Wait Idea Approval", "type": "main", "index": 0 }]] },
+    "Wait Idea Approval": { "main": [[{ "node": "Approve Idea", "type": "main", "index": 0 }]] },
+    "Approve Idea": { "main": [[{ "node": "Generate Script", "type": "main", "index": 0 }]] },
+    "Generate Script": { "main": [[{ "node": "Call Workflow 2", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}
