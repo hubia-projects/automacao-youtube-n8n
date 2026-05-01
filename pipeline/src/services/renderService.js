@@ -234,11 +234,15 @@ const findSceneAnchorWordIndexes = ({ scenes, scriptWords = [] }) => {
   return hints;
 };
 
-const buildSceneScriptTimingHints = ({ scenes, scriptText = "", audioDuration = 0 }) => {
+const buildSceneScriptTimingHints = ({ scenes, scriptText = "", audioDuration = 0, audioIntelligence = null }) => {
   const scriptWords = tokenizeNormalizedWords(scriptText);
   if (!scriptWords.length || !scenes.length) {
     return new Map();
   }
+
+  // Use audio intelligence timestamps if available for precise sync
+  const useWordTimestamps = audioIntelligence?.words && audioIntelligence.words.length > 0;
+  const wordTimestamps = useWordTimestamps ? audioIntelligence.words : null;
 
   const anchorHints = findSceneAnchorWordIndexes({ scenes, scriptWords });
   const totalWords = scriptWords.length;
@@ -280,12 +284,29 @@ const buildSceneScriptTimingHints = ({ scenes, scriptText = "", audioDuration = 
       const displayEndWordIndex = endWordIndex;
       const spanWords = Math.max(1, endWordIndex - startWordIndex);
       const displaySpanWords = Math.max(1, displayEndWordIndex - displayStartWordIndex);
-      const scriptTargetDurationSeconds = round3((Number(audioDuration || 0) * spanWords) / totalWords);
-      const scriptDisplayTargetDurationSeconds = round3((Number(audioDuration || 0) * displaySpanWords) / totalWords);
-      const scriptStartSeconds = round3((Number(audioDuration || 0) * startWordIndex) / totalWords);
-      const scriptEndSeconds = round3((Number(audioDuration || 0) * endWordIndex) / totalWords);
-      const scriptDisplayStartSeconds = round3((Number(audioDuration || 0) * displayStartWordIndex) / totalWords);
-      const scriptDisplayEndSeconds = round3((Number(audioDuration || 0) * displayEndWordIndex) / totalWords);
+
+      // Calculate actual timestamps if word timestamps are available
+      let scriptStartSeconds = 0;
+      let scriptEndSeconds = 0;
+      let scriptDisplayStartSeconds = 0;
+      let scriptDisplayEndSeconds = 0;
+
+      if (useWordTimestamps && wordTimestamps[startWordIndex] && wordTimestamps[endWordIndex - 1]) {
+        // Use actual word timestamps for precise sync
+        scriptStartSeconds = round3(wordTimestamps[startWordIndex].start || 0);
+        scriptEndSeconds = round3(wordTimestamps[endWordIndex - 1].end || audioDuration);
+        scriptDisplayStartSeconds = round3(wordTimestamps[displayStartWordIndex].start || 0);
+        scriptDisplayEndSeconds = round3(wordTimestamps[displayEndWordIndex - 1].end || audioDuration);
+      } else {
+        // Fallback to proportional timing
+        scriptStartSeconds = round3((Number(audioDuration || 0) * startWordIndex) / totalWords);
+        scriptEndSeconds = round3((Number(audioDuration || 0) * endWordIndex) / totalWords);
+        scriptDisplayStartSeconds = round3((Number(audioDuration || 0) * displayStartWordIndex) / totalWords);
+        scriptDisplayEndSeconds = round3((Number(audioDuration || 0) * displayEndWordIndex) / totalWords);
+      }
+
+      const scriptTargetDurationSeconds = round3(scriptEndSeconds - scriptStartSeconds);
+      const scriptDisplayTargetDurationSeconds = round3(scriptDisplayEndSeconds - scriptDisplayStartSeconds);
 
       return [
         scene.scene_index,
@@ -953,6 +974,7 @@ const pickSceneAsset = ({
   usageByAssetKey = new Map(),
   usageByWindowKey = new Map(),
   usageBySemanticKey = new Map(),
+  recentLocations = [],
 }) => {
   if (!sceneAssets.length) {
     return {
@@ -975,6 +997,24 @@ const pickSceneAsset = ({
     ...(scene?.keywords || []),
   ]);
   const sceneTerms = buildSceneScriptTerms(scene);
+
+  // Extract location from asset query/tags for diversity tracking
+  const extractLocation = (asset) => {
+    const locationTerms = buildSemanticTerms([
+      asset.query,
+      ...(asset.provider_tags || []),
+      asset.semantic_text,
+    ]);
+    // Filter for common location indicators
+    const locationIndicators = new Set([
+      "lisboa", "lisbon", "porto", "oporto", "sintra", "coimbra", "faro",
+      "portugal", "spain", "france", "italy", "germany", "uk", "london",
+      "paris", "rome", "berlin", "madrid", "barcelona", "amsterdam",
+      "city", "beach", "mountain", "river", "coast", "island", "castle",
+    ]);
+    return locationTerms.filter(t => locationIndicators.has(t) || t.length >= 4)[0] || "unknown";
+  };
+
   const rankedAssets = sceneAssets.flatMap((asset, assetIndex) => {
     const assetKey = asset?.local_path || `${sceneIndex}:${assetIndex}`;
     const assetReuseIndex = usageByAssetKey.get(assetKey) || 0;
@@ -991,6 +1031,12 @@ const pickSceneAsset = ({
       const queryOverlap = countSharedTerms(queryTerms, clipTerms);
       const semanticKey = buildSemanticSignature(windowTerms);
       const semanticReuseIndex = semanticKey ? usageBySemanticKey.get(semanticKey) || 0 : 0;
+
+      // Location diversity penalty
+      const assetLocation = extractLocation(asset);
+      const recentLocationCount = recentLocations.filter(loc => loc === assetLocation).length;
+      const locationPenalty = recentLocationCount > 1 ? recentLocationCount * 1.8 : 0;
+
       const score = round3(
         sharedWithClip * 5 +
         queryOverlap * 1.8 +
@@ -999,9 +1045,10 @@ const pickSceneAsset = ({
         (asset.analysis_windows?.length ? 1.1 : 0) +
         (assetIndex === baselineIndex ? 0.35 : 0) +
         (isVideoAsset(asset) ? 0.2 : 0) -
-        assetReuseIndex * 1.2 -
+        assetReuseIndex * 2.0 -
         windowReuseIndex * 2 -
         semanticReuseIndex * 1.35 -
+        locationPenalty -
         (asset.is_fallback ? 3 : 0)
       );
 
@@ -1100,14 +1147,27 @@ const buildVideoSourceWindow = ({
   };
 };
 
-const buildClipPlan = ({ state, audioDuration, draftVersion, fallbackAsset }) => {
+const buildClipPlan = async ({ state, audioDuration, draftVersion, fallbackAsset }) => {
   const scenes = normalizeScenes(state);
   const sceneAssetMap = buildSceneAssetMap(state.assets_json?.items || []);
   const scriptWords = extractOriginalScriptWords(state.script_text);
+
+  // Load audio intelligence for precise word-level sync
+  let audioIntelligence = null;
+  if (state.audio_intelligence_path) {
+    try {
+      const { getCachedAudioIntelligence } = require("./audioIntelligence");
+      audioIntelligence = await getCachedAudioIntelligence({ videoId: state.video_id });
+    } catch (error) {
+      // Fallback to word-index based timing if audio intelligence fails to load
+    }
+  }
+
   const sceneTimingHints = buildSceneScriptTimingHints({
     scenes,
     scriptText: state.script_text,
     audioDuration,
+    audioIntelligence,
   });
   const describedScenes = mergeSceneTimingHints({
     scenes: describeScenes({ scenes, sceneAssetMap }),
@@ -1155,6 +1215,8 @@ const buildClipPlan = ({ state, audioDuration, draftVersion, fallbackAsset }) =>
   const usageByAssetKey = new Map();
   const usageByWindowKey = new Map();
   const usageBySemanticKey = new Map();
+  const recentLocations = [];
+  const MAX_RECENT_LOCATIONS = 3;
 
   return sceneRefs.map((ref, index) => {
     const scene = ref.scene;
@@ -1171,6 +1233,7 @@ const buildClipPlan = ({ state, audioDuration, draftVersion, fallbackAsset }) =>
       usageByAssetKey,
       usageByWindowKey,
       usageBySemanticKey,
+      recentLocations,
     });
     const asset = pickedAsset.asset;
     const assetKey = asset?.local_path || `${scene.scene_index}:${occurrenceIndex}`;
@@ -1182,6 +1245,18 @@ const buildClipPlan = ({ state, audioDuration, draftVersion, fallbackAsset }) =>
     if (pickedAsset.semanticKey) {
       usageBySemanticKey.set(pickedAsset.semanticKey, (usageBySemanticKey.get(pickedAsset.semanticKey) || 0) + 1);
     }
+
+    // Update recent locations for diversity tracking
+    const assetLocation = buildSemanticTerms([
+      asset.query,
+      ...(asset.provider_tags || []),
+      asset.semantic_text,
+    ]).filter(t => t.length >= 4)[0] || "unknown";
+    recentLocations.push(assetLocation);
+    if (recentLocations.length > MAX_RECENT_LOCATIONS) {
+      recentLocations.shift();
+    }
+
     const clipDurationSeconds = clipDurationsByScene.get(scene.scene_index)?.[occurrenceIndex] || MIN_CLIP_DURATION;
     const sourceWindow = isVideoAsset(asset)
       ? buildVideoSourceWindow({

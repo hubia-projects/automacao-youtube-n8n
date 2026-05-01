@@ -19,6 +19,7 @@
     "test:render:mock": "node tests/render-multi-cut-test.js",
     "test:render:real-assets": "node tests/render-real-assets-test.js",
     "test:youtube:private": "node tests/youtube-private-upload-test.js",
+    "test:portugal": "node tests/portugal-cities-test.js",
     "test:handoff": "node tests/handoff-test.js",
     "test:integrations": "node tests/real-integration-check.js",
     "test:real-hybrid": "node tests/real-hybrid-validation.js"

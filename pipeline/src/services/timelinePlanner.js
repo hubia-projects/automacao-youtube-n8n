@@ -100,6 +100,7 @@ const pickBestAssetWindow = async ({
   videoId,
   sceneKeywords = [],
   usageByWindowKey = new Map(),
+  recentLocations = [],
 }) => {
   const windows = normalizeAssetAnalysisWindows(asset);
   const windowTexts = windows.map(
@@ -133,9 +134,30 @@ const pickBestAssetWindow = async ({
   let bestWindow = windows[0];
   let bestMethod = "fallback";
 
+  // Extract location from asset for diversity tracking
+  const extractLocation = (asset) => {
+    const locationTerms = buildSemanticTerms([
+      asset.query,
+      ...(asset.provider_tags || []),
+      asset.semantic_text,
+    ]);
+    const locationIndicators = new Set([
+      "lisboa", "lisbon", "porto", "oporto", "sintra", "coimbra", "faro",
+      "portugal", "spain", "france", "italy", "germany", "uk", "london",
+      "paris", "rome", "berlin", "madrid", "barcelona", "amsterdam",
+      "city", "beach", "mountain", "river", "coast", "island", "castle",
+    ]);
+    return locationTerms.filter(t => locationIndicators.has(t) || t.length >= 4)[0] || "unknown";
+  };
+
+  // Extract location once per asset for efficiency
+  const assetLocation = extractLocation(asset);
+  const recentLocationCount = recentLocations.filter(loc => loc === assetLocation).length;
+  const locationPenalty = recentLocationCount > 1 ? recentLocationCount * 1.8 : 0;
+
   windows.forEach((window, index) => {
     const windowKey = `${asset.local_path || asset.source_url}:window:${window.window_index || index + 1}`;
-    const reusePenalty = (usageByWindowKey.get(windowKey) || 0) * 1.5;
+    const reusePenalty = (usageByWindowKey.get(windowKey) || 0) * 2.0;
 
     let score;
     let method;
@@ -152,6 +174,7 @@ const pickBestAssetWindow = async ({
     }
 
     score -= reusePenalty;
+    score -= locationPenalty;
 
     // Small bonus for longer windows (more usable footage)
     const windowDuration = window.end_seconds - window.start_seconds;
@@ -324,6 +347,26 @@ const buildTimeline = async ({
   // Track usage to avoid repeating the same window
   const usageByWindowKey = new Map();
 
+  // Track recent locations for diversity
+  const recentLocations = [];
+  const MAX_RECENT_LOCATIONS = 3;
+
+  // Extract location from asset for diversity tracking
+  const extractLocation = (asset) => {
+    const locationTerms = buildSemanticTerms([
+      asset.query,
+      ...(asset.provider_tags || []),
+      asset.semantic_text,
+    ]);
+    const locationIndicators = new Set([
+      "lisboa", "lisbon", "porto", "oporto", "sintra", "coimbra", "faro",
+      "portugal", "spain", "france", "italy", "germany", "uk", "london",
+      "paris", "rome", "berlin", "madrid", "barcelona", "amsterdam",
+      "city", "beach", "mountain", "river", "coast", "island", "castle",
+    ]);
+    return locationTerms.filter(t => locationIndicators.has(t) || t.length >= 4)[0] || "unknown";
+  };
+
   // Build clip plan
   const clips = [];
   const totalClipCount = chooseClipCount({ audioDuration, sceneCount: enrichedScenes.length });
@@ -371,6 +414,7 @@ const buildTimeline = async ({
             videoId,
             sceneKeywords: scene.keywords || [],
             usageByWindowKey,
+            recentLocations,
           });
 
           if (matchResult.score > bestScore) {
@@ -393,6 +437,13 @@ const buildTimeline = async ({
             draftVersion,
           })
         : { source_start_seconds: 0, source_end_seconds: round3(clipDuration), asset_duration_seconds: round3(getAssetDuration(bestAsset)) };
+
+      // Update recent locations for diversity tracking
+      const assetLocation = extractLocation(bestAsset);
+      recentLocations.push(assetLocation);
+      if (recentLocations.length > MAX_RECENT_LOCATIONS) {
+        recentLocations.shift();
+      }
 
       clips.push({
         clip_index: clips.length + 1,
