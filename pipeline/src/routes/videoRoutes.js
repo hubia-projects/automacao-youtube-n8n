@@ -7,10 +7,13 @@ const { generateAudio } = require("../services/ttsService");
 const { generateCaptions } = require("../services/captionsService");
 const { generateAssets } = require("../services/assetsService");
 const { renderVideo } = require("../services/renderService");
+const { analyzeAudio } = require("../services/audioIntelligence");
+const { validateRender } = require("../services/syncValidator");
 const { generateMetadata } = require("../services/metadataService");
 const { uploadToYoutube } = require("../services/youtubeService");
 const { loadState, updateState, setStateError } = require("../services/stateService");
 const { triggerWorkflow2, triggerWorkflow3 } = require("../services/workflowHandoffService");
+const { requestReviewRegeneration } = require("../services/reviewRevisionService");
 const { config } = require("../config/env");
 
 const router = Router();
@@ -119,14 +122,14 @@ router.post("/videos/script/generate", async (req, res, next) => {
 router.post("/videos/audio/generate", async (req, res, next) => {
   try {
     const schema = bodyWithVideoId.extend({
-      provider: z.enum(["elevenlabs", "openai"]).optional(),
+      provider: z.enum(["multivozes", "openai", "elevenlabs"]).optional(),
     });
 
     const parsed = schema.parse(req.body || {});
     const result = await generateAudio({
       videoId: parsed.video_id,
       mockMode: withDefaultMock(parsed),
-      provider: parsed.provider || "elevenlabs",
+      provider: parsed.provider || "multivozes",
     });
 
     res.json({ ok: true, ...result });
@@ -221,6 +224,32 @@ router.post("/videos/render", async (req, res, next) => {
   }
 });
 
+router.post("/videos/audio/intelligence", async (req, res, next) => {
+  try {
+    const parsed = bodyWithVideoId.parse(req.body || {});
+    const result = await analyzeAudio({
+      videoId: parsed.video_id,
+    });
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    await setStateError(req.body?.video_id, error, "audio_intelligence_failed").catch(() => null);
+    next(error);
+  }
+});
+
+router.post("/videos/render/validate", async (req, res, next) => {
+  try {
+    const parsed = bodyWithVideoId.parse(req.body || {});
+    const result = await validateRender({
+      videoId: parsed.video_id,
+    });
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    await setStateError(req.body?.video_id, error, "render_validation_failed").catch(() => null);
+    next(error);
+  }
+});
+
 router.post("/videos/metadata/generate", async (req, res, next) => {
   try {
     const parsed = bodyWithVideoId.parse(req.body || {});
@@ -269,6 +298,27 @@ router.post("/videos/final/approve", async (req, res, next) => {
       state_path: nextState.state_path,
     });
   } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/videos/review/regenerate", async (req, res, next) => {
+  try {
+    const schema = bodyWithVideoId.extend({
+      note: z.string().optional(),
+    });
+
+    const parsed = schema.parse(req.body || {});
+
+    const result = await requestReviewRegeneration({
+      videoId: parsed.video_id,
+      note: parsed.note,
+      mockMode: withDefaultMock(parsed),
+    });
+
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    await setStateError(req.body?.video_id, error, "review_regeneration_failed").catch(() => null);
     next(error);
   }
 });

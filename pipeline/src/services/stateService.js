@@ -80,12 +80,34 @@ const updateState = async (videoId, patch = {}, options = {}) => {
       ...(current.assets_json || {}),
       ...(patch.assets_json || {}),
     },
+    review: {
+      ...(current.review || {}),
+      ...(patch.review || {}),
+    },
+    telegram: {
+      ...(current.telegram || {}),
+      ...(patch.telegram || {}),
+    },
   };
 
   if (options.currentStep) merged.current_step = options.currentStep;
   if (options.status) merged.status = options.status;
 
   return saveState(videoId, merged);
+};
+
+const listStates = async () => {
+  const draftRoot = path.join(config.OUTPUT_ROOT, "draft");
+  const entries = (await fs.readdir(draftRoot).catch(() => [])).sort();
+
+  const states = await Promise.all(
+    entries.map(async (entry) => {
+      const statePath = path.join(draftRoot, entry, "state.json");
+      return readJsonSafe(statePath, null);
+    })
+  );
+
+  return states.filter(Boolean);
 };
 
 const setStateError = async (videoId, error, currentStep = "error") => {
@@ -109,5 +131,6 @@ module.exports = {
   loadState,
   saveState,
   updateState,
+  listStates,
   setStateError,
 };

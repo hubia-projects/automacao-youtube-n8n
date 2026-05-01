@@ -116,13 +116,32 @@ curl http://localhost:8080/api/health/integrations
 ## 3) Rodar com Docker Compose (app + n8n)
 
 ```bash
-docker compose up --build
+yarn docker:up:build
 ```
 
-- App: `http://localhost:8080`
-- n8n: `http://localhost:5678`
+Alternativas:
 
-Importe os workflows da pasta `n8n/` no editor do n8n.
+```bash
+yarn docker:up
+yarn sync:n8n:dry
+```
+
+- App (host): `http://localhost:8081` (configurável via `APP_HOST_PORT`)
+- n8n (host): `http://localhost:5679` (configurável via `N8N_HOST_PORT`)
+
+Internamente na rede Docker:
+
+- App: `http://app:8080`
+- n8n: `http://n8n:5678`
+
+Sincronize os workflows da pasta `n8n/` com o n8n persistido:
+
+```bash
+yarn sync:n8n
+```
+
+O comando faz upsert por nome, preservando os IDs ja existentes no n8n quando o workflow ja estiver importado.
+Use `yarn sync:n8n:dry` para ver o plano sem importar alteracoes.
 
 ---
 

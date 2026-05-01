@@ -1,5 +1,6 @@
 {
   "name": "Workflow 2 — Audio, Captions and Assets",
+  "active": true,
   "nodes": [
     {
       "id": "start_workflow",
@@ -20,7 +21,7 @@
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/audio/generate",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"video_id\":$json.video_id,\"provider\":\"elevenlabs\",\"mock_mode\":{{$env.MOCK_MODE === 'true'}}}"
+        "jsonBody": "={{ ({ video_id: $json.video_id, provider: 'multivozes', mock_mode: $env.MOCK_MODE === 'true' }) }}"
       }
     },
     {
@@ -28,13 +29,13 @@
       "name": "Generate Captions",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [780, 200],
+      "position": [660, 200],
       "parameters": {
         "method": "POST",
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/captions/generate",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"video_id\":$json.video_id,\"mock_mode\":{{$env.MOCK_MODE === 'true'}}}"
+        "jsonBody": "={{ ({ video_id: $json.video_id, mock_mode: $env.MOCK_MODE === 'true' }) }}"
       }
     },
     {
@@ -42,13 +43,13 @@
       "name": "Search Assets",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1060, 200],
+      "position": [820, 200],
       "parameters": {
         "method": "POST",
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/assets/search",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"video_id\":$json.video_id,\"mock_mode\":{{$env.MOCK_MODE === 'true'}}}"
+        "jsonBody": "={{ ({ video_id: $json.video_id, mock_mode: $env.MOCK_MODE === 'true' }) }}"
       }
     },
     {
@@ -56,9 +57,9 @@
       "name": "Call Workflow 3",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1,
-      "position": [1340, 200],
+      "position": [1100, 200],
       "parameters": {
-        "workflowId": "Workflow 3 — Render and YouTube Preparation",
+        "workflowId": "SWfoFJ3aNt2nJboC",
         "mode": "each",
         "input": "json",
         "jsonData": "={{$json.handoff_payload_workflow_3}}"

@@ -1,6 +1,7 @@
 const { ensureVideoStructure, updateState, loadState } = require("./stateService");
 const { writeTextAtomic } = require("../utils/fileUtils");
 const { transcribeWithOpenAI } = require("./openaiService");
+const { sendWorkflowStatus } = require("./telegramService");
 
 const toTimestamp = (totalSeconds) => {
   const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
@@ -51,9 +52,24 @@ const generateCaptions = async ({ videoId, mockMode = false }) => {
   let provider = "local_fallback";
 
   if (!mockMode) {
-    srt = await transcribeWithOpenAI({ audioPath: state.audio_path, format: "srt" });
-    vtt = await transcribeWithOpenAI({ audioPath: state.audio_path, format: "vtt" });
-    if (srt && vtt) provider = "openai_transcription";
+    try {
+      const transcriptionText = await transcribeWithOpenAI({
+        audioPath: state.audio_path,
+        format: "text",
+      });
+
+      if (transcriptionText) {
+        const generated = buildLocalCaptions({
+          scriptText: transcriptionText,
+          durationSeconds: Number(state.duration_seconds || 95),
+        });
+        srt = generated.srt;
+        vtt = generated.vtt;
+        provider = "openai_transcription_local_segments";
+      }
+    } catch {
+      provider = "local_fallback";
+    }
   }
 
   if (!srt || !vtt) {
@@ -82,6 +98,13 @@ const generateCaptions = async ({ videoId, mockMode = false }) => {
       status: "captions_generated",
     }
   );
+
+  await sendWorkflowStatus({
+    videoId,
+    title: "Legendas geradas",
+    icon: "💬",
+    lines: [`Provider usado: ${provider}.`],
+  }).catch(() => null);
 
   return {
     video_id: videoId,

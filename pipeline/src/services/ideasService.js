@@ -1,7 +1,12 @@
 const { v4: uuidv4 } = require("uuid");
 const { updateState } = require("./stateService");
 const { generateIdeasWithOpenAI } = require("./openaiService");
-const { sendTelegramMessage, buildIdeasApprovalMessage } = require("./telegramService");
+const {
+  sendTelegramMessage,
+  buildIdeasApprovalMessage,
+  sendWorkflowStatus,
+} = require("./telegramService");
+const { config } = require("../config/env");
 
 const fallbackIdeas = [
   {
@@ -88,6 +93,13 @@ const normalizeOpenAiIdeas = (items = []) =>
 const generateIdeas = async ({ videoId, count = 5, mockMode = false }) => {
   const requested = Math.max(3, Math.min(5, Number(count || 5)));
 
+  await sendWorkflowStatus({
+    videoId,
+    title: "Automação iniciada",
+    icon: "🚀",
+    lines: ["Gerando ideias e preparando a primeira aprovação no Telegram."],
+  }).catch(() => null);
+
   let ideas = [];
   if (!mockMode) {
     const aiIdeas = await generateIdeasWithOpenAI({ count: requested });
@@ -121,12 +133,22 @@ const generateIdeas = async ({ videoId, count = 5, mockMode = false }) => {
     text: buildIdeasApprovalMessage({ videoId, ideas }),
   }).catch((error) => ({ configured: true, sent: false, error: error.message }));
 
+  const nextState = telegramResult.telegram_message_id
+    ? await updateState(videoId, {
+        telegram: {
+          chat_id: String(config.TELEGRAM_CHAT_ID || ""),
+          ideas_message_id: telegramResult.telegram_message_id,
+          ideas_message_sent_at: new Date().toISOString(),
+        },
+      })
+    : state;
+
   return {
     video_id: videoId,
     ideas,
     telegram: telegramResult,
-    state_path: state.state_path,
-    current_step: state.current_step,
+    state_path: nextState.state_path,
+    current_step: nextState.current_step,
   };
 };
 

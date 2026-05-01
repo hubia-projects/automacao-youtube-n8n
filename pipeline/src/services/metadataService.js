@@ -2,6 +2,8 @@ const fs = require("fs-extra");
 const { loadState, ensureVideoStructure, updateState } = require("./stateService");
 const { generateMetadataWithOpenAI } = require("./openaiService");
 const { sendTelegramMessage, buildFinalReviewMessage } = require("./telegramService");
+const { publishReviewDraft } = require("./reviewPublishingService");
+const { config } = require("../config/env");
 
 const buildMockMetadata = ({ topic }) => ({
   title: `${topic} em 2026: Guia Completo para Viajar Melhor`,
@@ -48,29 +50,63 @@ const generateMetadata = async ({ videoId, mockMode = false }) => {
       error_message: "",
     },
     {
-      currentStep: "metadata_generated",
+      currentStep: "awaiting_final_approval",
       status: "awaiting_final_approval",
     }
   );
 
-  const telegramResult = await sendTelegramMessage({
-    text: buildFinalReviewMessage({
-      videoId,
-      title: nextState.youtube_title,
-      renderPath: nextState.render_path,
-      tags: nextState.youtube_tags,
-    }),
-  }).catch((error) => ({ sent: false, error: error.message }));
+  const reviewPublication = await publishReviewDraft({
+    videoId,
+    state: nextState,
+  }).catch(() => ({ published: false, state: nextState }));
+
+  const stateForReview = reviewPublication.state || nextState;
+  const reviewVersion = stateForReview.review?.draft_version || 1;
+  const alreadySentSameVersion =
+    Number(stateForReview.telegram?.final_review_version || 0) === Number(reviewVersion) &&
+    Boolean(stateForReview.telegram?.final_review_message_id);
+
+  const telegramResult = alreadySentSameVersion
+    ? {
+        configured: true,
+        sent: false,
+        skipped: true,
+        reason: "duplicate_final_review_version",
+        telegram_message_id: stateForReview.telegram?.final_review_message_id || null,
+      }
+    : await sendTelegramMessage({
+        text: buildFinalReviewMessage({
+          videoId,
+          title: stateForReview.youtube_title,
+          renderPath: stateForReview.render_path,
+          tags: stateForReview.youtube_tags,
+          reviewVersion,
+          reviewUrl: stateForReview.review?.drive_view_url || "",
+          sheetUrl: stateForReview.review?.sheet_url || "",
+        }),
+        parseMode: null,
+      }).catch((error) => ({ sent: false, error: error.message }));
+
+  const persistedState = telegramResult.telegram_message_id
+    ? await updateState(videoId, {
+        telegram: {
+          chat_id: String(config.TELEGRAM_CHAT_ID || ""),
+          final_review_message_id: telegramResult.telegram_message_id,
+          final_review_version: reviewVersion,
+          final_review_message_sent_at: new Date().toISOString(),
+        },
+      })
+    : stateForReview;
 
   return {
     video_id: videoId,
-    youtube_title: nextState.youtube_title,
-    youtube_description: nextState.youtube_description,
-    youtube_tags: nextState.youtube_tags,
-    youtube_chapters: nextState.youtube_chapters,
-    thumbnail_path: nextState.thumbnail_path,
+    youtube_title: persistedState.youtube_title,
+    youtube_description: persistedState.youtube_description,
+    youtube_tags: persistedState.youtube_tags,
+    youtube_chapters: persistedState.youtube_chapters,
+    thumbnail_path: persistedState.thumbnail_path,
     telegram: telegramResult,
-    state_path: nextState.state_path,
+    state_path: persistedState.state_path,
   };
 };
 

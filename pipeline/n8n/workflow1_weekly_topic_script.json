@@ -1,15 +1,34 @@
 {
   "name": "Workflow 1 — Weekly Topic + Script",
+  "active": true,
   "nodes": [
     {
-      "id": "cron_weekly",
-      "name": "Weekly Trigger",
+      "id": "manual_trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [220, 360],
+      "parameters": {}
+    },
+    {
+      "id": "schedule_trigger",
+      "name": "Schedule Trigger",
       "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.2,
-      "position": [220, 200],
+      "typeVersion": 1.3,
+      "position": [220, 120],
       "parameters": {
         "rule": {
-          "interval": [{ "field": "weeks", "triggerAtDay": ["monday"], "triggerAtHour": 9 }]
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 9,
+              "triggerAtMinute": 0
+            }
+          ]
         }
       }
     },
@@ -24,17 +43,21 @@
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/ideas/generate",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"count\":5,\"mock_mode\":{{$env.MOCK_MODE === 'true'}}}"
+        "jsonBody": "={{ ({ count: 3, mock_mode: $env.MOCK_MODE === 'true' }) }}"
       }
     },
     {
-      "id": "wait_approval",
-      "name": "Wait Idea Approval",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
-      "position": [760, 200],
+      "id": "idea_approval_webhook",
+      "name": "Idea Approval Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "webhookId": "yt-w1-idea-approval",
+      "position": [760, 360],
       "parameters": {
-        "resume": "webhook"
+        "path": "idea-approval",
+        "httpMethod": "POST",
+        "responseMode": "onReceived",
+        "options": {}
       }
     },
     {
@@ -48,7 +71,7 @@
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/ideas/approve",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"video_id\": $json.body.video_id, \"idea_number\": Number($json.body.idea_number), \"mock_mode\": {{$env.MOCK_MODE === 'true'}}}"
+        "jsonBody": "={{ ({ video_id: $json.body?.video_id || $json.query?.video_id, idea_number: Number($json.body?.idea_number || $json.query?.idea_number), mock_mode: $env.MOCK_MODE === 'true' }) }}"
       }
     },
     {
@@ -62,7 +85,7 @@
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/script/generate",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"video_id\": $json.video_id || $json.body.video_id, \"mock_mode\": {{$env.MOCK_MODE === 'true'}}}"
+        "jsonBody": "={{ ({ video_id: $json.video_id || $json.body?.video_id || $json.query?.video_id, mock_mode: $env.MOCK_MODE === 'true' }) }}"
       }
     },
     {
@@ -72,7 +95,7 @@
       "typeVersion": 1,
       "position": [1540, 200],
       "parameters": {
-        "workflowId": "Workflow 2 — Audio, Captions and Assets",
+        "workflowId": "YiezxhzyVQT3XJuz",
         "mode": "each",
         "input": "json",
         "jsonData": "={{$json.handoff_payload_workflow_2}}"
@@ -80,9 +103,9 @@
     }
   ],
   "connections": {
-    "Weekly Trigger": { "main": [[{ "node": "Generate Ideas", "type": "main", "index": 0 }]] },
-    "Generate Ideas": { "main": [[{ "node": "Wait Idea Approval", "type": "main", "index": 0 }]] },
-    "Wait Idea Approval": { "main": [[{ "node": "Approve Idea", "type": "main", "index": 0 }]] },
+    "Manual Trigger": { "main": [[{ "node": "Generate Ideas", "type": "main", "index": 0 }]] },
+    "Schedule Trigger": { "main": [[{ "node": "Generate Ideas", "type": "main", "index": 0 }]] },
+    "Idea Approval Webhook": { "main": [[{ "node": "Approve Idea", "type": "main", "index": 0 }]] },
     "Approve Idea": { "main": [[{ "node": "Generate Script", "type": "main", "index": 0 }]] },
     "Generate Script": { "main": [[{ "node": "Call Workflow 2", "type": "main", "index": 0 }]] }
   },

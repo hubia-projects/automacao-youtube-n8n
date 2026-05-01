@@ -1,6 +1,8 @@
 const { writeTextAtomic } = require("../utils/fileUtils");
 const { updateState, ensureVideoStructure, loadState } = require("./stateService");
 const { generateScriptPackageWithOpenAI } = require("./openaiService");
+const { sendWorkflowStatus } = require("./telegramService");
+const { buildVisualPlan } = require("../utils/visualPlan");
 
 const buildMockPackage = ({ topic, angle }) => {
   const sections = [
@@ -157,9 +159,15 @@ const generateScript = async ({ videoId, mockMode = false, topic: providedTopic 
   }
 
   const pkg = !mockMode ? (await generateScriptPackageWithOpenAI({ topic, angle })) || buildMockPackage({ topic, angle }) : buildMockPackage({ topic, angle });
-
   const paths = await ensureVideoStructure(videoId);
   const markdown = createScriptMarkdown({ topic, pkg });
+  const visualPlan = buildVisualPlan({
+    topic,
+    scriptText: pkg.script_text || markdown,
+    outlineSections: pkg.outline_json?.sections || [],
+    visualSuggestions: pkg.visual_suggestions || [],
+    durationSeconds: Number(state.duration_seconds || 0),
+  });
   await writeTextAtomic(paths.scriptPath, markdown);
 
   const nextState = await updateState(
@@ -171,6 +179,7 @@ const generateScript = async ({ videoId, mockMode = false, topic: providedTopic 
       outline_json: pkg.outline_json || {},
       script_text: pkg.script_text || markdown,
       script_path: paths.scriptPath,
+      visual_plan: visualPlan,
       youtube_title: pkg.youtube_title_options?.[0] || "",
       youtube_description: pkg.youtube_description || "",
       youtube_tags: pkg.tags || [],
@@ -182,6 +191,13 @@ const generateScript = async ({ videoId, mockMode = false, topic: providedTopic 
       status: "script_generated",
     }
   );
+
+  await sendWorkflowStatus({
+    videoId,
+    title: "Roteiro gerado",
+    icon: "📝",
+    lines: ["Roteiro concluído. Enviando para o Workflow 2 gerar áudio, legendas e assets."],
+  }).catch(() => null);
 
   return {
     video_id: videoId,

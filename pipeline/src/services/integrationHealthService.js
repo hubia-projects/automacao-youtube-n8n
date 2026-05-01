@@ -1,15 +1,16 @@
 const fs = require("fs");
 const ffmpegPath = require("ffmpeg-static");
 const { basicOpenAIHealthcheck } = require("./openaiService");
-const { basicElevenLabsHealthcheck } = require("./ttsService");
+const { basicMultivozesHealthcheck, basicElevenLabsHealthcheck } = require("./ttsService");
 const { basicPexelsHealthcheck, basicPixabayHealthcheck } = require("./assetsService");
 const { basicTelegramHealthcheck } = require("./telegramService");
 const { basicYoutubeHealthcheck } = require("./youtubeService");
 const { config } = require("../config/env");
 
 const runIntegrationHealthchecks = async () => {
-  const [openai, elevenlabs, pexels, pixabay, telegram, youtube] = await Promise.all([
+  const [openai, multivozes, elevenlabs, pexels, pixabay, telegram, youtube] = await Promise.all([
     basicOpenAIHealthcheck(),
+    basicMultivozesHealthcheck(),
     basicElevenLabsHealthcheck(),
     basicPexelsHealthcheck(),
     basicPixabayHealthcheck(),
@@ -23,14 +24,17 @@ const runIntegrationHealthchecks = async () => {
     message: ffmpegPath || "ffmpeg-static não encontrado",
   };
 
-  const checks = { openai, elevenlabs, pexels, pixabay, telegram, youtube, ffmpeg };
+  const checks = { openai, multivozes, elevenlabs, pexels, pixabay, telegram, youtube, ffmpeg };
 
   const mandatoryProviders = [
     "openai",
-    "elevenlabs",
     "telegram",
     "ffmpeg",
   ];
+
+  if (multivozes.configured) {
+    mandatoryProviders.push("multivozes");
+  }
 
   const strictOk = mandatoryProviders.every((provider) => checks[provider]?.ok);
 

@@ -1,0 +1,45 @@
+Γùç injected env (30) from .env // tip: Γîÿ custom filepath { path: '/custom/path/.env' }
+[2026-04-29T14:29:46.661Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'initialized', status: 'initialized' }
+[2026-04-29T14:29:46.668Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'ideas_generated', status: 'ideas_generated' }
+[2026-04-29T14:29:46.791Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'ideas_generated', status: 'ideas_generated' }
+[2026-04-29T14:29:46.806Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'ideas_generated', status: 'ideas_generated' }
+[2026-04-29T14:29:46.811Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'idea_approved', status: 'idea_approved' }
+[2026-04-29T14:29:46.831Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'script_generated', status: 'script_generated' }
+[2026-04-29T14:29:46.911Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'script_generated', status: 'script_generated' }
+[2026-04-29T14:29:47.644Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'audio_generated', status: 'audio_generated' }
+[2026-04-29T14:29:47.718Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'audio_generated', status: 'audio_generated' }
+[2026-04-29T14:29:47.733Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'captions_generated', status: 'captions_generated' }
+[2026-04-29T14:29:47.803Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'captions_generated', status: 'captions_generated' }
+[2026-04-29T14:29:48.588Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'assets_searched', status: 'assets_searched' }
+[2026-04-29T14:29:48.692Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'assets_searched', status: 'assets_searched' }
+[2026-04-29T14:30:36.457Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'render_generated', status: 'render_generated' }
+[2026-04-29T14:30:36.612Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'render_generated', status: 'render_generated' }
+[2026-04-29T14:30:36.628Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'awaiting_final_approval', status: 'awaiting_final_approval' }
+[2026-04-29T14:30:39.268Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'awaiting_final_approval', status: 'awaiting_final_approval' }
+[2026-04-29T14:30:39.387Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'awaiting_final_approval', status: 'awaiting_final_approval' }
+[2026-04-29T14:30:39.472Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'regenerating_review', status: 'regenerating_review' }
+[2026-04-29T14:30:39.542Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'regenerating_review', status: 'regenerating_review' }
+[2026-04-29T14:31:28.517Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'render_generated', status: 'render_generated' }
+[2026-04-29T14:31:28.680Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'render_generated', status: 'render_generated' }
+[2026-04-29T14:31:28.700Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'awaiting_final_approval', status: 'awaiting_final_approval' }
+[2026-04-29T14:31:31.173Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'awaiting_final_approval', status: 'awaiting_final_approval' }
+[2026-04-29T14:31:31.250Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'awaiting_final_approval', status: 'awaiting_final_approval' }
+[2026-04-29T14:31:31.268Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'regenerating_review', status: 'regenerating_review' }
+[2026-04-29T14:32:25.656Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'render_generated', status: 'render_generated' }
+[2026-04-29T14:32:25.832Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'render_generated', status: 'render_generated' }
+[2026-04-29T14:32:25.843Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'awaiting_final_approval', status: 'awaiting_final_approval' }
+[2026-04-29T14:32:28.539Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'awaiting_final_approval', status: 'awaiting_final_approval' }
+[2026-04-29T14:32:28.639Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'awaiting_final_approval', status: 'awaiting_final_approval' }
+[2026-04-29T14:32:28.658Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'final_approved', status: 'final_approved' }
+[2026-04-29T14:32:28.678Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'youtube_uploaded', status: 'youtube_uploaded_mock' }
+[2026-04-29T14:32:28.764Z] [INFO] State saved for dd466ddf-ab9b-48af-bbe4-52c029091ed4 { step: 'youtube_uploaded', status: 'youtube_uploaded_mock' }
+Γ£à Teste visual multi-cut mock passou
+{
+  "video_id": "dd466ddf-ab9b-48af-bbe4-52c029091ed4",
+  "duration_seconds": 95,
+  "total_clips": 16,
+  "unique_asset_count": 10,
+  "draft_version": 3,
+  "youtube_privacy_status": "private",
+  "youtube_url": "https://youtube.com/watch?v=mock_dd466ddf"
+}

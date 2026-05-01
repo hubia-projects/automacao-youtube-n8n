@@ -6,10 +6,22 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
+    "docker:up": "docker compose up -d && yarn sync:n8n",
+    "docker:up:build": "docker compose up -d --build && yarn sync:n8n",
+    "auth:youtube:url": "node scripts/youtube-oauth.js url",
+    "auth:youtube:exchange": "node scripts/youtube-oauth.js exchange",
+    "auth:review:drive:url": "node scripts/review-drive-oauth.js url",
+    "auth:review:drive:exchange": "node scripts/review-drive-oauth.js exchange",
+    "sync:n8n": "node scripts/sync-n8n-workflows.js",
+    "sync:n8n:dry": "node scripts/sync-n8n-workflows.js --dry-run",
     "test:poc": "node tests/poc-core-test.js",
     "test:e2e:mock": "node tests/e2e-mock-test.js",
+    "test:render:mock": "node tests/render-multi-cut-test.js",
+    "test:render:real-assets": "node tests/render-real-assets-test.js",
+    "test:youtube:private": "node tests/youtube-private-upload-test.js",
     "test:handoff": "node tests/handoff-test.js",
-    "test:integrations": "node tests/real-integration-check.js"
+    "test:integrations": "node tests/real-integration-check.js",
+    "test:real-hybrid": "node tests/real-hybrid-validation.js"
   },
   "dependencies": {
     "axios": "^1.15.2",

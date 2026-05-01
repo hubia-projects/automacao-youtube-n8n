@@ -5,27 +5,41 @@ const ffmpeg = require("fluent-ffmpeg");
 const { config } = require("../config/env");
 const { ensureVideoStructure, updateState, loadState } = require("./stateService");
 const { ttsWithOpenAI } = require("./openaiService");
+const { sendWorkflowStatus } = require("./telegramService");
 const { logger } = require("../utils/logger");
+const { probeMedia } = require("../utils/mediaUtils");
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
+const MULTIVOZES_TEST_VOICES = [
+  "pt-BR-FranciscaNeural",
+  "pt-BR-AntonioNeural",
+  "pt-BR-ThalitaNeural",
+  "pt-BR-ThalitaMultilingualNeural",
+];
+
+const hasMultivozes = () => Boolean(config.MULTIVOZES_BR_ENGINE && config.MULTIVOZES_BR_BASE_URL);
 const hasElevenLabs = () => Boolean(config.ELEVENLABS_API_KEY);
+
+const getMultivozesBaseUrl = () => config.MULTIVOZES_BR_BASE_URL.replace(/\/+$/, "");
+
+const pickRandomMultivozesVoice = () =>
+  MULTIVOZES_TEST_VOICES[Math.floor(Math.random() * MULTIVOZES_TEST_VOICES.length)];
 
 const estimateDurationFromText = (text = "") => {
   const words = text.trim().split(/\s+/).filter(Boolean).length;
   return Math.max(30, Math.round(words / 2.4));
 };
 
-const getAudioDuration = async (audioPath, fallbackText = "") =>
-  new Promise((resolve) => {
-    ffmpeg.ffprobe(audioPath, (error, metadata) => {
-      if (!error) {
-        const duration = Number(metadata?.format?.duration || 0);
-        if (duration > 0) return resolve(duration);
-      }
-      resolve(estimateDurationFromText(fallbackText));
-    });
-  });
+const getAudioDuration = async (audioPath, fallbackText = "") => {
+  const mediaInfo = await probeMedia(audioPath).catch(() => null);
+  const duration = Number(mediaInfo?.duration || 0);
+  if (duration > 0) {
+    return duration;
+  }
+
+  return estimateDurationFromText(fallbackText);
+};
 
 const createMockAudio = async (audioPath, seconds = 95) => {
   const sampleRate = 44100;
@@ -79,7 +93,36 @@ const ttsWithElevenLabs = async ({ text }) => {
   return Buffer.from(response.data);
 };
 
-const generateAudio = async ({ videoId, mockMode = false, provider = "elevenlabs" }) => {
+const ttsWithMultivozes = async ({ text, voice }) => {
+  if (!hasMultivozes()) return null;
+
+  const selectedVoice = voice || pickRandomMultivozesVoice();
+  const response = await axios.post(
+    `${getMultivozesBaseUrl()}/audio/speech`,
+    {
+      model: "tts-1",
+      input: text,
+      voice: selectedVoice,
+      response_format: "mp3",
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${config.MULTIVOZES_BR_ENGINE}`,
+        "Content-Type": "application/json",
+        Accept: "audio/mpeg",
+      },
+      responseType: "arraybuffer",
+      timeout: 120000,
+    }
+  );
+
+  return {
+    buffer: Buffer.from(response.data),
+    voice: selectedVoice,
+  };
+};
+
+const generateAudio = async ({ videoId, mockMode = false, provider = "multivozes" }) => {
   const state = await loadState(videoId);
   if (!state.script_text) {
     throw new Error("script_text não encontrado. Gere o roteiro antes do áudio.");
@@ -90,11 +133,26 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "elevenlabs
 
   let audioBuffer = null;
   let usedProvider = "mock";
+  let usedVoice = "";
 
-  if (!mockMode && provider === "elevenlabs") {
+  if (!mockMode && provider === "multivozes") {
+    try {
+      const multivozesResponse = await ttsWithMultivozes({ text });
+      audioBuffer = multivozesResponse?.buffer || null;
+      usedVoice = multivozesResponse?.voice || "";
+      if (audioBuffer) usedProvider = "multivozes";
+    } catch (error) {
+      logger.warn("Multivozes falhou, tentando OpenAI TTS fallback", { message: error.message });
+    }
+  }
+
+  if (!mockMode && provider === "elevenlabs" && !audioBuffer) {
     try {
       audioBuffer = await ttsWithElevenLabs({ text });
-      usedProvider = "elevenlabs";
+      if (audioBuffer) {
+        usedProvider = "elevenlabs";
+        usedVoice = config.ELEVENLABS_VOICE_ID;
+      }
     } catch (error) {
       logger.warn("ElevenLabs falhou, tentando OpenAI TTS fallback", { message: error.message });
     }
@@ -102,7 +160,10 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "elevenlabs
 
   if (!audioBuffer && !mockMode) {
     audioBuffer = await ttsWithOpenAI({ text });
-    if (audioBuffer) usedProvider = "openai_tts_fallback";
+    if (audioBuffer) {
+      usedProvider = provider === "openai" ? "openai" : "openai_tts_fallback";
+      usedVoice = "alloy";
+    }
   }
 
   if (audioBuffer) {
@@ -127,13 +188,42 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "elevenlabs
     }
   );
 
+  await sendWorkflowStatus({
+    videoId,
+    title: "Áudio gerado",
+    icon: "🎙️",
+    lines: [`Provider usado: ${usedProvider}${usedVoice ? ` (${usedVoice})` : ""}.`],
+  }).catch(() => null);
+
   return {
     video_id: videoId,
     audio_path: nextState.audio_path,
     duration_seconds: nextState.duration_seconds,
     provider: usedProvider,
+    voice: usedVoice || null,
     state_path: nextState.state_path,
   };
+};
+
+const basicMultivozesHealthcheck = async () => {
+  if (!hasMultivozes()) {
+    return { configured: false, ok: false, message: "MULTIVOZES_BR_ENGINE ausente" };
+  }
+
+  try {
+    const response = await axios.get(`${getMultivozesBaseUrl()}/models`, {
+      headers: { Authorization: `Bearer ${config.MULTIVOZES_BR_ENGINE}` },
+      timeout: 20000,
+    });
+
+    return {
+      configured: true,
+      ok: true,
+      message: `Modelos encontrados: ${response.data?.data?.length || 0}`,
+    };
+  } catch (error) {
+    return { configured: true, ok: false, message: error.message };
+  }
 };
 
 const basicElevenLabsHealthcheck = async () => {
@@ -159,5 +249,7 @@ const basicElevenLabsHealthcheck = async () => {
 
 module.exports = {
   generateAudio,
+  basicMultivozesHealthcheck,
   basicElevenLabsHealthcheck,
+  pickRandomMultivozesVoice,
 };
