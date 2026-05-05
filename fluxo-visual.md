@@ -60,8 +60,8 @@ flowchart TD
     B --> C[Telegram pede escolha 1 2 ou 3]:::wait
     C --> D[Webhook idea-approval]:::proc
     D --> E[W1 aprova ideia, gera roteiro e visual_plan]:::proc
-    E --> F[W2 gera audio, captions, ate 3 videos HD por cena e analisa frames por janela]:::proc
-    F --> G[W3 escolhe a janela semantica por trecho do roteiro, corta subclips e gera metadata]:::proc
+    E --> F[W2 gera audio, roda audio intelligence obrigatoria, captions, planeja queries por visual_intent, corta skyline generico em tema gastronomico, baixa ate 3 videos HD por cena e analisa frames por janela]:::proc
+    F --> G[W3 escolhe a janela semantica por trecho real do audio, usa score por visual_intent, valida quotas gastronomicas so quando o tema e dominante e corrige trechos ruins]:::proc
     G --> H[Backend publica render em Drive e registra no Sheets quando configurado]:::proc
     H --> I[Telegram pede SIM ou NAO com link de revisao]:::wait
     I --> J[Webhook final-approval]:::proc
@@ -76,7 +76,7 @@ flowchart TD
 | Bloco | Responsabilidade |
 | --- | --- |
 | n8n | Orquestra a ordem do processo e os webhooks |
-| Backend local | Executa ideias, roteiro com visual_plan, audio, captions, busca video-first com ate 3 assets por cena, analise visual por janela, planner narrativo do render, refresh seletivo de cenas fracas na revisao, metadata, upload e regeneracao do draft |
+| Backend local | Executa ideias, roteiro com visual_plan, planner narrativo por blocos, visual_intent por cena, audio, audio intelligence, captions, busca video-first com ate 3 assets por cena, query planner tematico, rejeicao previa de assets genericos, analise visual por janela, score composto da timeline, overlays, QA tecnico/semantico com quotas gastronomicas so quando o tema declarado ou dominante e gastronomico, fix sync seletivo, metadata, upload e regeneracao do draft |
 | Telegram | Recebe aprovacao da ideia, aprovacao final e status intermediarios |
 | Google Drive / Sheets | Hospeda a revisao online e registra o link do render |
 | Estado local | Guarda status, visual_plan, render_timeline, arquivos e ids de mensagens |
@@ -106,7 +106,7 @@ Upload concluido
 Revisao solicitada -> nova versao do draft
 ```
 
-O render final nao queima legendas. O W2 gera SRT/VTT sidecar, salva ate 3 videos HD por cena, extrai frames representativos por janela e usa OpenAI vision para descrever o que cada trecho do video realmente mostra quando essa chave esta configurada. O W3 recorta subclips de 3 a 10 segundos, separa a janela de exibicao da janela semantica do roteiro, ancora a entrada real de cada cena no trecho certo do script, cria blocos neutros de intro/outro quando o texto fica generico demais para uma cena tematica, escolhe a janela do asset de cada corte com score semantico usando query, metadados do provider e analysis_windows do video, grava clip_script_excerpt, asset_window_summary e semantic_match_score no render_timeline para revalidacao, usa xfade, fallback concat e imagem local apenas quando nenhum video externo valido existe. Se a resposta final for NAO, o backend usa esse render_timeline para localizar cenas com baixo score ou reuso pesado, rebusca so essas cenas e preserva o restante do draft antes da nova versao.
+O render final nao queima legendas. O W2 gera SRT/VTT sidecar, salva ate 3 videos HD por cena, usa visual_intent para montar queries mais especificas, rejeita skyline, paisagem e cidade generica quando a cena pede comida, extrai frames representativos por janela e usa OpenAI vision ou provider local para descrever o que cada trecho do video realmente mostra quando configurado. O W3 recorta subclips de 3 a 10 segundos, separa a janela de exibicao da janela semantica do roteiro, ancora a entrada real de cada cena no trecho certo do script, cria blocos neutros de intro/outro quando o texto fica generico demais para uma cena tematica, escolhe a janela do asset de cada corte com score semantico usando query, metadados do provider, visual_intent_match, required_visual_evidence e analysis_windows do video, grava clip_script_excerpt, asset_window_summary, semantic_match_score, visual_intent, detected_visual_categories e query_used no render_timeline para revalidacao, usa xfade, fallback concat e imagem local apenas quando nenhum video externo valido existe. As quotas gastronomicas do QA so entram quando o tema declarado do video ou a dominancia real das cenas e clipes e gastronomica; uma mencao isolada a comida em video geral de viagem nao ativa esse bloqueio. Se a resposta final for NAO, o backend usa esse render_timeline para localizar cenas com baixo score, mismatch tematico, excesso de cidade generica ou reuso pesado, rebusca so essas cenas e preserva o restante do draft antes da nova versao.
 
 ## Onde abrir primeiro
 
@@ -120,7 +120,9 @@ Review online: pipeline/src/services/reviewPublishingService.js
 Regeneracao de revisao: pipeline/src/services/reviewRevisionService.js
 Visual plan: pipeline/src/utils/visualPlan.js
 Busca de assets HD: pipeline/src/services/assetsService.js
+Visual intent e categorias proibidas: pipeline/src/services/visualIntentService.js
 Render timeline: pipeline/src/services/renderService.js
+QA tematico e fix sync: pipeline/src/services/syncValidator.js
 Providers de voz: pipeline/src/services/ttsService.js
 OpenAI: pipeline/src/services/openaiService.js
 ```

@@ -8,7 +8,7 @@ const { generateCaptions } = require("../services/captionsService");
 const { generateAssets } = require("../services/assetsService");
 const { renderVideo } = require("../services/renderService");
 const { analyzeAudio } = require("../services/audioIntelligence");
-const { validateRender } = require("../services/syncValidator");
+const { validateRender, fixRenderSync } = require("../services/syncValidator");
 const { generateMetadata } = require("../services/metadataService");
 const { uploadToYoutube } = require("../services/youtubeService");
 const { loadState, updateState, setStateError } = require("../services/stateService");
@@ -246,6 +246,20 @@ router.post("/videos/render/validate", async (req, res, next) => {
     res.json({ ok: true, ...result });
   } catch (error) {
     await setStateError(req.body?.video_id, error, "render_validation_failed").catch(() => null);
+    next(error);
+  }
+});
+
+router.post("/videos/render/fix-sync", async (req, res, next) => {
+  try {
+    const parsed = bodyWithVideoId.parse(req.body || {});
+    const result = await fixRenderSync({
+      videoId: parsed.video_id,
+      mockMode: withDefaultMock(parsed),
+    });
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    await setStateError(req.body?.video_id, error, "render_fix_sync_failed").catch(() => null);
     next(error);
   }
 });

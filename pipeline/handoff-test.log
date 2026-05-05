@@ -1,0 +1,1258 @@
+yarn run v1.22.22
+warning ..\..\..\..\..\..\package.json: No license field
+$ node tests/handoff-test.js
+Γùç injected env (31) from .env // tip: Γùê secrets for agents [www.dotenvx.com]
+[2026-05-04T15:18:39.896Z] [INFO] State saved for 25dee337-250e-4423-a0e6-333f59a59707 { step: 'initialized', status: 'initialized' }
+[2026-05-04T15:18:39.906Z] [INFO] State saved for 25dee337-250e-4423-a0e6-333f59a59707 { step: 'ideas_generated', status: 'ideas_generated' }
+[2026-05-04T15:18:40.064Z] [INFO] State saved for 25dee337-250e-4423-a0e6-333f59a59707 { step: 'ideas_generated', status: 'ideas_generated' }
+[2026-05-04T15:18:40.076Z] [INFO] State saved for 25dee337-250e-4423-a0e6-333f59a59707 { step: 'ideas_generated', status: 'ideas_generated' }
+[2026-05-04T15:18:40.080Z] [INFO] State saved for 25dee337-250e-4423-a0e6-333f59a59707 { step: 'idea_approved', status: 'idea_approved' }
+[2026-05-04T15:18:40.111Z] [INFO] State saved for 25dee337-250e-4423-a0e6-333f59a59707 { step: 'script_generated', status: 'script_generated' }
+[2026-05-04T15:18:40.227Z] [INFO] State saved for 25dee337-250e-4423-a0e6-333f59a59707 { step: 'script_generated', status: 'script_generated' }
+[2026-05-04T15:18:40.765Z] [INFO] State saved for 25dee337-250e-4423-a0e6-333f59a59707 { step: 'audio_generated', status: 'audio_generated' }
+[2026-05-04T15:18:40.867Z] [INFO] State saved for 25dee337-250e-4423-a0e6-333f59a59707 { step: 'audio_generated', status: 'audio_generated' }
+[2026-05-04T15:18:40.877Z] [INFO] State saved for 25dee337-250e-4423-a0e6-333f59a59707 { step: 'captions_generated', status: 'captions_generated' }
+[2026-05-04T15:18:40.963Z] [INFO] State saved for 25dee337-250e-4423-a0e6-333f59a59707 { step: 'captions_generated', status: 'captions_generated' }
+[2026-05-04T15:18:41.702Z] [INFO] State saved for 25dee337-250e-4423-a0e6-333f59a59707 { step: 'assets_searched', status: 'assets_searched' }
+[2026-05-04T15:18:41.784Z] [INFO] State saved for 25dee337-250e-4423-a0e6-333f59a59707 { step: 'assets_searched', status: 'assets_searched' }
+Γ£à Handoff test passou (W1ΓåÆW2 e W2ΓåÆW3)
+{
+  "video_id": "25dee337-250e-4423-a0e6-333f59a59707",
+  "handoffW2": {
+    "video_id": "25dee337-250e-4423-a0e6-333f59a59707",
+    "topic": "Cidades subestimadas da Europa que parecem filme",
+    "script_text": "# Cidades subestimadas da Europa que parecem filme\n\n## Intro Hook\nSe voc├¬ quer viajar melhor e gastar menos, este v├¡deo sobre Cidades subestimadas da Europa que parecem filme vai te poupar tempo e dinheiro.\n\n## 1. Abertura e contexto\n\nHoje voc├¬ vai descobrir por que Cidades subestimadas da Europa que parecem filme est├í chamando tanta aten├º├úo e como isso pode transformar sua pr├│xima viagem.\n\nTransi├º├úo: Vamos avan├ºar para o pr├│ximo ponto com foco pr├ítico.\n## 2. Panorama pr├ítico\n\nVamos analisar custos, melhor ├⌐poca, log├¡stica e riscos para voc├¬ planejar com confian├ºa.\n\nTransi├º├úo: Vamos avan├ºar para o pr├│ximo ponto com foco pr├ítico.\n## 3. Top pontos imperd├¡veis\n\nAgora o ranking que voc├¬ realmente quer ver: os lugares que entregam experi├¬ncia memor├ível sem estourar o or├ºamento.\n\nTransi├º├úo: Vamos avan├ºar para o pr├│ximo ponto com foco pr├ítico.\n## 4. Fechamento e CTA\n\nSe este guia te ajudou, salve para usar no planejamento e compartilhe com quem vai viajar com voc├¬.\n\nTransi├º├úo: Vamos avan├ºar para o pr├│ximo ponto com foco pr├ítico.\n\n## Encerramento\nObrigado por assistir. Comente qual destino voc├¬ quer ver no pr├│ximo v├¡deo.",
+    "state_path": "\\app\\pipeline\\output\\draft\\25dee337-250e-4423-a0e6-333f59a59707\\state.json"
+  },
+  "handoffW3": {
+    "video_id": "25dee337-250e-4423-a0e6-333f59a59707",
+    "topic": "Cidades subestimadas da Europa que parecem filme",
+    "state_path": "\\app\\pipeline\\output\\draft\\25dee337-250e-4423-a0e6-333f59a59707\\state.json",
+    "script_text": "# Cidades subestimadas da Europa que parecem filme\n\n## Intro Hook\nSe voc├¬ quer viajar melhor e gastar menos, este v├¡deo sobre Cidades subestimadas da Europa que parecem filme vai te poupar tempo e dinheiro.\n\n## 1. Abertura e contexto\n\nHoje voc├¬ vai descobrir por que Cidades subestimadas da Europa que parecem filme est├í chamando tanta aten├º├úo e como isso pode transformar sua pr├│xima viagem.\n\nTransi├º├úo: Vamos avan├ºar para o pr├│ximo ponto com foco pr├ítico.\n## 2. Panorama pr├ítico\n\nVamos analisar custos, melhor ├⌐poca, log├¡stica e riscos para voc├¬ planejar com confian├ºa.\n\nTransi├º├úo: Vamos avan├ºar para o pr├│ximo ponto com foco pr├ítico.\n## 3. Top pontos imperd├¡veis\n\nAgora o ranking que voc├¬ realmente quer ver: os lugares que entregam experi├¬ncia memor├ível sem estourar o or├ºamento.\n\nTransi├º├úo: Vamos avan├ºar para o pr├│ximo ponto com foco pr├ítico.\n## 4. Fechamento e CTA\n\nSe este guia te ajudou, salve para usar no planejamento e compartilhe com quem vai viajar com voc├¬.\n\nTransi├º├úo: Vamos avan├ºar para o pr├│ximo ponto com foco pr├ítico.\n\n## Encerramento\nObrigado por assistir. Comente qual destino voc├¬ quer ver no pr├│ximo v├¡deo.",
+    "audio_path": "\\app\\pipeline\\output\\draft\\25dee337-250e-4423-a0e6-333f59a59707\\audio\\narration.mp3",
+    "caption_path_srt": "\\app\\pipeline\\output\\draft\\25dee337-250e-4423-a0e6-333f59a59707\\captions\\subtitles.srt",
+    "assets_json": {
+      "visual_keywords": [
+        "cidades",
+        "europa",
+        "city skyline",
+        "aerial view",
+        "travel destination",
+        "travel map",
+        "public transport",
+        "budget travel",
+        "tourist attraction",
+        "landmark",
+        "cta",
+        "travel planning",
+        "sunset skyline",
+        "packing checklist"
+      ],
+      "search_queries": [
+        "Introducao cidades travel video",
+        "Introducao cidades europa",
+        "cidades europa city skyline",
+        "cidades subestimadas da europa que parecem filme Introducao establishing_shot",
+        "cidades europa aerial view",
+        "Cidades subestimadas da Europa que parecem filme cidades travel video",
+        "Cidades subestimadas da Europa que parecem filme cidades europa",
+        "cidades subestimadas da europa que parecem filme Cidades subestimadas da Europa que parecem filme cidades",
+        "Fechamento cta travel video",
+        "Fechamento cta cidades",
+        "cta cidades europa",
+        "cidades subestimadas da europa que parecem filme Fechamento closing_summary",
+        "Fechamento cidades travel video",
+        "Fechamento cidades europa"
+      ],
+      "items": [
+        {
+          "scene_index": 1,
+          "provider": "local_fallback",
+          "asset_type": "image",
+          "type": "image",
+          "query": "cidades europa city skyline aerial view travel destination",
+          "semantic_text": "Se voce quer viajar melhor e gastar menos, este video sobre Cidades subestimadas da Europa que parecem filme vai te poupar tempo e dinheiro.",
+          "source_url": "generated-local",
+          "local_path": "\\app\\pipeline\\output\\draft\\25dee337-250e-4423-a0e6-333f59a59707\\assets\\raw\\scene-01-fallback-1777907920976.png",
+          "resolution": {
+            "width": 1920,
+            "height": 1080,
+            "label": "Full HD"
+          },
+          "duration_estimate": 8,
+          "is_fallback": true,
+          "orientation": "horizontal",
+          "analysis_summary": "Se voce quer viajar melhor e gastar menos, este video sobre Cidades subestimadas da Europa que parecem filme vai te poupar tempo e dinheiro.",
+          "analysis_tags": [
+            "cidades",
+            "europa",
+            "city skyline",
+            "aerial view",
+            "travel destination",
+            "viajar",
+            "melhor",
+            "gastar",
+            "video",
+            "subestimadas"
+          ],
+          "analysis_windows": [
+            {
+              "window_index": 1,
+              "start_seconds": 2,
+              "end_seconds": 6,
+              "sample_time_seconds": 4,
+              "description": "Se voce quer viajar melhor e gastar menos, este video sobre Cidades subestimadas da Europa que parecem filme vai te poupar tempo e dinheiro.",
+              "summary": "Se voce quer viajar melhor e gastar menos, este video sobre Cidades subestimadas da Europa que parecem filme vai te poupar tempo e dinheiro.",
+              "tags": [
+                "cidades",
+                "europa",
+                "city skyline",
+                "aerial view",
+                "travel destination",
+                "viajar",
+                "melhor",
+                "gastar",
+                "video",
+                "subestimadas"
+              ],
+              "location": {
+                "city": "",
+                "country": "",
+                "confidence": 0
+              },
+              "landmarks": [],
+              "location_type": "",
+              "visual_features": {
+                "shot_type": "unknown",
+                "camera_motion": "unknown",
+                "dominant_colors": [],
+                "has_people": false,
+                "has_water": false,
+                "has_architecture": false
+              },
+              "quality": {
+                "sharpness": 0.7,
+                "stability": 0.7,
+                "brightness": 0.7,
+                "usable": true
+              },
+              "confidence": 0.35,
+              "method": "metadata_fallback"
+            },
+            {
+              "window_index": 2,
+              "start_seconds": 4,
+              "end_seconds": 8,
+              "sample_time_seconds": 6,
+              "description": "Se voce quer viajar melhor e gastar menos, este video sobre Cidades subestimadas da Europa que parecem filme vai te poupar tempo e dinheiro.",
+              "summary": "Se voce quer viajar melhor e gastar menos, este video sobre Cidades subestimadas da Europa que parecem filme vai te poupar tempo e dinheiro.",
+              "tags": [
+                "cidades",
+                "europa",
+                "city skyline",
+                "aerial view",
+                "travel destination",
+                "viajar",
+                "melhor",
+                "gastar",
+                "video",
+                "subestimadas"
+              ],
+              "location": {
+                "city": "",
+                "country": "",
+                "confidence": 0
+              },
+              "landmarks": [],
+              "location_type": "",
+              "visual_features": {
+                "shot_type": "unknown",
+                "camera_motion": "unknown",
+                "dominant_colors": [],
+                "has_people": false,
+                "has_water": false,
+                "has_architecture": false
+              },
+              "quality": {
+                "sharpness": 0.7,
+                "stability": 0.7,
+                "brightness": 0.7,
+                "usable": true
+              },
+              "confidence": 0.35,
+              "method": "metadata_fallback"
+            }
+          ],
+          "analysis_provider": "metadata_fallback",
+          "analysis_window_seconds": 4
+        },
+        {
+          "scene_index": 2,
+          "provider": "local_fallback",
+          "asset_type": "image",
+          "type": "image",
+          "query": "cidades europa aerial view travel map city skyline",
+          "semantic_text": "Hoje voce vai descobrir por que Cidades subestimadas da Europa que parecem filme esta chamando tanta atencao e como isso pode transformar sua proxima viagem.",
+          "source_url": "generated-local",
+          "local_path": "\\app\\pipeline\\output\\draft\\25dee337-250e-4423-a0e6-333f59a59707\\assets\\raw\\scene-02-fallback-1777907921062.png",
+          "resolution": {
+            "width": 1920,
+            "height": 1080,
+            "label": "Full HD"
+          },
+          "duration_estimate": 8,
+          "is_fallback": true,
+          "orientation": "horizontal",
+          "analysis_summary": "Hoje voce vai descobrir por que Cidades subestimadas da Europa que parecem filme esta chamando tanta atencao e como isso pode transformar sua proxima viagem.",
+          "analysis_tags": [
+            "cidades",
+            "europa",
+            "aerial view",
+            "travel map",
+            "city skyline",
+            "descobrir",
+            "subestimadas",
+            "parecem",
+            "filme",
+            "chamando"
+          ],
+          "analysis_windows": [
+            {
+              "window_index": 1,
+              "start_seconds": 2,
+              "end_seconds": 6,
+              "sample_time_seconds": 4,
+              "description": "Hoje voce vai descobrir por que Cidades subestimadas da Europa que parecem filme esta chamando tanta atencao e como isso pode transformar sua proxima viagem.",
+              "summary": "Hoje voce vai descobrir por que Cidades subestimadas da Europa que parecem filme esta chamando tanta atencao e como isso pode transformar sua proxima viagem.",
+              "tags": [
+                "cidades",
+                "europa",
+                "aerial view",
+                "travel map",
+                "city skyline",
+                "descobrir",
+                "subestimadas",
+                "parecem",
+                "filme",
+                "chamando"
+              ],
+              "location": {
+                "city": "",
+                "country": "",
+                "confidence": 0
+              },
+              "landmarks": [],
+              "location_type": "",
+              "visual_features": {
+                "shot_type": "unknown",
+                "camera_motion": "unknown",
+                "dominant_colors": [],
+                "has_people": false,
+                "has_water": false,
+                "has_architecture": false
+              },
+              "quality": {
+                "sharpness": 0.7,
+                "stability": 0.7,
+                "brightness": 0.7,
+                "usable": true
+              },
+              "confidence": 0.35,
+              "method": "metadata_fallback"
+            },
+            {
+              "window_index": 2,
+              "start_seconds": 4,
+              "end_seconds": 8,
+              "sample_time_seconds": 6,
+              "description": "Hoje voce vai descobrir por que Cidades subestimadas da Europa que parecem filme esta chamando tanta atencao e como isso pode transformar sua proxima viagem.",
+              "summary": "Hoje voce vai descobrir por que Cidades subestimadas da Europa que parecem filme esta chamando tanta atencao e como isso pode transformar sua proxima viagem.",
+              "tags": [
+                "cidades",
+                "europa",
+                "aerial view",
+                "travel map",
+                "city skyline",
+                "descobrir",
+                "subestimadas",
+                "parecem",
+                "filme",
+                "chamando"
+              ],
+              "location": {
+                "city": "",
+                "country": "",
+                "confidence": 0
+              },
+              "landmarks": [],
+              "location_type": "",
+              "visual_features": {
+                "shot_type": "unknown",
+                "camera_motion": "unknown",
+                "dominant_colors": [],
+                "has_people": false,
+                "has_water": false,
+                "has_architecture": false
+              },
+              "quality": {
+                "sharpness": 0.7,
+                "stability": 0.7,
+                "brightness": 0.7,
+                "usable": true
+              },
+              "confidence": 0.35,
+              "method": "metadata_fallback"
+            }
+          ],
+          "analysis_provider": "metadata_fallback",
+          "analysis_window_seconds": 4
+        },
+        {
+          "scene_index": 3,
+          "provider": "local_fallback",
+          "asset_type": "image",
+          "type": "image",
+          "query": "cidades europa aerial view travel map city skyline",
+          "semantic_text": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+          "source_url": "generated-local",
+          "local_path": "\\app\\pipeline\\output\\draft\\25dee337-250e-4423-a0e6-333f59a59707\\assets\\raw\\scene-03-fallback-1777907921150.png",
+          "resolution": {
+            "width": 1920,
+            "height": 1080,
+            "label": "Full HD"
+          },
+          "duration_estimate": 5.45,
+          "is_fallback": true,
+          "orientation": "horizontal",
+          "analysis_summary": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+          "analysis_tags": [
+            "cidades",
+            "europa",
+            "aerial view",
+            "travel map",
+            "city skyline",
+            "transicao",
+            "vamos",
+            "avancar",
+            "proximo",
+            "ponto"
+          ],
+          "analysis_windows": [
+            {
+              "window_index": 1,
+              "start_seconds": 1.45,
+              "end_seconds": 5.45,
+              "sample_time_seconds": 3.45,
+              "description": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+              "summary": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+              "tags": [
+                "cidades",
+                "europa",
+                "aerial view",
+                "travel map",
+                "city skyline",
+                "transicao",
+                "vamos",
+                "avancar",
+                "proximo",
+                "ponto"
+              ],
+              "location": {
+                "city": "",
+                "country": "",
+                "confidence": 0
+              },
+              "landmarks": [],
+              "location_type": "",
+              "visual_features": {
+                "shot_type": "unknown",
+                "camera_motion": "unknown",
+                "dominant_colors": [],
+                "has_people": false,
+                "has_water": false,
+                "has_architecture": false
+              },
+              "quality": {
+                "sharpness": 0.7,
+                "stability": 0.7,
+                "brightness": 0.7,
+                "usable": true
+              },
+              "confidence": 0.35,
+              "method": "metadata_fallback"
+            }
+          ],
+          "analysis_provider": "metadata_fallback",
+          "analysis_window_seconds": 4
+        },
+        {
+          "scene_index": 4,
+          "provider": "local_fallback",
+          "asset_type": "image",
+          "type": "image",
+          "query": "cidades europa city skyline public transport budget travel",
+          "semantic_text": "Vamos analisar custos, melhor epoca, logistica e riscos para voce planejar com confianca.",
+          "source_url": "generated-local",
+          "local_path": "\\app\\pipeline\\output\\draft\\25dee337-250e-4423-a0e6-333f59a59707\\assets\\raw\\scene-04-fallback-1777907921267.png",
+          "resolution": {
+            "width": 1920,
+            "height": 1080,
+            "label": "Full HD"
+          },
+          "duration_estimate": 7.09,
+          "is_fallback": true,
+          "orientation": "horizontal",
+          "analysis_summary": "Vamos analisar custos, melhor epoca, logistica e riscos para voce planejar com confianca.",
+          "analysis_tags": [
+            "cidades",
+            "europa",
+            "city skyline",
+            "public transport",
+            "budget travel",
+            "vamos",
+            "analisar",
+            "custos",
+            "melhor",
+            "epoca"
+          ],
+          "analysis_windows": [
+            {
+              "window_index": 1,
+              "start_seconds": 2,
+              "end_seconds": 6,
+              "sample_time_seconds": 4,
+              "description": "Vamos analisar custos, melhor epoca, logistica e riscos para voce planejar com confianca.",
+              "summary": "Vamos analisar custos, melhor epoca, logistica e riscos para voce planejar com confianca.",
+              "tags": [
+                "cidades",
+                "europa",
+                "city skyline",
+                "public transport",
+                "budget travel",
+                "vamos",
+                "analisar",
+                "custos",
+                "melhor",
+                "epoca"
+              ],
+              "location": {
+                "city": "",
+                "country": "",
+                "confidence": 0
+              },
+              "landmarks": [],
+              "location_type": "",
+              "visual_features": {
+                "shot_type": "unknown",
+                "camera_motion": "unknown",
+                "dominant_colors": [],
+                "has_people": false,
+                "has_water": false,
+                "has_architecture": false
+              },
+              "quality": {
+                "sharpness": 0.7,
+                "stability": 0.7,
+                "brightness": 0.7,
+                "usable": true
+              },
+              "confidence": 0.35,
+              "method": "metadata_fallback"
+            },
+            {
+              "window_index": 2,
+              "start_seconds": 3.09,
+              "end_seconds": 7.09,
+              "sample_time_seconds": 5.09,
+              "description": "Vamos analisar custos, melhor epoca, logistica e riscos para voce planejar com confianca.",
+              "summary": "Vamos analisar custos, melhor epoca, logistica e riscos para voce planejar com confianca.",
+              "tags": [
+                "cidades",
+                "europa",
+                "city skyline",
+                "public transport",
+                "budget travel",
+                "vamos",
+                "analisar",
+                "custos",
+                "melhor",
+                "epoca"
+              ],
+              "location": {
+                "city": "",
+                "country": "",
+                "confidence": 0
+              },
+              "landmarks": [],
+              "location_type": "",
+              "visual_features": {
+                "shot_type": "unknown",
+                "camera_motion": "unknown",
+                "dominant_colors": [],
+                "has_people": false,
+                "has_water": false,
+                "has_architecture": false
+              },
+              "quality": {
+                "sharpness": 0.7,
+                "stability": 0.7,
+                "brightness": 0.7,
+                "usable": true
+              },
+              "confidence": 0.35,
+              "method": "metadata_fallback"
+            }
+          ],
+          "analysis_provider": "metadata_fallback",
+          "analysis_window_seconds": 4
+        },
+        {
+          "scene_index": 5,
+          "provider": "local_fallback",
+          "asset_type": "image",
+          "type": "image",
+          "query": "cidades europa city skyline public transport budget travel",
+          "semantic_text": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+          "source_url": "generated-local",
+          "local_path": "\\app\\pipeline\\output\\draft\\25dee337-250e-4423-a0e6-333f59a59707\\assets\\raw\\scene-05-fallback-1777907921337.png",
+          "resolution": {
+            "width": 1920,
+            "height": 1080,
+            "label": "Full HD"
+          },
+          "duration_estimate": 5.45,
+          "is_fallback": true,
+          "orientation": "horizontal",
+          "analysis_summary": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+          "analysis_tags": [
+            "cidades",
+            "europa",
+            "city skyline",
+            "public transport",
+            "budget travel",
+            "transicao",
+            "vamos",
+            "avancar",
+            "proximo",
+            "ponto"
+          ],
+          "analysis_windows": [
+            {
+              "window_index": 1,
+              "start_seconds": 1.45,
+              "end_seconds": 5.45,
+              "sample_time_seconds": 3.45,
+              "description": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+              "summary": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+              "tags": [
+                "cidades",
+                "europa",
+                "city skyline",
+                "public transport",
+                "budget travel",
+                "transicao",
+                "vamos",
+                "avancar",
+                "proximo",
+                "ponto"
+              ],
+              "location": {
+                "city": "",
+                "country": "",
+                "confidence": 0
+              },
+              "landmarks": [],
+              "location_type": "",
+              "visual_features": {
+                "shot_type": "unknown",
+                "camera_motion": "unknown",
+                "dominant_colors": [],
+                "has_people": false,
+                "has_water": false,
+                "has_architecture": false
+              },
+              "quality": {
+                "sharpness": 0.7,
+                "stability": 0.7,
+                "brightness": 0.7,
+                "usable": true
+              },
+              "confidence": 0.35,
+              "method": "metadata_fallback"
+            }
+          ],
+          "analysis_provider": "metadata_fallback",
+          "analysis_window_seconds": 4
+        },
+        {
+          "scene_index": 6,
+          "provider": "local_fallback",
+          "asset_type": "image",
+          "type": "image",
+          "query": "cidades europa city skyline budget travel tourist attraction",
+          "semantic_text": "Agora o ranking que voce realmente quer ver: os lugares que entregam experiencia memoravel sem estourar o orcamento.",
+          "source_url": "generated-local",
+          "local_path": "\\app\\pipeline\\output\\draft\\25dee337-250e-4423-a0e6-333f59a59707\\assets\\raw\\scene-06-fallback-1777907921410.png",
+          "resolution": {
+            "width": 1920,
+            "height": 1080,
+            "label": "Full HD"
+          },
+          "duration_estimate": 8,
+          "is_fallback": true,
+          "orientation": "horizontal",
+          "analysis_summary": "Agora o ranking que voce realmente quer ver: os lugares que entregam experiencia memoravel sem estourar o orcamento.",
+          "analysis_tags": [
+            "cidades",
+            "europa",
+            "city skyline",
+            "budget travel",
+            "tourist attraction",
+            "agora",
+            "ranking",
+            "realmente",
+            "lugares",
+            "entregam"
+          ],
+          "analysis_windows": [
+            {
+              "window_index": 1,
+              "start_seconds": 2,
+              "end_seconds": 6,
+              "sample_time_seconds": 4,
+              "description": "Agora o ranking que voce realmente quer ver: os lugares que entregam experiencia memoravel sem estourar o orcamento.",
+              "summary": "Agora o ranking que voce realmente quer ver: os lugares que entregam experiencia memoravel sem estourar o orcamento.",
+              "tags": [
+                "cidades",
+                "europa",
+                "city skyline",
+                "budget travel",
+                "tourist attraction",
+                "agora",
+                "ranking",
+                "realmente",
+                "lugares",
+                "entregam"
+              ],
+              "location": {
+                "city": "",
+                "country": "",
+                "confidence": 0
+              },
+              "landmarks": [],
+              "location_type": "",
+              "visual_features": {
+                "shot_type": "unknown",
+                "camera_motion": "unknown",
+                "dominant_colors": [],
+                "has_people": false,
+                "has_water": false,
+                "has_architecture": false
+              },
+              "quality": {
+                "sharpness": 0.7,
+                "stability": 0.7,
+                "brightness": 0.7,
+                "usable": true
+              },
+              "confidence": 0.35,
+              "method": "metadata_fallback"
+            },
+            {
+              "window_index": 2,
+              "start_seconds": 4,
+              "end_seconds": 8,
+              "sample_time_seconds": 6,
+              "description": "Agora o ranking que voce realmente quer ver: os lugares que entregam experiencia memoravel sem estourar o orcamento.",
+              "summary": "Agora o ranking que voce realmente quer ver: os lugares que entregam experiencia memoravel sem estourar o orcamento.",
+              "tags": [
+                "cidades",
+                "europa",
+                "city skyline",
+                "budget travel",
+                "tourist attraction",
+                "agora",
+                "ranking",
+                "realmente",
+                "lugares",
+                "entregam"
+              ],
+              "location": {
+                "city": "",
+                "country": "",
+                "confidence": 0
+              },
+              "landmarks": [],
+              "location_type": "",
+              "visual_features": {
+                "shot_type": "unknown",
+                "camera_motion": "unknown",
+                "dominant_colors": [],
+                "has_people": false,
+                "has_water": false,
+                "has_architecture": false
+              },
+              "quality": {
+                "sharpness": 0.7,
+                "stability": 0.7,
+                "brightness": 0.7,
+                "usable": true
+              },
+              "confidence": 0.35,
+              "method": "metadata_fallback"
+            }
+          ],
+          "analysis_provider": "metadata_fallback",
+          "analysis_window_seconds": 4
+        },
+        {
+          "scene_index": 7,
+          "provider": "local_fallback",
+          "asset_type": "image",
+          "type": "image",
+          "query": "cidades europa city skyline tourist attraction landmark",
+          "semantic_text": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+          "source_url": "generated-local",
+          "local_path": "\\app\\pipeline\\output\\draft\\25dee337-250e-4423-a0e6-333f59a59707\\assets\\raw\\scene-07-fallback-1777907921471.png",
+          "resolution": {
+            "width": 1920,
+            "height": 1080,
+            "label": "Full HD"
+          },
+          "duration_estimate": 5.45,
+          "is_fallback": true,
+          "orientation": "horizontal",
+          "analysis_summary": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+          "analysis_tags": [
+            "cidades",
+            "europa",
+            "city skyline",
+            "tourist attraction",
+            "landmark",
+            "transicao",
+            "vamos",
+            "avancar",
+            "proximo",
+            "ponto"
+          ],
+          "analysis_windows": [
+            {
+              "window_index": 1,
+              "start_seconds": 1.45,
+              "end_seconds": 5.45,
+              "sample_time_seconds": 3.45,
+              "description": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+              "summary": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+              "tags": [
+                "cidades",
+                "europa",
+                "city skyline",
+                "tourist attraction",
+                "landmark",
+                "transicao",
+                "vamos",
+                "avancar",
+                "proximo",
+                "ponto"
+              ],
+              "location": {
+                "city": "",
+                "country": "",
+                "confidence": 0
+              },
+              "landmarks": [],
+              "location_type": "",
+              "visual_features": {
+                "shot_type": "unknown",
+                "camera_motion": "unknown",
+                "dominant_colors": [],
+                "has_people": false,
+                "has_water": false,
+                "has_architecture": false
+              },
+              "quality": {
+                "sharpness": 0.7,
+                "stability": 0.7,
+                "brightness": 0.7,
+                "usable": true
+              },
+              "confidence": 0.35,
+              "method": "metadata_fallback"
+            }
+          ],
+          "analysis_provider": "metadata_fallback",
+          "analysis_window_seconds": 4
+        },
+        {
+          "scene_index": 8,
+          "provider": "local_fallback",
+          "asset_type": "image",
+          "type": "image",
+          "query": "cta cidades europa city skyline travel planning",
+          "semantic_text": "Se este guia te ajudou, salve para usar no planejamento e compartilhe com quem vai viajar com voce.",
+          "source_url": "generated-local",
+          "local_path": "\\app\\pipeline\\output\\draft\\25dee337-250e-4423-a0e6-333f59a59707\\assets\\raw\\scene-08-fallback-1777907921528.png",
+          "resolution": {
+            "width": 1920,
+            "height": 1080,
+            "label": "Full HD"
+          },
+          "duration_estimate": 8,
+          "is_fallback": true,
+          "orientation": "horizontal",
+          "analysis_summary": "Se este guia te ajudou, salve para usar no planejamento e compartilhe com quem vai viajar com voce.",
+          "analysis_tags": [
+            "cta",
+            "cidades",
+            "europa",
+            "city skyline",
+            "travel planning",
+            "ajudou",
+            "salve",
+            "planejamento",
+            "compartilhe",
+            "viajar"
+          ],
+          "analysis_windows": [
+            {
+              "window_index": 1,
+              "start_seconds": 2,
+              "end_seconds": 6,
+              "sample_time_seconds": 4,
+              "description": "Se este guia te ajudou, salve para usar no planejamento e compartilhe com quem vai viajar com voce.",
+              "summary": "Se este guia te ajudou, salve para usar no planejamento e compartilhe com quem vai viajar com voce.",
+              "tags": [
+                "cta",
+                "cidades",
+                "europa",
+                "city skyline",
+                "travel planning",
+                "ajudou",
+                "salve",
+                "planejamento",
+                "compartilhe",
+                "viajar"
+              ],
+              "location": {
+                "city": "",
+                "country": "",
+                "confidence": 0
+              },
+              "landmarks": [],
+              "location_type": "",
+              "visual_features": {
+                "shot_type": "unknown",
+                "camera_motion": "unknown",
+                "dominant_colors": [],
+                "has_people": false,
+                "has_water": false,
+                "has_architecture": false
+              },
+              "quality": {
+                "sharpness": 0.7,
+                "stability": 0.7,
+                "brightness": 0.7,
+                "usable": true
+              },
+              "confidence": 0.35,
+              "method": "metadata_fallback"
+            },
+            {
+              "window_index": 2,
+              "start_seconds": 4,
+              "end_seconds": 8,
+              "sample_time_seconds": 6,
+              "description": "Se este guia te ajudou, salve para usar no planejamento e compartilhe com quem vai viajar com voce.",
+              "summary": "Se este guia te ajudou, salve para usar no planejamento e compartilhe com quem vai viajar com voce.",
+              "tags": [
+                "cta",
+                "cidades",
+                "europa",
+                "city skyline",
+                "travel planning",
+                "ajudou",
+                "salve",
+                "planejamento",
+                "compartilhe",
+                "viajar"
+              ],
+              "location": {
+                "city": "",
+                "country": "",
+                "confidence": 0
+              },
+              "landmarks": [],
+              "location_type": "",
+              "visual_features": {
+                "shot_type": "unknown",
+                "camera_motion": "unknown",
+                "dominant_colors": [],
+                "has_people": false,
+                "has_water": false,
+                "has_architecture": false
+              },
+              "quality": {
+                "sharpness": 0.7,
+                "stability": 0.7,
+                "brightness": 0.7,
+                "usable": true
+              },
+              "confidence": 0.35,
+              "method": "metadata_fallback"
+            }
+          ],
+          "analysis_provider": "metadata_fallback",
+          "analysis_window_seconds": 4
+        },
+        {
+          "scene_index": 9,
+          "provider": "local_fallback",
+          "asset_type": "image",
+          "type": "image",
+          "query": "cta cidades europa city skyline sunset skyline",
+          "semantic_text": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+          "source_url": "generated-local",
+          "local_path": "\\app\\pipeline\\output\\draft\\25dee337-250e-4423-a0e6-333f59a59707\\assets\\raw\\scene-09-fallback-1777907921583.png",
+          "resolution": {
+            "width": 1920,
+            "height": 1080,
+            "label": "Full HD"
+          },
+          "duration_estimate": 5.45,
+          "is_fallback": true,
+          "orientation": "horizontal",
+          "analysis_summary": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+          "analysis_tags": [
+            "cta",
+            "cidades",
+            "europa",
+            "city skyline",
+            "sunset skyline",
+            "transicao",
+            "vamos",
+            "avancar",
+            "proximo",
+            "ponto"
+          ],
+          "analysis_windows": [
+            {
+              "window_index": 1,
+              "start_seconds": 1.45,
+              "end_seconds": 5.45,
+              "sample_time_seconds": 3.45,
+              "description": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+              "summary": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+              "tags": [
+                "cta",
+                "cidades",
+                "europa",
+                "city skyline",
+                "sunset skyline",
+                "transicao",
+                "vamos",
+                "avancar",
+                "proximo",
+                "ponto"
+              ],
+              "location": {
+                "city": "",
+                "country": "",
+                "confidence": 0
+              },
+              "landmarks": [],
+              "location_type": "",
+              "visual_features": {
+                "shot_type": "unknown",
+                "camera_motion": "unknown",
+                "dominant_colors": [],
+                "has_people": false,
+                "has_water": false,
+                "has_architecture": false
+              },
+              "quality": {
+                "sharpness": 0.7,
+                "stability": 0.7,
+                "brightness": 0.7,
+                "usable": true
+              },
+              "confidence": 0.35,
+              "method": "metadata_fallback"
+            }
+          ],
+          "analysis_provider": "metadata_fallback",
+          "analysis_window_seconds": 4
+        },
+        {
+          "scene_index": 10,
+          "provider": "local_fallback",
+          "asset_type": "image",
+          "type": "image",
+          "query": "cidades europa city skyline sunset skyline packing checklist",
+          "semantic_text": "Obrigado por assistir. Comente qual destino voce quer ver no proximo video.",
+          "source_url": "generated-local",
+          "local_path": "\\app\\pipeline\\output\\draft\\25dee337-250e-4423-a0e6-333f59a59707\\assets\\raw\\scene-10-fallback-1777907921640.png",
+          "resolution": {
+            "width": 1920,
+            "height": 1080,
+            "label": "Full HD"
+          },
+          "duration_estimate": 6.54,
+          "is_fallback": true,
+          "orientation": "horizontal",
+          "analysis_summary": "Obrigado por assistir. Comente qual destino voce quer ver no proximo video.",
+          "analysis_tags": [
+            "cidades",
+            "europa",
+            "city skyline",
+            "sunset skyline",
+            "packing checklist",
+            "obrigado",
+            "assistir",
+            "comente",
+            "destino",
+            "proximo"
+          ],
+          "analysis_windows": [
+            {
+              "window_index": 1,
+              "start_seconds": 2,
+              "end_seconds": 6,
+              "sample_time_seconds": 4,
+              "description": "Obrigado por assistir. Comente qual destino voce quer ver no proximo video.",
+              "summary": "Obrigado por assistir. Comente qual destino voce quer ver no proximo video.",
+              "tags": [
+                "cidades",
+                "europa",
+                "city skyline",
+                "sunset skyline",
+                "packing checklist",
+                "obrigado",
+                "assistir",
+                "comente",
+                "destino",
+                "proximo"
+              ],
+              "location": {
+                "city": "",
+                "country": "",
+                "confidence": 0
+              },
+              "landmarks": [],
+              "location_type": "",
+              "visual_features": {
+                "shot_type": "unknown",
+                "camera_motion": "unknown",
+                "dominant_colors": [],
+                "has_people": false,
+                "has_water": false,
+                "has_architecture": false
+              },
+              "quality": {
+                "sharpness": 0.7,
+                "stability": 0.7,
+                "brightness": 0.7,
+                "usable": true
+              },
+              "confidence": 0.35,
+              "method": "metadata_fallback"
+            },
+            {
+              "window_index": 2,
+              "start_seconds": 2.54,
+              "end_seconds": 6.54,
+              "sample_time_seconds": 4.54,
+              "description": "Obrigado por assistir. Comente qual destino voce quer ver no proximo video.",
+              "summary": "Obrigado por assistir. Comente qual destino voce quer ver no proximo video.",
+              "tags": [
+                "cidades",
+                "europa",
+                "city skyline",
+                "sunset skyline",
+                "packing checklist",
+                "obrigado",
+                "assistir",
+                "comente",
+                "destino",
+                "proximo"
+              ],
+              "location": {
+                "city": "",
+                "country": "",
+                "confidence": 0
+              },
+              "landmarks": [],
+              "location_type": "",
+              "visual_features": {
+                "shot_type": "unknown",
+                "camera_motion": "unknown",
+                "dominant_colors": [],
+                "has_people": false,
+                "has_water": false,
+                "has_architecture": false
+              },
+              "quality": {
+                "sharpness": 0.7,
+                "stability": 0.7,
+                "brightness": 0.7,
+                "usable": true
+              },
+              "confidence": 0.35,
+              "method": "metadata_fallback"
+            }
+          ],
+          "analysis_provider": "metadata_fallback",
+          "analysis_window_seconds": 4
+        }
+      ],
+      "fallback_plan": [
+        "Cena 1: fallback local usado para Intro Hook.",
+        "Cena 2: fallback local usado para 1. Abertura e contexto.",
+        "Cena 3: fallback local usado para 1. Abertura e contexto.",
+        "Cena 4: fallback local usado para 2. Panorama pr├ítico 1.",
+        "Cena 5: fallback local usado para 2. Panorama pr├ítico 2.",
+        "Cena 6: fallback local usado para 3. Top pontos imperd├¡veis 1.",
+        "Cena 7: fallback local usado para 3. Top pontos imperd├¡veis 2.",
+        "Cena 8: fallback local usado para 4. Fechamento e CTA.",
+        "Cena 9: fallback local usado para 4. Fechamento e CTA.",
+        "Cena 10: fallback local usado para Encerramento."
+      ],
+      "missing_assets": true,
+      "last_refresh_scene_indexes": [],
+      "last_refresh_reason": "full_refresh",
+      "last_refreshed_at": "2026-05-04T15:18:41.698Z",
+      "scene_queries": [
+        {
+          "scene_index": 1,
+          "block_id": "introducao",
+          "block_label": "Introducao",
+          "queries": [
+            "Introducao cidades travel video",
+            "Introducao cidades europa",
+            "cidades europa city skyline",
+            "cidades subestimadas da europa que parecem filme Introducao establishing_shot"
+          ],
+          "negative_keywords": [],
+          "search_reason": "block + entity keywords + scene visual intent"
+        },
+        {
+          "scene_index": 2,
+          "block_id": "introducao",
+          "block_label": "Introducao",
+          "queries": [
+            "Introducao cidades travel video",
+            "Introducao cidades europa",
+            "cidades europa aerial view",
+            "cidades subestimadas da europa que parecem filme Introducao establishing_shot"
+          ],
+          "negative_keywords": [],
+          "search_reason": "block + entity keywords + scene visual intent"
+        },
+        {
+          "scene_index": 3,
+          "block_id": "introducao",
+          "block_label": "Introducao",
+          "queries": [
+            "Introducao cidades travel video",
+            "Introducao cidades europa",
+            "cidades europa aerial view",
+            "cidades subestimadas da europa que parecem filme Introducao establishing_shot"
+          ],
+          "negative_keywords": [],
+          "search_reason": "block + entity keywords + scene visual intent"
+        },
+        {
+          "scene_index": 4,
+          "block_id": "cidades-subestimadas-da-europa-que-parecem-filme",
+          "block_label": "Cidades subestimadas da Europa que parecem filme",
+          "queries": [
+            "Cidades subestimadas da Europa que parecem filme cidades travel video",
+            "Cidades subestimadas da Europa que parecem filme cidades europa",
+            "cidades europa city skyline",
+            "cidades subestimadas da europa que parecem filme Cidades subestimadas da Europa que parecem filme cidades"
+          ],
+          "negative_keywords": [],
+          "search_reason": "block + entity keywords + scene visual intent"
+        },
+        {
+          "scene_index": 5,
+          "block_id": "cidades-subestimadas-da-europa-que-parecem-filme",
+          "block_label": "Cidades subestimadas da Europa que parecem filme",
+          "queries": [
+            "Cidades subestimadas da Europa que parecem filme cidades travel video",
+            "Cidades subestimadas da Europa que parecem filme cidades europa",
+            "cidades europa city skyline",
+            "cidades subestimadas da europa que parecem filme Cidades subestimadas da Europa que parecem filme cidades"
+          ],
+          "negative_keywords": [],
+          "search_reason": "block + entity keywords + scene visual intent"
+        },
+        {
+          "scene_index": 6,
+          "block_id": "cidades-subestimadas-da-europa-que-parecem-filme",
+          "block_label": "Cidades subestimadas da Europa que parecem filme",
+          "queries": [
+            "Cidades subestimadas da Europa que parecem filme cidades travel video",
+            "Cidades subestimadas da Europa que parecem filme cidades europa",
+            "cidades europa city skyline",
+            "cidades subestimadas da europa que parecem filme Cidades subestimadas da Europa que parecem filme cidades"
+          ],
+          "negative_keywords": [],
+          "search_reason": "block + entity keywords + scene visual intent"
+        },
+        {
+          "scene_index": 7,
+          "block_id": "cidades-subestimadas-da-europa-que-parecem-filme",
+          "block_label": "Cidades subestimadas da Europa que parecem filme",
+          "queries": [
+            "Cidades subestimadas da Europa que parecem filme cidades travel video",
+            "Cidades subestimadas da Europa que parecem filme cidades europa",
+            "cidades europa city skyline",
+            "cidades subestimadas da europa que parecem filme Cidades subestimadas da Europa que parecem filme cidades"
+          ],
+          "negative_keywords": [],
+          "search_reason": "block + entity keywords + scene visual intent"
+        },
+        {
+          "scene_index": 8,
+          "block_id": "fechamento",
+          "block_label": "Fechamento",
+          "queries": [
+            "Fechamento cta travel video",
+            "Fechamento cta cidades",
+            "cta cidades europa",
+            "cidades subestimadas da europa que parecem filme Fechamento closing_summary"
+          ],
+          "negative_keywords": [],
+          "search_reason": "block + entity keywords + scene visual intent"
+        },
+        {
+          "scene_index": 9,
+          "block_id": "fechamento",
+          "block_label": "Fechamento",
+          "queries": [
+            "Fechamento cta travel video",
+            "Fechamento cta cidades",
+            "cta cidades europa",
+            "cidades subestimadas da europa que parecem filme Fechamento closing_summary"
+          ],
+          "negative_keywords": [],
+          "search_reason": "block + entity keywords + scene visual intent"
+        },
+        {
+          "scene_index": 10,
+          "block_id": "fechamento",
+          "block_label": "Fechamento",
+          "queries": [
+            "Fechamento cidades travel video",
+            "Fechamento cidades europa",
+            "cidades europa city skyline",
+            "cidades subestimadas da europa que parecem filme Fechamento closing_summary"
+          ],
+          "negative_keywords": [],
+          "search_reason": "block + entity keywords + scene visual intent"
+        }
+      ]
+    }
+  }
+}
+Done in 3.70s.

@@ -11,6 +11,8 @@ const { probeMedia } = require("../utils/mediaUtils");
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
+const OPENAI_TTS_MAX_CHARS_PER_CHUNK = Number(process.env.OPENAI_TTS_MAX_CHARS_PER_CHUNK || 1200);
+
 const MULTIVOZES_TEST_VOICES = [
   "pt-BR-FranciscaNeural",
   "pt-BR-AntonioNeural",
@@ -64,6 +66,116 @@ const createMockAudio = async (audioPath, seconds = 95) => {
   });
 
   await fs.remove(rawPath);
+};
+
+const splitTextForTts = (text = "", maxChars = OPENAI_TTS_MAX_CHARS_PER_CHUNK) => {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return [];
+  if (normalized.length <= maxChars) return [normalized];
+
+  const sentences = normalized.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [normalized];
+  const chunks = [];
+  let current = "";
+
+  const flushCurrent = () => {
+    if (current.trim()) chunks.push(current.trim());
+    current = "";
+  };
+
+  for (const sentence of sentences) {
+    const trimmedSentence = sentence.trim();
+    if (!trimmedSentence) continue;
+
+    if (trimmedSentence.length > maxChars) {
+      flushCurrent();
+      const words = trimmedSentence.split(/\s+/).filter(Boolean);
+      let longChunk = "";
+      for (const word of words) {
+        const candidate = longChunk ? `${longChunk} ${word}` : word;
+        if (candidate.length > maxChars) {
+          if (longChunk) chunks.push(longChunk.trim());
+          longChunk = word;
+        } else {
+          longChunk = candidate;
+        }
+      }
+      if (longChunk.trim()) chunks.push(longChunk.trim());
+      continue;
+    }
+
+    const candidate = current ? `${current} ${trimmedSentence}` : trimmedSentence;
+    if (candidate.length > maxChars) {
+      flushCurrent();
+      current = trimmedSentence;
+    } else {
+      current = candidate;
+    }
+  }
+
+  flushCurrent();
+  return chunks;
+};
+
+const concatenateAudioChunks = async ({ chunkPaths = [], outputPath }) => {
+  const listPath = `${outputPath}.concat.txt`;
+  const fileList = chunkPaths
+    .map((chunkPath) => `file '${chunkPath.replace(/\\/g, "/").replace(/'/g, "'\\''")}'`)
+    .join("\n");
+
+  await fs.writeFile(listPath, fileList, "utf8");
+
+  try {
+    await new Promise((resolve, reject) => {
+      ffmpeg()
+        .input(listPath)
+        .inputOptions(["-f concat", "-safe 0"])
+        .audioCodec("libmp3lame")
+        .audioBitrate("128k")
+        .save(outputPath)
+        .on("end", resolve)
+        .on("error", reject);
+    });
+  } finally {
+    await fs.remove(listPath).catch(() => null);
+  }
+};
+
+const synthesizeOpenAiInChunks = async ({ text, outputPath }) => {
+  const chunks = splitTextForTts(text);
+  if (!chunks.length) return null;
+
+  const chunksDir = `${outputPath}.chunks`;
+  const chunkPaths = [];
+  await fs.emptyDir(chunksDir);
+
+  try {
+    for (let index = 0; index < chunks.length; index += 1) {
+      const chunkText = chunks[index];
+      logger.info("OpenAI TTS chunked: sintetizando bloco", {
+        chunk_index: index + 1,
+        total_chunks: chunks.length,
+        text_length: chunkText.length,
+      });
+
+      const chunkBuffer = await ttsWithOpenAI({ text: chunkText });
+      if (!chunkBuffer) {
+        logger.warn("OpenAI TTS chunked: falha ao sintetizar bloco", {
+          chunk_index: index + 1,
+          total_chunks: chunks.length,
+        });
+        return null;
+      }
+
+      const chunkPath = `${chunksDir}/chunk-${String(index + 1).padStart(3, "0")}.mp3`;
+      await fs.writeFile(chunkPath, chunkBuffer);
+      chunkPaths.push(chunkPath);
+    }
+
+    await concatenateAudioChunks({ chunkPaths, outputPath });
+    return { chunks: chunkPaths.length };
+  } finally {
+    await fs.remove(chunksDir).catch(() => null);
+  }
 };
 
 const ttsWithElevenLabs = async ({ text }) => {
@@ -130,8 +242,10 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "multivozes
 
   const paths = await ensureVideoStructure(videoId);
   const text = state.script_text.slice(0, 15000);
+  const shouldUseChunkedOpenAi = text.length > OPENAI_TTS_MAX_CHARS_PER_CHUNK;
 
   let audioBuffer = null;
+  let audioWritten = false;
   let usedProvider = "mock";
   let usedVoice = "";
 
@@ -159,16 +273,30 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "multivozes
   }
 
   if (!audioBuffer && !mockMode) {
-    audioBuffer = await ttsWithOpenAI({ text });
-    if (audioBuffer) {
-      usedProvider = provider === "openai" ? "openai" : "openai_tts_fallback";
-      usedVoice = "alloy";
+    if (shouldUseChunkedOpenAi) {
+      const chunkedResult = await synthesizeOpenAiInChunks({ text, outputPath: paths.audioPath });
+      if (chunkedResult) {
+        audioWritten = true;
+        usedProvider = provider === "openai" ? "openai_chunked" : "openai_tts_chunked_fallback";
+        usedVoice = "alloy";
+      }
+    }
+
+    if (!audioWritten) {
+      audioBuffer = await ttsWithOpenAI({ text });
+      if (audioBuffer) {
+        usedProvider = provider === "openai" ? "openai" : "openai_tts_fallback";
+        usedVoice = "alloy";
+      }
     }
   }
 
   if (audioBuffer) {
     await fs.writeFile(paths.audioPath, audioBuffer);
-  } else {
+    audioWritten = true;
+  }
+
+  if (!audioWritten) {
     await createMockAudio(paths.audioPath);
     usedProvider = "mock";
   }

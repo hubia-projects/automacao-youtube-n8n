@@ -1,0 +1,51 @@
+Γùç injected env (31) from .env // tip: Γîÿ override existing { override: true }
+≡ƒì╖ Iniciando teste completo: Portugal gastronomia
+[2026-05-04T15:18:47.871Z] [INFO] State saved for security_test_1777907927855 { step: 'script_generated', status: 'script_generated' }
+≡ƒÄÖ∩╕Å Gerando ├íudio...
+[2026-05-04T15:18:47.902Z] [WARN] Multivozes falhou, tentando OpenAI TTS fallback { message: '' }
+[2026-05-04T15:21:23.562Z] [INFO] State saved for security_test_1777907927855 { step: 'audio_generated', status: 'audio_generated' }
+[2026-05-04T15:21:23.796Z] [INFO] State saved for security_test_1777907927855 { step: 'audio_generated', status: 'audio_generated' }
+Γ£à ├üudio gerado: openai_tts_fallback - alloy
+≡ƒÄ¼ Buscando assets de gastronomia e cidades...
+[2026-05-04T15:27:59.797Z] [INFO] State saved for security_test_1777907927855 { step: 'assets_searched', status: 'assets_searched' }
+[2026-05-04T15:28:00.011Z] [INFO] State saved for security_test_1777907927855 { step: 'assets_searched', status: 'assets_searched' }
+≡ƒôè Assets dispon├¡veis: 18 totais, 18 v├¡deos
+≡ƒÄÑ Renderizando v├¡deo com algoritmo aprimorado...
+[2026-05-04T15:28:00.101Z] [INFO] audioIntelligence: iniciando an├ílise de ├íudio para video security_test_1777907927855
+[2026-05-04T15:28:05.269Z] [INFO] audioIntelligence: transcri├º├úo conclu├¡da com 172 palavras
+[2026-05-04T15:28:05.290Z] [INFO] State saved for security_test_1777907927855 {
+  step: 'audio_intelligence_ready',
+  status: 'audio_intelligence_ready'
+}
+[2026-05-04T15:35:13.703Z] [INFO] State saved for security_test_1777907927855 { step: 'render_generated', status: 'render_generated' }
+[2026-05-04T15:35:13.934Z] [INFO] State saved for security_test_1777907927855 { step: 'render_generated', status: 'render_generated' }
+Γ£à Render conclu├¡do: 76.067s @ 1920x1080
+[2026-05-04T15:35:14.017Z] [INFO] State saved for security_test_1777907927855 { step: 'final_approved', status: 'final_approved' }
+≡ƒôñ Fazendo upload para YouTube...
+[2026-05-04T15:35:19.887Z] [INFO] State saved for security_test_1777907927855 { step: 'youtube_uploaded', status: 'youtube_uploaded' }
+[2026-05-04T15:35:20.124Z] [INFO] State saved for security_test_1777907927855 { step: 'youtube_uploaded', status: 'youtube_uploaded' }
+≡ƒÄë FLUXO COMPLETO FINALIZADO!
+≡ƒôè Estat├¡sticas Finais:
+{
+  "video_id": "security_test_1777907927855",
+  "youtube_url": "https://youtube.com/watch?v=Qjgf3HVvhHw",
+  "youtube_video_id": "Qjgf3HVvhHw",
+  "audio_provider": "openai_tts_fallback",
+  "audio_voice": "alloy",
+  "external_assets": 18,
+  "external_video_assets": 18,
+  "total_clips": 18,
+  "unique_asset_count": 17,
+  "output_resolution": "1920x1080",
+  "output_duration_seconds": 76.067,
+  "semantic_alignment_score_average": 2.256,
+  "low_confidence_clip_count": 9,
+  "variety_score": "94.4%"
+}
+
+≡ƒöì An├ílise Final:
+- Sync Score: 2.256
+- Clips Low Confidence: 9
+- Variedade de Assets: 17/18
+- Dura├º├úo: 76.067s
+- YouTube: https://youtube.com/watch?v=Qjgf3HVvhHw

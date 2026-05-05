@@ -1,4 +1,5 @@
 {
+  "id": "YiezxhzyVQT3XJuz",
   "name": "Workflow 2 — Audio, Captions and Assets",
   "active": true,
   "nodes": [
@@ -25,11 +26,25 @@
       }
     },
     {
+      "id": "analyze_audio_intelligence",
+      "name": "Analyze Audio Intelligence",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/audio/intelligence",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ video_id: $json.video_id, mock_mode: $env.MOCK_MODE === 'true' }) }}"
+      }
+    },
+    {
       "id": "generate_captions",
       "name": "Generate Captions",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [660, 200],
+      "position": [820, 200],
       "parameters": {
         "method": "POST",
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/captions/generate",
@@ -43,7 +58,7 @@
       "name": "Search Assets",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [820, 200],
+      "position": [980, 200],
       "parameters": {
         "method": "POST",
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/assets/search",
@@ -57,7 +72,7 @@
       "name": "Call Workflow 3",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1,
-      "position": [1100, 200],
+      "position": [1260, 200],
       "parameters": {
         "workflowId": "SWfoFJ3aNt2nJboC",
         "mode": "each",
@@ -68,7 +83,8 @@
   ],
   "connections": {
     "Start": { "main": [[{ "node": "Generate Audio", "type": "main", "index": 0 }]] },
-    "Generate Audio": { "main": [[{ "node": "Generate Captions", "type": "main", "index": 0 }]] },
+    "Generate Audio": { "main": [[{ "node": "Analyze Audio Intelligence", "type": "main", "index": 0 }]] },
+    "Analyze Audio Intelligence": { "main": [[{ "node": "Generate Captions", "type": "main", "index": 0 }]] },
     "Generate Captions": { "main": [[{ "node": "Search Assets", "type": "main", "index": 0 }]] },
     "Search Assets": { "main": [[{ "node": "Call Workflow 3", "type": "main", "index": 0 }]] }
   },

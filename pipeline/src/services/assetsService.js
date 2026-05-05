@@ -7,6 +7,13 @@ const { sendWorkflowStatus } = require("./telegramService");
 const { buildVisualPlan } = require("../utils/visualPlan");
 const { createPlaceholderImage, extractVideoFrame, probeMedia, getResolutionLabel } = require("../utils/mediaUtils");
 const { hasOpenAi, describeImagesWithOpenAI } = require("./openaiService");
+const { getCachedAudioIntelligence } = require("./audioIntelligence");
+const { enrichVisualPlan } = require("./narrativeBlockPlanner");
+const { analyzeLocalVideo } = require("./localVideoUnderstandingService");
+const { buildSceneQueryPlan } = require("./assetQueryPlanner");
+const { scorePreDownloadCandidate } = require("./assetRejectionService");
+const { evaluateVisualEvidence } = require("./visualIntentService");
+const { logger } = require("../utils/logger");
 
 const hasPexels = () => Boolean(config.PEXELS_API_KEY);
 const hasPixabay = () => Boolean(config.PIXABAY_API_KEY);
@@ -15,10 +22,15 @@ const MIN_WIDTH = 1280;
 const MIN_HEIGHT = 720;
 const PREFERRED_WIDTH = 1920;
 const PREFERRED_HEIGHT = 1080;
-const MAX_ASSETS_PER_SCENE = 3;
+const MAX_ASSETS_PER_SCENE = Math.max(3, Number(config.ASSET_DOWNLOAD_TOP_PER_SCENE || 6));
 const MIN_VIDEO_DURATION_SECONDS = 5;
 const PREFERRED_VIDEO_DURATION_SECONDS = 16;
-const MAX_ANALYSIS_WINDOWS = 3;
+const MAX_ANALYSIS_WINDOWS = config.SEMANTIC_SYNC_MODE === "high-quality" ? 10 : 6;
+const ANALYSIS_WINDOW_SECONDS = config.SEMANTIC_SYNC_MODE === "high-quality" ? 3 : 4;
+const ANALYSIS_STRIDE_SECONDS = config.SEMANTIC_SYNC_MODE === "high-quality" ? 1.5 : 2;
+const SEARCH_RESULTS_PER_QUERY = Math.max(4, Number(config.ASSET_SEARCH_RESULTS_PER_QUERY || 12));
+const CANDIDATE_POOL_PER_SCENE = Math.max(6, Number(config.ASSET_CANDIDATE_POOL_PER_SCENE || 30));
+const MIN_SPECIFIC_ASSETS_PER_SCENE = Math.max(1, Number(config.MIN_SPECIFIC_ASSETS_PER_SCENE || 2));
 
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
 
@@ -98,15 +110,16 @@ const candidateMotionScore = (candidate = {}) => {
     height: Number(candidate.height || 0),
     assetType: candidate.asset_type || candidate.type || "image",
   });
+  const relevanceBonus = Number(candidate.search_relevance_score || 0);
 
   if (!isVideoCandidate(candidate)) {
-    return baseScore;
+    return baseScore + relevanceBonus;
   }
 
   const duration = getCandidateDuration(candidate);
   const durationBonus = Math.min(duration, 45) * 220_000;
   const longFormBonus = duration >= PREFERRED_VIDEO_DURATION_SECONDS ? 6_000_000 : duration >= MIN_VIDEO_DURATION_SECONDS ? 4_000_000 : 1_500_000;
-  return baseScore + durationBonus + longFormBonus;
+  return baseScore + durationBonus + longFormBonus + relevanceBonus;
 };
 
 const sortCandidatesForMotion = (candidates = []) =>
@@ -184,18 +197,34 @@ const extractKeywords = (text = "", limit = 8) => {
 
 const buildAnalysisWindowBlueprints = ({ assetDuration = 0 }) => {
   const safeDuration = Math.max(0.5, Number(assetDuration || 0));
-  const windowCount = safeDuration >= 24 ? 3 : safeDuration >= 12 ? 2 : 1;
+  const windowSeconds = Math.min(ANALYSIS_WINDOW_SECONDS, safeDuration);
+  const strideSeconds = Math.min(ANALYSIS_STRIDE_SECONDS, Math.max(0.5, windowSeconds * 0.75));
+  const starts = [];
 
-  return Array.from({ length: Math.min(MAX_ANALYSIS_WINDOWS, windowCount) }, (_, index) => {
-    const startSeconds = round3((safeDuration * index) / windowCount);
-    const endSeconds = round3(index === windowCount - 1 ? safeDuration : (safeDuration * (index + 1)) / windowCount);
+  for (let start = 0; start < safeDuration - 0.25; start += strideSeconds) {
+    starts.push(round3(Math.min(start, Math.max(0, safeDuration - windowSeconds))));
+    if (start + windowSeconds >= safeDuration) break;
+  }
+
+  if (!starts.length) starts.push(0);
+  const uniqueStarts = unique(starts);
+  const selectedStarts = uniqueStarts.length <= MAX_ANALYSIS_WINDOWS
+    ? uniqueStarts
+    : Array.from({ length: MAX_ANALYSIS_WINDOWS }, (_, index) => {
+        const sourceIndex = Math.round((index * (uniqueStarts.length - 1)) / Math.max(1, MAX_ANALYSIS_WINDOWS - 1));
+        return uniqueStarts[sourceIndex];
+      });
+
+  return unique(selectedStarts).map((startSeconds, index) => {
+    const endSeconds = round3(Math.min(safeDuration, startSeconds + windowSeconds));
     const sampleTimeSeconds = round3(Math.min(safeDuration - 0.1, startSeconds + Math.max(0.1, (endSeconds - startSeconds) / 2)));
 
     return {
       window_index: index + 1,
-      start_seconds: startSeconds,
-      end_seconds: Math.max(startSeconds + 0.5, endSeconds),
+      start_seconds: round3(startSeconds),
+      end_seconds: Math.max(round3(startSeconds + 0.5), endSeconds),
       sample_time_seconds: sampleTimeSeconds,
+      overlap_strategy: "short_window_stride",
     };
   });
 };
@@ -203,21 +232,86 @@ const buildAnalysisWindowBlueprints = ({ assetDuration = 0 }) => {
 const buildFallbackAnalysisPayload = ({ asset, scene }) => {
   const baseSummary = asset.semantic_text || asset.query || scene.narration_excerpt || scene.title || "travel footage";
   const baseTags = unique([...(asset.provider_tags || []), ...(scene.keywords || []), ...extractKeywords(baseSummary)]).slice(0, 10);
-  const windows = buildAnalysisWindowBlueprints({ assetDuration: asset.source_duration_seconds || asset.duration_estimate || 0 }).map((window) => ({
-    window_index: window.window_index,
-    start_seconds: window.start_seconds,
-    end_seconds: window.end_seconds,
-    sample_time_seconds: window.sample_time_seconds,
-    summary: baseSummary,
-    tags: baseTags,
-    confidence: 0.35,
-  }));
+  const windows = buildAnalysisWindowBlueprints({ assetDuration: asset.source_duration_seconds || asset.duration_estimate || 0 }).map((window) => {
+    const baseWindow = {
+      window_index: window.window_index,
+      start_seconds: window.start_seconds,
+      end_seconds: window.end_seconds,
+      sample_time_seconds: window.sample_time_seconds,
+      description: baseSummary,
+      summary: baseSummary,
+      tags: baseTags,
+      location: {
+        city: "",
+        country: "",
+        confidence: 0,
+      },
+      landmarks: [],
+      location_type: "",
+      visual_features: {
+        shot_type: "unknown",
+        camera_motion: "unknown",
+        dominant_colors: [],
+        has_people: false,
+        has_water: false,
+        has_architecture: false,
+      },
+      quality: {
+        sharpness: 0.7,
+        stability: 0.7,
+        brightness: 0.7,
+        usable: true,
+      },
+      confidence: 0.35,
+      method: "metadata_fallback",
+    };
+    const evidence = evaluateVisualEvidence({ scene, window: baseWindow, asset });
+    return {
+      ...baseWindow,
+      detected_visual_categories: evidence.detected_visual_categories,
+      detected_objects: [],
+      visual_intent_match: evidence.visual_intent_match,
+      generic_visual: evidence.generic_visual,
+      required_evidence_found: evidence.required_evidence_found,
+      missing_required_visual_evidence: evidence.missing_required_visual_evidence,
+    };
+  });
 
   return {
     semantic_text: baseSummary,
     analysis_summary: baseSummary,
     analysis_tags: baseTags,
     analysis_windows: windows,
+    analysis_provider: "metadata_fallback",
+    analysis_window_seconds: ANALYSIS_WINDOW_SECONDS,
+  };
+};
+
+const mergeAnalysisPayload = ({ asset, scene, payload = {} }) => {
+  const fallback = buildFallbackAnalysisPayload({ asset, scene });
+  const analysisWindows = Array.isArray(payload.analysis_windows) && payload.analysis_windows.length
+    ? payload.analysis_windows.map((window) => {
+        const evidence = evaluateVisualEvidence({ scene, window, asset });
+        return {
+          ...window,
+          detected_visual_categories: window.detected_visual_categories || evidence.detected_visual_categories,
+          detected_objects: window.detected_objects || [],
+          visual_intent_match: typeof window.visual_intent_match === "boolean" ? window.visual_intent_match : evidence.visual_intent_match,
+          generic_visual: typeof window.generic_visual === "boolean" ? window.generic_visual : evidence.generic_visual,
+          required_evidence_found: window.required_evidence_found || evidence.required_evidence_found,
+          missing_required_visual_evidence: window.missing_required_visual_evidence || evidence.missing_required_visual_evidence,
+        };
+      })
+    : fallback.analysis_windows;
+  return {
+    ...fallback,
+    ...payload,
+    semantic_text: payload.semantic_text || payload.analysis_summary || fallback.semantic_text,
+    analysis_summary: payload.analysis_summary || payload.semantic_text || fallback.analysis_summary,
+    analysis_tags: unique([...(payload.analysis_tags || []), ...(fallback.analysis_tags || [])]).slice(0, 16),
+    analysis_windows: analysisWindows,
+    analysis_provider: payload.analysis_provider || payload.provider || fallback.analysis_provider,
+    analysis_window_seconds: Number(payload.analysis_window_seconds || fallback.analysis_window_seconds || ANALYSIS_WINDOW_SECONDS),
   };
 };
 
@@ -234,6 +328,7 @@ Regras:
 - nao invente cidade, pais ou ponto turistico sem evidencia visual clara
 - priorize elementos concretos como telhados, rua estreita, bonde, ponte, rio, castelo, mata, praia, falesia, mercado, comida, pessoas caminhando, panorama urbano
 - se o frame for generico, diga que e generico
+- se reconhecer cidade ou landmark, informe com confianca; se nao reconhecer, deixe vazio
 
 Retorne JSON estrito no formato:
 {
@@ -244,7 +339,18 @@ Retorne JSON estrito no formato:
       "frame_index": 1,
       "summary": "",
       "tags": [""],
+      "location": {"city": "", "country": "", "confidence": 0.0},
+      "landmarks": [{"name": "", "confidence": 0.0}],
       "location_type": "",
+      "visual_features": {
+        "shot_type": "wide|medium|detail|aerial|unknown",
+        "camera_motion": "static|pan|tilt|drone|tracking|unknown",
+        "dominant_colors": [""],
+        "has_people": false,
+        "has_water": false,
+        "has_architecture": false
+      },
+      "quality": {"sharpness": 0.0, "stability": 0.0, "brightness": 0.0, "usable": true},
       "confidence": 0.0
     }
   ]
@@ -263,16 +369,59 @@ const normalizeAssetAnalysisResponse = ({ response, asset, scene, windowBlueprin
       ...(Array.isArray(responseWindow.tags) ? responseWindow.tags : []),
       ...(fallback.analysis_windows[index]?.tags || []),
     ]).slice(0, 12);
+    const location = responseWindow.location && typeof responseWindow.location === "object"
+      ? {
+          city: responseWindow.location.city || "",
+          country: responseWindow.location.country || "",
+          confidence: Math.max(0, Math.min(1, Number(responseWindow.location.confidence || 0))),
+        }
+      : fallback.analysis_windows[index]?.location;
+    const landmarks = Array.isArray(responseWindow.landmarks)
+      ? responseWindow.landmarks
+          .map((landmark) => ({
+            name: landmark?.name || "",
+            confidence: Math.max(0, Math.min(1, Number(landmark?.confidence || 0))),
+          }))
+          .filter((landmark) => landmark.name)
+          .slice(0, 5)
+      : fallback.analysis_windows[index]?.landmarks || [];
+    const visualFeatures = responseWindow.visual_features && typeof responseWindow.visual_features === "object"
+      ? {
+          shot_type: responseWindow.visual_features.shot_type || "unknown",
+          camera_motion: responseWindow.visual_features.camera_motion || "unknown",
+          dominant_colors: Array.isArray(responseWindow.visual_features.dominant_colors) ? responseWindow.visual_features.dominant_colors.slice(0, 5) : [],
+          has_people: Boolean(responseWindow.visual_features.has_people),
+          has_water: Boolean(responseWindow.visual_features.has_water),
+          has_architecture: Boolean(responseWindow.visual_features.has_architecture),
+        }
+      : fallback.analysis_windows[index]?.visual_features;
+    const quality = responseWindow.quality && typeof responseWindow.quality === "object"
+      ? {
+          sharpness: Math.max(0, Math.min(1, Number(responseWindow.quality.sharpness || 0.7))),
+          stability: Math.max(0, Math.min(1, Number(responseWindow.quality.stability || 0.7))),
+          brightness: Math.max(0, Math.min(1, Number(responseWindow.quality.brightness || 0.7))),
+          usable: responseWindow.quality.usable !== false,
+        }
+      : fallback.analysis_windows[index]?.quality;
 
     return {
       window_index: windowBlueprint.window_index,
       start_seconds: windowBlueprint.start_seconds,
       end_seconds: windowBlueprint.end_seconds,
       sample_time_seconds: windowBlueprint.sample_time_seconds,
+      description: summary,
       summary,
       tags,
+      location,
+      landmarks,
       location_type: responseWindow.location_type || "",
+      visual_features: visualFeatures,
+      quality,
       confidence: Math.max(0, Math.min(1, Number(responseWindow.confidence || 0.6))),
+      detected_visual_categories: responseWindow.detected_visual_categories || [],
+      detected_objects: responseWindow.detected_objects || [],
+      visual_intent_match: responseWindow.visual_intent_match,
+      generic_visual: responseWindow.generic_visual,
     };
   });
 
@@ -288,16 +437,52 @@ const normalizeAssetAnalysisResponse = ({ response, asset, scene, windowBlueprin
     analysis_summary: overallSummary,
     analysis_tags: overallTags,
     analysis_windows: analysisWindows,
+    analysis_provider: "openai_vision",
+    analysis_window_seconds: ANALYSIS_WINDOW_SECONDS,
   };
 };
 
 const analyzeDownloadedAssetSemantics = async ({ asset, scene, paths }) => {
   const fallbackPayload = buildFallbackAnalysisPayload({ asset, scene });
 
-  if (!hasOpenAi() || asset.asset_type !== "video" || !asset.local_path) {
+  if (asset.asset_type !== "video" || !asset.local_path) {
     return {
       ...asset,
       ...fallbackPayload,
+    };
+  }
+
+  const localPayload = await analyzeLocalVideo({
+    inputPath: asset.local_path,
+    windowSeconds: config.LOCAL_VIDEO_UNDERSTANDING_WINDOW_SECONDS || ANALYSIS_WINDOW_SECONDS,
+    maxWindows: config.LOCAL_VIDEO_UNDERSTANDING_MAX_WINDOWS || MAX_ANALYSIS_WINDOWS,
+    mode: config.LOCAL_VIDEO_UNDERSTANDING_MODE || "frames",
+    assetMetadata: asset,
+    sceneContext: scene,
+  }).catch(() => null);
+
+  if (localPayload?.provider && !["disabled", "script_missing"].includes(localPayload.provider)) {
+    return {
+      ...asset,
+      ...mergeAnalysisPayload({
+        asset,
+        scene,
+        payload: {
+          semantic_text: localPayload.analysis_summary,
+          analysis_summary: localPayload.analysis_summary,
+          analysis_tags: localPayload.analysis_tags,
+          analysis_windows: localPayload.analysis_windows,
+          analysis_provider: localPayload.provider,
+          analysis_window_seconds: localPayload.analysis_window_seconds,
+        },
+      }),
+    };
+  }
+
+  if (!hasOpenAi()) {
+    return {
+      ...asset,
+      ...mergeAnalysisPayload({ asset, scene, payload: localPayload || fallbackPayload }),
     };
   }
 
@@ -328,13 +513,23 @@ const analyzeDownloadedAssetSemantics = async ({ asset, scene, paths }) => {
 
     return {
       ...asset,
-      ...(response ? normalizeAssetAnalysisResponse({ response, asset, scene, windowBlueprints }) : fallbackPayload),
+      ...mergeAnalysisPayload({
+        asset,
+        scene,
+        payload: response
+          ? {
+              ...normalizeAssetAnalysisResponse({ response, asset, scene, windowBlueprints }),
+              analysis_provider: "openai_vision",
+              analysis_window_seconds: ANALYSIS_WINDOW_SECONDS,
+            }
+          : (localPayload || fallbackPayload),
+      }),
     };
   } catch {
     await fs.remove(analysisDir).catch(() => null);
     return {
       ...asset,
-      ...fallbackPayload,
+      ...mergeAnalysisPayload({ asset, scene, payload: localPayload || fallbackPayload }),
     };
   }
 };
@@ -356,9 +551,10 @@ const downloadFile = async (url, outputPath) => {
 };
 
 const createSceneFallbackAsset = async ({ scene, paths }) => {
+  const refreshToken = Date.now();
   const outputPath = path.join(
     paths.rawAssetsDir,
-    `scene-${String(scene.scene_index).padStart(2, "0")}-fallback.png`
+    `scene-${String(scene.scene_index).padStart(2, "0")}-fallback-${refreshToken}.png`
   );
   await createPlaceholderImage({
     outputPath,
@@ -387,26 +583,6 @@ const createSceneFallbackAsset = async ({ scene, paths }) => {
   };
 };
 
-const buildSceneQueries = ({ scene, topic }) => {
-  const topicTerms = String(topic || "")
-    .split(/[,:|-]/)
-    .map((item) => item.trim().toLowerCase())
-    .filter((item) => item.length >= 3)
-    .slice(0, 2);
-
-  const keywords = unique(scene.keywords || []).slice(0, 5);
-  const queries = unique([
-    [keywords[0], keywords[1], "travel footage"].filter(Boolean).join(" "),
-    keywords.slice(0, 2).join(" "),
-    keywords.slice(0, 3).join(" "),
-    [topicTerms[0], keywords[0], "drone footage"].filter(Boolean).join(" "),
-    [topicTerms[0], keywords[0], keywords[1]].filter(Boolean).join(" "),
-    [keywords[0], "travel video"].filter(Boolean).join(" "),
-  ]);
-
-  return queries.filter((query) => query.split(/\s+/).filter(Boolean).length >= 2).slice(0, 4);
-};
-
 const pickBestPexelsVideoFile = (video = {}) => {
   return (video.video_files || [])
     .map((file) => ({
@@ -418,7 +594,7 @@ const pickBestPexelsVideoFile = (video = {}) => {
     .sort((left, right) => resolutionScore({ ...right, assetType: "video" }) - resolutionScore({ ...left, assetType: "video" }))[0];
 };
 
-const searchPexels = async (query, limit = 8) => {
+const searchPexels = async (query, limit = SEARCH_RESULTS_PER_QUERY) => {
   if (!hasPexels()) return [];
 
   const [videoRes, imageRes] = await Promise.allSettled([
@@ -516,7 +692,7 @@ const normalizePixabayVideo = (query, hit = {}) => {
   };
 };
 
-const searchPixabay = async (query, limit = 8) => {
+const searchPixabay = async (query, limit = SEARCH_RESULTS_PER_QUERY) => {
   if (!hasPixabay()) return [];
 
   const [videoResponse, imageResponse] = await Promise.allSettled([
@@ -612,6 +788,12 @@ const downloadSceneCandidate = async ({ candidate, scene, paths, sequence }) => 
     asset_type: candidate.asset_type,
     type: candidate.asset_type,
     query: candidate.query,
+    query_used: candidate.query_used || candidate.query,
+    search_reason: candidate.search_reason || "",
+    pre_download_score: Number(candidate.pre_download_score || 0),
+    intent_match: candidate.intent_match === true,
+    generic_asset: candidate.generic_asset === true,
+    rejection_reason: candidate.rejection_reason || "",
     semantic_text: candidate.semantic_text || candidate.query,
     provider_tags: candidate.provider_tags || [],
     provider_title: candidate.provider_title || "",
@@ -642,15 +824,23 @@ const generateAssets = async ({
 }) => {
   const state = await loadState(videoId);
   const paths = await ensureVideoStructure(videoId);
+  const audioIntelligence = await getCachedAudioIntelligence({ videoId }).catch(() => null);
 
-  const visualPlan = Array.isArray(state.visual_plan) && state.visual_plan.length
+  const baseVisualPlan = Array.isArray(state.visual_plan) && state.visual_plan.length
     ? state.visual_plan
     : buildVisualPlan({
         topic: state.topic,
         scriptText: state.script_text,
         outlineSections: state.outline_json?.sections || [],
         durationSeconds: Number(state.duration_seconds || 0),
+        audioIntelligence,
       });
+  const visualPlan = enrichVisualPlan({
+    topic: state.topic,
+    visualPlan: baseVisualPlan,
+    audioIntelligence,
+    audioDuration: Number(state.duration_seconds || 0),
+  }).visualPlan;
 
   const requestedSceneIndexes = normalizeSceneIndexes(sceneIndexes);
   const requestedSceneIndexSet = new Set(requestedSceneIndexes);
@@ -683,28 +873,60 @@ const generateAssets = async ({
   const perSceneTarget = Math.max(1, Math.min(MAX_ASSETS_PER_SCENE, Number(maxAssets || MAX_ASSETS_PER_SCENE)));
 
   for (const scene of selectedScenes) {
-    const queries = buildSceneQueries({ scene, topic: state.topic });
+    const queryPlan = buildSceneQueryPlan({ scene, topic: state.topic });
+    const queries = queryPlan.queries;
     const downloadedItems = [];
     const seenUrls = new Set();
     const longVideoCandidates = [];
     const shortVideoCandidates = [];
     const imageCandidates = [];
     const previouslyUsedSourceUrls = selectiveRefresh ? getSceneSourceUrlSet(previousItems, scene.scene_index) : new Set();
-    sceneQueries.push({ scene_index: scene.scene_index, queries });
+    sceneQueries.push({
+      scene_index: scene.scene_index,
+      block_id: scene.block_id || "",
+      block_label: scene.block_label || "",
+      visual_intent: scene.visual_intent || "",
+      queries,
+      query_details: queryPlan.queryDetails || [],
+      negative_keywords: queryPlan.negativeKeywords,
+      search_reason: queryPlan.searchReason,
+      specific_intent_required: queryPlan.specificIntentRequired,
+    });
+
+    logger.info(`assetsService: iniciando cena ${scene.scene_index}`, {
+      videoId,
+      scene_title: scene.title,
+      visual_intent: scene.visual_intent || "",
+      queries_count: queries.length,
+      selective_refresh: selectiveRefresh,
+    });
 
     if (!mockMode) {
-      for (const query of queries) {
-        const candidates = await cacheSearchResults({ query, cache: searchCache });
-        const partitioned = partitionSceneCandidates(candidates);
+      for (const queryDetail of queryPlan.queryDetails || []) {
+        const candidates = await cacheSearchResults({ query: queryDetail.query, cache: searchCache });
+        const scoredCandidates = [...candidates]
+          .map((candidate) => ({
+            ...candidate,
+            query_used: queryDetail.query,
+            search_reason: queryDetail.reason,
+            ...scorePreDownloadCandidate({ candidate: { ...candidate, query_used: queryDetail.query }, scene }),
+          }))
+          .filter((candidate) => !candidate.pre_download_rejected)
+          .map((candidate) => ({
+            ...candidate,
+            search_relevance_score: Number(candidate.pre_download_score || 0) * 1_000_000,
+          }))
+          .sort((left, right) => Number(right.search_relevance_score || 0) - Number(left.search_relevance_score || 0));
+        const partitioned = partitionSceneCandidates(scoredCandidates);
         longVideoCandidates.push(...partitioned.longVideos);
         shortVideoCandidates.push(...partitioned.shortVideos);
         imageCandidates.push(...partitioned.images);
       }
 
       const candidatePasses = [
-        dedupeCandidatesByUrl(longVideoCandidates),
-        dedupeCandidatesByUrl(shortVideoCandidates),
-        dedupeCandidatesByUrl(imageCandidates),
+        dedupeCandidatesByUrl(longVideoCandidates).slice(0, CANDIDATE_POOL_PER_SCENE),
+        dedupeCandidatesByUrl(shortVideoCandidates).slice(0, Math.max(4, Math.ceil(CANDIDATE_POOL_PER_SCENE / 2))),
+        dedupeCandidatesByUrl(imageCandidates).slice(0, Math.max(4, Math.ceil(CANDIDATE_POOL_PER_SCENE / 3))),
       ];
 
       const candidateRounds = selectiveRefresh && previouslyUsedSourceUrls.size ? [false, true] : [true];
@@ -743,14 +965,45 @@ const generateAssets = async ({
     }
 
     if (!downloadedItems.length) {
+      if (queryPlan.specificIntentRequired) {
+        fallbackPlan.push(`Cena ${scene.scene_index}: asset_search_failed_specific_intent para ${scene.title}.`);
+      }
       downloadedItems.push(await createSceneFallbackAsset({ scene, paths }));
       fallbackPlan.push(`Cena ${scene.scene_index}: fallback local usado para ${scene.title}.`);
     }
 
-    const enrichedItems = [];
-    for (const item of downloadedItems) {
-      enrichedItems.push(await analyzeDownloadedAssetSemantics({ asset: item, scene, paths }));
+    const specificMatches = downloadedItems.filter((item) => item.intent_match && !item.generic_asset).length;
+    if (queryPlan.specificIntentRequired && specificMatches < MIN_SPECIFIC_ASSETS_PER_SCENE) {
+      fallbackPlan.push(`Cena ${scene.scene_index}: somente ${specificMatches} asset(s) especifico(s) encontrado(s) para intent ${scene.visual_intent}.`);
     }
+
+    const enrichedResults = await Promise.allSettled(
+      downloadedItems.map((item) => analyzeDownloadedAssetSemantics({ asset: item, scene, paths }))
+    );
+    const enrichedItems = enrichedResults.map((result, index) => {
+      if (result.status === "fulfilled") return result.value;
+
+      const asset = downloadedItems[index];
+      logger.warn("assetsService: fallback apos falha ao enriquecer asset", {
+        videoId,
+        scene_index: scene.scene_index,
+        local_path: asset?.local_path,
+        error: result.reason?.message || String(result.reason || "unknown_error"),
+      });
+      return {
+        ...asset,
+        ...buildFallbackAnalysisPayload({ asset, scene }),
+      };
+    });
+
+    logger.info(`assetsService: cena ${scene.scene_index} concluída`, {
+      videoId,
+      scene_title: scene.title,
+      downloaded_items: downloadedItems.length,
+      enriched_items: enrichedItems.length,
+      specific_matches: specificMatches,
+      used_fallback: enrichedItems.some((item) => item.is_fallback),
+    });
 
     items.push(...enrichedItems);
   }

@@ -386,6 +386,8 @@
               <span class="chip">Status por etapa no Telegram</span>
               <span class="chip">Ate 3 videos HD por cena</span>
               <span class="chip">Frames por janela com IA</span>
+              <span class="chip">Visual intent por cena</span>
+              <span class="chip">QA gastronomico por quotas</span>
               <span class="chip">Subclips de video locais</span>
               <span class="chip">Revisao online em Drive/Sheets</span>
             </div>
@@ -397,7 +399,7 @@
             </div>
             <div class="stat">
               <strong>Backend executa</strong>
-              <span>Ideias, roteiro com visual_plan, voz, busca video-first com ate 3 assets por cena, analise visual por janela, planner narrativo do render ancorado no texto do script, score semantico por corte, metadata, estado e upload.</span>
+              <span>Ideias, roteiro com visual_plan, visual intent por cena, voz, busca video-first com ate 3 assets por cena, rejeicao previa de skyline generico em tema gastronomico, analise visual por janela, planner narrativo do render ancorado no texto do script, score semantico por corte, metadata, estado e upload.</span>
             </div>
             <div class="stat">
               <strong>Telegram decide</strong>
@@ -440,7 +442,8 @@
               <li>Poller de replies do Telegram</li>
               <li>Persistencia de estado e arquivos</li>
               <li>Regera uma nova versao do draft e refresca as cenas mais fracas quando a resposta final e NAO</li>
-              <li>Salva analysis_windows e render_timeline para validar cortes, papeis narrativos e assets usados</li>
+              <li>Salva analysis_windows e render_timeline para validar cortes, papeis narrativos, visual_intent e assets usados</li>
+              <li>Bloqueia gastronomia com excesso de cidade generica, paisagem ou skyline apenas quando o tema declarado ou dominante do video e gastronomico</li>
             </ul>
           </article>
           <article class="card telegram">
@@ -527,13 +530,13 @@
 
             <rect class="node" x="1130" y="446" width="220" height="100" fill="#d9ebff" stroke="#1f6feb" />
             <text class="node-title" x="1240" y="484" text-anchor="middle">Workflow 2</text>
-            <text class="node-copy" x="1240" y="508" text-anchor="middle">audio + captions + analise visual</text>
-            <text class="node-copy" x="1240" y="527" text-anchor="middle">ate 3 videos HD por cena, chama W3</text>
+            <text class="node-copy" x="1240" y="508" text-anchor="middle">audio + captions + visual intent + analise visual</text>
+            <text class="node-copy" x="1240" y="527" text-anchor="middle">ate 3 videos HD por cena, corta skyline generico, chama W3</text>
 
             <rect class="node" x="700" y="486" width="210" height="100" fill="#d9ebff" stroke="#1f6feb" />
             <text class="node-title" x="805" y="524" text-anchor="middle">Workflow 3</text>
-            <text class="node-copy" x="805" y="548" text-anchor="middle">subclips por janela + metadata</text>
-            <text class="node-copy" x="805" y="567" text-anchor="middle">publica revisao e pede aprovacao final</text>
+            <text class="node-copy" x="805" y="548" text-anchor="middle">subclips por janela + score tematico + metadata</text>
+            <text class="node-copy" x="805" y="567" text-anchor="middle">publica revisao, valida quotas e pede aprovacao final</text>
 
             <rect class="node" x="330" y="486" width="210" height="100" fill="#ffedd5" stroke="#ea580c" />
             <text class="node-title" x="435" y="524" text-anchor="middle">Telegram</text>
@@ -582,7 +585,7 @@
             <text class="node-copy" x="1045" y="408" text-anchor="middle">Drive/Sheets e YouTube</text>
           </svg>
         </div>
-        <p class="footer-note">Leitura rapida: azul organiza, verde executa, laranja espera humano, amarelo conecta externos e roxo guarda estado. Se a resposta final for NAO, o fluxo reaproveita roteiro e audio, rebusca as cenas mais fracas, muda ordem, janela e offset do draft e volta para revisao.</p>
+        <p class="footer-note">Leitura rapida: azul organiza, verde executa, laranja espera humano, amarelo conecta externos e roxo guarda estado. Se a resposta final for NAO, o fluxo reaproveita roteiro e audio, rebusca as cenas mais fracas, prioriza comida real sobre skyline bonito em temas gastronomicos, muda ordem, janela e offset do draft e volta para revisao.</p>
       </section>
 
       <section class="section">
@@ -614,7 +617,9 @@
               <li>Nova versao ao NAO: pipeline/src/services/reviewRevisionService.js</li>
               <li>Visual plan: pipeline/src/utils/visualPlan.js</li>
               <li>Assets HD por cena: pipeline/src/services/assetsService.js</li>
+              <li>Visual intent: pipeline/src/services/visualIntentService.js</li>
               <li>Render timeline: pipeline/src/services/renderService.js</li>
+              <li>QA tematico: pipeline/src/services/syncValidator.js</li>
               <li>Providers de voz: pipeline/src/services/ttsService.js</li>
               <li>OpenAI: pipeline/src/services/openaiService.js</li>
             </ul>
@@ -642,7 +647,7 @@
             <p>
               Quando as credenciais Google estiverem configuradas, o backend sobe o render para o Google Drive,
               registra a revisao no Google Sheets e manda esses links no Telegram junto com o pedido de aprovacao final.
-              O render final nao queima legenda: o W2 gera SRT/VTT, salva ate 3 videos HD por cena, extrai frames representativos por janela e usa OpenAI vision para descrever o que cada trecho do video realmente mostra quando essa chave esta configurada. O W3 recorta subclips de video, separa a janela de exibicao da janela semantica do roteiro, ancora a entrada real de cada cena no trecho certo do script, cria blocos neutros de intro/outro quando o texto fica generico demais para uma cena tematica, escolhe a janela do asset de cada corte com score semantico usando query, metadados do provider e analysis_windows do video, grava clip_script_excerpt, asset_window_summary e semantic_match_score no render_timeline para revalidacao, usa xfade, fallback concat e fallback local somente quando nenhum video externo valido existe antes do upload no YouTube. Se a resposta final for NAO, o backend usa esse render_timeline para localizar cenas com baixo score ou reuso pesado, rebusca so essas cenas e preserva o restante do draft antes da nova versao.
+              O render final nao queima legenda: o W2 gera SRT/VTT, salva ate 3 videos HD por cena, usa visual_intent para montar queries mais especificas, rejeita skyline, paisagem e cidade generica quando a cena pede comida, extrai frames representativos por janela e usa OpenAI vision ou provider local para descrever o que cada trecho do video realmente mostra quando essa chave esta configurada. O W3 recorta subclips de video, separa a janela de exibicao da janela semantica do roteiro, ancora a entrada real de cada cena no trecho certo do script, cria blocos neutros de intro/outro quando o texto fica generico demais para uma cena tematica, escolhe a janela do asset de cada corte com score semantico usando query, metadados do provider, visual_intent_match, required_visual_evidence e analysis_windows do video, grava clip_script_excerpt, asset_window_summary, semantic_match_score, visual_intent, detected_visual_categories e query_used no render_timeline para revalidacao, usa xfade, fallback concat e fallback local somente quando nenhum video externo valido existe antes do upload no YouTube. As quotas gastronomicas do QA so entram quando o tema declarado do video ou a dominancia real das cenas e clipes e gastronomica; uma mencao isolada a comida em video geral de viagem nao ativa esse bloqueio. Se a resposta final for NAO, o backend usa esse render_timeline para localizar cenas com baixo score, mismatch tematico, excesso de cidade generica ou reuso pesado, rebusca so essas cenas e preserva o restante do draft antes da nova versao.
             </p>
           </div>
         </div>

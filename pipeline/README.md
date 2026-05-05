@@ -16,9 +16,12 @@ Este projeto implementa um pipeline completo, modular e restart-safe para criar 
   - `POST /api/videos/ideas/approve`
   - `POST /api/videos/script/generate`
   - `POST /api/videos/audio/generate`
+  - `POST /api/videos/audio/intelligence`
   - `POST /api/videos/captions/generate`
   - `POST /api/videos/assets/search`
   - `POST /api/videos/render`
+  - `POST /api/videos/render/validate`
+  - `POST /api/videos/render/fix-sync`
   - `POST /api/videos/metadata/generate`
   - `POST /api/videos/final/approve`
   - `POST /api/videos/youtube/upload`
@@ -30,6 +33,10 @@ Este projeto implementa um pipeline completo, modular e restart-safe para criar 
   - Telegram
   - YouTube Data API
 - Render com FFmpeg (16:9), áudio + legenda burn-in
+- Planner narrativo hierárquico + timeline guiada por `audio_intelligence.words`
+- Busca de assets por bloco narrativo + negative keywords + análise por janelas temporais
+- QA automático de render com score técnico, score semântico, detecção de black frames e regeneração seletiva
+- Overlays opcionais de bloco/cidade e output 1080p por padrão
 - Workflows n8n exportados:
   - `n8n/workflow1_weekly_topic_script.json`
   - `n8n/workflow2_audio_captions_assets.json`
@@ -66,6 +73,15 @@ pipeline/
 └── README.md
 ```
 
+## Arquitetura Semântica Atual
+
+- `narrativeBlockPlanner.js`: cria macroblocos e microblocos por cidade, tema e intenção visual.
+- `audioIntelligence.js`: gera `words`, `segments`, `pause_markers` e boundaries sugeridas.
+- `assetsService.js`: busca assets por bloco, analisa vídeos por janelas e registra `scene_queries`.
+- `timelinePlanner.js`: usa texto real do áudio por intervalo para escolher a melhor janela visual.
+- `syncValidator.js` + `renderQualityService.js`: validam alinhamento, diversidade, black frames, silêncio e resolução antes da revisão.
+- `overlayService.js`: cria overlays simples de capítulo/cidade no início dos blocos.
+
 ---
 
 ## 1) Configuração local
@@ -92,6 +108,13 @@ Preencha seu `.env` localmente (não compartilhe chaves no chat):
 - `MOCK_MODE=true`: gera pipeline completo sem APIs pagas.
 - `MOCK_MODE=false`: usa integrações reais quando disponíveis.
 - Mesmo com `MOCK_MODE=false`, se uma integração falhar, há fallback em etapas críticas (ex.: TTS fallback OpenAI, assets fallback plan).
+
+### Sincronização semântica de B-roll
+
+- `SEMANTIC_SYNC_MODE=cost-efficient`: janelas visuais e QA mais econômicos.
+- `SEMANTIC_SYNC_MODE=high-quality`: janelas mais densas e QA visual com mais amostras quando OpenAI estiver configurado.
+- `SEMANTIC_SYNC_MAX_LATENCY_SEC=1`: latência máxima aceita após troca de tópico principal.
+- O render usa `concat` quando há hard-boundaries para evitar `xfade` entre cidades/tópicos diferentes.
 
 ---
 
@@ -153,6 +176,14 @@ Valida o núcleo: ideia -> aprovação -> script -> áudio -> render -> estado p
 
 ```bash
 yarn test:poc
+```
+
+### Sincronização semântica
+
+Valida hard-boundary Lisboa -> Porto, rejeição do tópico anterior e métricas de lag.
+
+```bash
+yarn test:semantic-sync
 ```
 
 ### E2E mock completo

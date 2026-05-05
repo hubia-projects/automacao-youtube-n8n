@@ -22,6 +22,11 @@ const chooseScenesForAssetRefresh = ({
 }) => {
   const visualPlan = Array.isArray(state?.visual_plan) ? state.visual_plan : [];
   const timelineClips = Array.isArray(state?.render_timeline?.clips) ? state.render_timeline.clips : [];
+  const qaSceneIndexes = state?.render_validation?.scene_indexes_to_refresh || state?.render_validation?.regeneration_plan?.scene_indexes_to_refresh;
+  if (Array.isArray(qaSceneIndexes) && qaSceneIndexes.length) {
+    return unique(qaSceneIndexes.map((sceneIndex) => Number(sceneIndex || 0)).filter((sceneIndex) => sceneIndex > 0)).slice(0, maxSceneCount);
+  }
+
   const sceneIndexes = new Set(visualPlan.map((scene) => Number(scene.scene_index || 0)).filter((sceneIndex) => sceneIndex > 0));
   const metricsByScene = new Map();
 
@@ -37,7 +42,7 @@ const chooseScenesForAssetRefresh = ({
       clipCount: 0,
     };
 
-    metrics.scores.push(Number(clip.semantic_match_score || 0));
+    metrics.scores.push(Number((clip.timeline_score ?? clip.composite_score ?? clip.semantic_match_score) || 0));
     metrics.clipCount += 1;
     if (clip.local_path) metrics.assetKeys.add(String(clip.local_path));
     if (clip.asset_window_summary || clip.asset_window_start_seconds || clip.asset_window_end_seconds) {

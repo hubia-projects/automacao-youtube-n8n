@@ -4,19 +4,24 @@ const { ensureVideoStructure, loadState, updateState } = require("./stateService
 const { sendWorkflowStatus } = require("./telegramService");
 const { createPlaceholderImage, probeMedia, runFfmpeg } = require("../utils/mediaUtils");
 const { buildTimeline, chooseOutputResolution } = require("./timelinePlanner");
+const { analyzeAudio } = require("./audioIntelligence");
+const { applyOverlaysToVideo, buildBlockOverlays } = require("./overlayService");
+const { config } = require("../config/env");
+const { logger } = require("../utils/logger");
 
 const isVideoFile = (filePath = "") => /\.(mp4|mov|webm|mkv|avi)$/i.test(filePath);
 const isImageFile = (filePath = "") => /\.(jpg|jpeg|png|webp)$/i.test(filePath);
 
 const MIN_OUTPUT = { width: 1280, height: 720 };
-const PREFERRED_OUTPUT = { width: 1920, height: 1080 };
-const VIDEO_BITRATE = "4M";
-const MAX_VIDEO_BITRATE = "5M";
+const PREFERRED_OUTPUT = { width: Number(config.OUTPUT_WIDTH || 1920), height: Number(config.OUTPUT_HEIGHT || 1080) };
+const VIDEO_BITRATE = String(config.VIDEO_BITRATE || "6M");
+const MAX_VIDEO_BITRATE = String(config.MAX_VIDEO_BITRATE || "8M");
 const AUDIO_BITRATE = "192k";
 const TRANSITION_DURATION = 0.45;
 const TARGET_AVERAGE_CLIP_DURATION = 6;
 const MIN_CLIP_DURATION = 3;
 const MAX_CLIP_DURATION = 10;
+const OUTPUT_FPS = Number(config.OUTPUT_FPS || 30);
 const SCRIPT_TERM_STOPWORDS = new Set([
   "a",
   "ao",
@@ -1302,7 +1307,7 @@ const buildVideoFilter = ({ width, height }) =>
     `scale=${width}:${height}:force_original_aspect_ratio=increase`,
     `crop=${width}:${height}`,
     "setsar=1",
-    "fps=30",
+    `fps=${OUTPUT_FPS}`,
     "format=yuv420p",
   ].join(",");
 
@@ -1314,7 +1319,7 @@ const buildZoompanFilter = ({ width, height, duration }) => {
   return [
     `scale=${paddedWidth}:${paddedHeight}:force_original_aspect_ratio=increase`,
     `crop=${paddedWidth}:${paddedHeight}`,
-    `zoompan=z='min(zoom+0.00035,1.04)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${width}x${height}:fps=30`,
+    `zoompan=z='min(zoom+0.00035,1.04)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${width}x${height}:fps=${OUTPUT_FPS}`,
     "setsar=1",
     "format=yuv420p",
   ].join(",");
@@ -1356,7 +1361,7 @@ const renderClipSegment = async ({ asset, outputPath, duration, width, height, s
       "-pix_fmt",
       "yuv420p",
       "-r",
-      "30",
+      String(OUTPUT_FPS),
       "-b:v",
       VIDEO_BITRATE,
       "-maxrate",
@@ -1388,7 +1393,7 @@ const renderClipSegment = async ({ asset, outputPath, duration, width, height, s
     "-pix_fmt",
     "yuv420p",
     "-r",
-    "30",
+    String(OUTPUT_FPS),
     "-b:v",
     VIDEO_BITRATE,
     "-maxrate",
@@ -1567,8 +1572,18 @@ const renderUltimateFallback = async ({ renderPath, audioPath, fallbackImagePath
   ]);
 };
 
+const ensureAudioIntelligenceReady = async ({ videoId, state }) => {
+  const hasPath = state.audio_intelligence_path;
+  const exists = hasPath && await fs.pathExists(hasPath);
+  if (!exists) {
+    await analyzeAudio({ videoId });
+    return loadState(videoId);
+  }
+  return state;
+};
+
 const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = "" }) => {
-  const state = await loadState(videoId);
+  let state = await loadState(videoId);
   const paths = await ensureVideoStructure(videoId);
   const draftVersion = getDraftVersion(state);
 
@@ -1595,7 +1610,15 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     duration_estimate: 6,
   };
 
+  state = await ensureAudioIntelligenceReady({ videoId, state });
+
   // Use the new timeline planner (audio intelligence + semantic matching)
+  logger.info("renderService: construindo timeline", {
+    videoId,
+    draft_version: draftVersion,
+    audio_duration_seconds: audioDuration,
+  });
+
   const timelineResult = await buildTimeline({
     state,
     audioDuration,
@@ -1605,12 +1628,27 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
 
   const clipPlan = timelineResult.clipPlan || timelineResult.clips || [];
 
+  logger.info("renderService: timeline pronta, preparando render", {
+    videoId,
+    total_clips: clipPlan.length,
+    draft_version: draftVersion,
+    audio_duration_seconds: audioDuration,
+  });
+
   const outputResolution = chooseOutputResolution(clipPlan);
   const segmentsDir = path.join(paths.base, "render", "segments");
   await fs.emptyDir(segmentsDir);
 
   const segmentPaths = [];
   for (const clip of clipPlan) {
+    logger.info("renderService: renderizando segmento", {
+      videoId,
+      clip_index: clip.clip_index,
+      total_clips: clipPlan.length,
+      scene_index: clip.scene_index,
+      title: clip.title,
+    });
+
     const segmentPath = path.join(segmentsDir, `clip-${String(clip.clip_index).padStart(3, "0")}.mp4`);
     try {
       await renderClipSegment({
@@ -1642,19 +1680,16 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     segmentPaths.push(segmentPath);
   }
 
-  let renderStrategy = "xfade";
-  let transition = "fade";
+  const requiresExactSync = Boolean(timelineResult.requiresExactSync || timelineResult.renderStrategy === "concat");
+  let renderStrategy = requiresExactSync ? "concat" : "xfade";
+  let transition = requiresExactSync ? "none" : "fade";
+  logger.info("renderService: segmentos prontos, iniciando composicao final", {
+    videoId,
+    total_clips: clipPlan.length,
+    strategy: renderStrategy,
+  });
   try {
-    await renderWithXfade({
-      segmentPaths,
-      durations: clipPlan.map((clip) => clip.clip_duration_seconds),
-      audioPath: state.audio_path,
-      renderPath,
-    });
-  } catch {
-    renderStrategy = "concat";
-    transition = "none";
-    try {
+    if (requiresExactSync) {
       const concatListPath = path.join(paths.base, "render", "segments", "segments.txt");
       await renderWithConcat({
         segmentPaths,
@@ -1662,6 +1697,34 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
         renderPath,
         listPath: concatListPath,
       });
+    } else {
+      await renderWithXfade({
+        segmentPaths,
+        durations: clipPlan.map((clip) => clip.clip_duration_seconds),
+        audioPath: state.audio_path,
+        renderPath,
+      });
+    }
+  } catch {
+    renderStrategy = requiresExactSync ? "xfade_fallback" : "concat";
+    transition = requiresExactSync ? "fade_fallback" : "none";
+    try {
+      if (requiresExactSync) {
+        await renderWithXfade({
+          segmentPaths,
+          durations: clipPlan.map((clip) => clip.clip_duration_seconds),
+          audioPath: state.audio_path,
+          renderPath,
+        });
+      } else {
+        const concatListPath = path.join(paths.base, "render", "segments", "segments.txt");
+        await renderWithConcat({
+          segmentPaths,
+          audioPath: state.audio_path,
+          renderPath,
+          listPath: concatListPath,
+        });
+      }
     } catch {
       renderStrategy = "single_fallback";
       transition = "none";
@@ -1678,14 +1741,44 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     // Optional stage reserved for future mix implementation
   }
 
-  const outputInfo = await probeMedia(renderPath).catch(() => ({ width: 0, height: 0, duration: audioDuration }));
+  const overlays = buildBlockOverlays({
+    narrativeBlocks: timelineResult.narrativeBlocks || [],
+    enabled: config.ENABLE_BLOCK_OVERLAYS,
+  });
+  let finalRenderPath = renderPath;
+  if (overlays.length) {
+    const overlayPath = path.join(paths.base, "render", "final-with-overlays.mp4");
+    try {
+      await applyOverlaysToVideo({
+        inputPath: renderPath,
+        outputPath: overlayPath,
+        overlays,
+        fps: OUTPUT_FPS,
+        videoBitrate: VIDEO_BITRATE,
+        maxVideoBitrate: MAX_VIDEO_BITRATE,
+      });
+      finalRenderPath = overlayPath;
+    } catch {
+      finalRenderPath = renderPath;
+    }
+  }
+
+  logger.info("renderService: render concluido", {
+    videoId,
+    render_path: finalRenderPath,
+    strategy: renderStrategy,
+    transition,
+  });
+
+  const outputInfo = await probeMedia(finalRenderPath).catch(() => ({ width: 0, height: 0, duration: audioDuration }));
   const uniqueAssetCount = new Set(clipPlan.map((clip) => clip.asset?.local_path).filter(Boolean)).size;
-  const semanticScores = clipPlan.map((clip) => Number(clip.semantic_match_score || 0));
+  const semanticScores = clipPlan.map((clip) => Number((clip.timeline_score ?? clip.composite_score ?? clip.semantic_match_score) || 0));
 
   const nextState = await updateState(
     videoId,
     {
-      render_path: renderPath,
+      render_path: finalRenderPath,
+      overlays,
       render_timeline: {
         strategy: renderStrategy,
         transition,
@@ -1694,7 +1787,11 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
         total_clips: clipPlan.length,
         unique_asset_count: uniqueAssetCount,
         semantic_alignment_score_average: round3(average(semanticScores)),
-        low_confidence_clip_count: semanticScores.filter((score) => score < 2.5).length,
+        low_confidence_clip_count: semanticScores.filter((score) => score < 0).length,
+        sync_policy: timelineResult.syncPolicy || {},
+        narrative_blocks: timelineResult.narrativeBlocks || [],
+        timeline_sync_metrics: timelineResult.timelineSyncMetrics || {},
+        asset_windows_count: Array.isArray(timelineResult.assetWindows) ? timelineResult.assetWindows.length : 0,
         clips: clipPlan.map((clip) => ({
           clip_index: clip.clip_index,
           scene_index: clip.scene_index,
@@ -1702,16 +1799,58 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
           scene_order: clip.scene_order,
           title: clip.title,
           clip_duration_seconds: clip.clip_duration_seconds,
+          timeline_start_sec: clip.timeline_start_sec,
+          timeline_end_sec: clip.timeline_end_sec,
+          clip_start_narrated_at: clip.clip_start_narrated_at,
+          clip_end_narrated_at: clip.clip_end_narrated_at,
           clip_script_excerpt: clip.clip_script_excerpt,
+          clip_script_source: clip.clip_script_source,
+          cut_reason: clip.cut_reason,
           source_start_seconds: clip.source_start_seconds,
           source_end_seconds: clip.source_end_seconds,
           asset_duration_seconds: clip.asset_duration_seconds,
           semantic_match_score: clip.semantic_match_score,
+          block_match_score: clip.block_match_score,
+          entity_match_score: clip.entity_match_score,
+          visual_specificity_score: clip.visual_specificity_score,
+          reuse_penalty: clip.reuse_penalty,
+          timeline_score: clip.timeline_score,
+          composite_score: clip.composite_score,
           semantic_match_terms: clip.semantic_match_terms,
+          semantic_match_method: clip.semantic_match_method,
+          selection_reason: clip.selection_reason,
+          rejected_candidates_count: clip.rejected_candidates_count,
+          candidate_debug: clip.candidate_debug,
+          score_features: clip.score_features,
+          visual_intent: clip.visual_intent,
+          required_visual_evidence: clip.required_visual_evidence,
+          allowed_visual_categories: clip.allowed_visual_categories,
+          forbidden_visual_categories: clip.forbidden_visual_categories,
           asset_semantic_text: clip.asset_semantic_text,
+          asset_window_id: clip.asset_window_id,
+          asset_window_key: clip.asset_window_key,
           asset_window_summary: clip.asset_window_summary,
           asset_window_start_seconds: clip.asset_window_start_seconds,
           asset_window_end_seconds: clip.asset_window_end_seconds,
+          asset_analysis_provider: clip.asset_analysis_provider,
+          detected_visual_categories: clip.detected_visual_categories,
+          detected_objects: clip.detected_objects,
+          visual_intent_match: clip.visual_intent_match,
+          query_used: clip.query_used,
+          macro_block_id: clip.macro_block_id,
+          micro_block_id: clip.micro_block_id,
+          block_id: clip.block_id,
+          macro_topic: clip.macro_topic,
+          micro_topic: clip.micro_topic,
+          subtheme: clip.subtheme,
+          topic_type: clip.topic_type,
+          hard_boundary: clip.hard_boundary,
+          detected_location: clip.detected_location,
+          detected_landmarks: clip.detected_landmarks,
+          neutral_fallback: clip.neutral_fallback,
+          visual_signature: clip.visual_signature,
+          transition: clip.transition,
+          rejection_warnings: clip.score_features?.rejectionWarnings || [],
           local_path: clip.asset?.local_path || fallbackImagePath,
           provider: clip.asset?.provider || "render_fallback",
           asset_type: clip.asset?.asset_type || clip.asset?.type || (isVideoFile(clip.asset?.local_path || "") ? "video" : "image"),
@@ -1736,7 +1875,7 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
 
   return {
     video_id: videoId,
-    render_path: nextState.render_path,
+      render_path: nextState.render_path,
     state_path: nextState.state_path,
   };
 };

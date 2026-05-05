@@ -4,7 +4,8 @@ const OpenAI = require("openai");
 const { config } = require("../config/env");
 const { logger } = require("../utils/logger");
 
-const OPENAI_REQUEST_TIMEOUT_MS = 20000;
+const OPENAI_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_REQUEST_TIMEOUT_MS || 45000);
+const OPENAI_TTS_TIMEOUT_MS = Number(process.env.OPENAI_TTS_TIMEOUT_MS || 90000);
 
 const openaiClient = config.OPENAI_API_KEY
   ? new OpenAI({
@@ -28,6 +29,23 @@ const warnAndReturnNull = (scope, error) => {
   logger.warn(`${scope} unavailable, using fallback`, { message: error.message });
   return null;
 };
+
+const withTimeout = (promise, timeoutMs, label) =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
 
 const imageMimeByExtension = {
   ".jpg": "image/jpeg",
@@ -206,13 +224,30 @@ const transcribeWithOpenAI = async ({ audioPath, format = "srt" }) => {
 const ttsWithOpenAI = async ({ text }) => {
   if (!hasOpenAi()) return null;
   try {
-    const response = await openaiClient.audio.speech.create({
-      model: "gpt-4o-mini-tts",
-      voice: "alloy",
-      input: text,
-      format: "mp3",
+    logger.info("OpenAI TTS: iniciando síntese", {
+      text_length: String(text || "").length,
+      timeout_ms: OPENAI_TTS_TIMEOUT_MS,
     });
-    return Buffer.from(await response.arrayBuffer());
+
+    const response = await withTimeout(
+      openaiClient.audio.speech.create({
+        model: "gpt-4o-mini-tts",
+        voice: "alloy",
+        input: text,
+        format: "mp3",
+      }),
+      OPENAI_TTS_TIMEOUT_MS,
+      "OpenAI TTS request"
+    );
+    const audioBuffer = Buffer.from(
+      await withTimeout(response.arrayBuffer(), OPENAI_TTS_TIMEOUT_MS, "OpenAI TTS stream read")
+    );
+
+    logger.info("OpenAI TTS: síntese concluída", {
+      bytes: audioBuffer.length,
+    });
+
+    return audioBuffer;
   } catch (error) {
     logger.warn("OpenAI TTS fallback failed", { message: error.message });
     return null;

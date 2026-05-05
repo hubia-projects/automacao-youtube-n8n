@@ -75,6 +75,60 @@ const getWorkflowFiles = () =>
     .filter((fileName) => /^workflow.*\.json$/i.test(fileName))
     .sort();
 
+const loadDesiredWorkflows = (workflowFiles) =>
+  workflowFiles.map((workflowFile) => ({
+    workflowFile,
+    workflow: JSON.parse(fs.readFileSync(path.join(WORKFLOWS_DIR, workflowFile), "utf8")),
+  }));
+
+const buildDesiredWorkflowIdMap = ({ desiredWorkflows, runtimeWorkflows }) => {
+  const runtimeByName = new Map(
+    runtimeWorkflows.map((workflow) => [normalizeName(workflow.name), workflow])
+  );
+
+  const desiredWorkflowIds = new Map();
+
+  desiredWorkflows.forEach(({ workflow }) => {
+    const runtimeWorkflow = runtimeByName.get(normalizeName(workflow.name));
+    const desiredId = runtimeWorkflow?.id || workflow.id || "";
+
+    if (workflow.id && desiredId) {
+      desiredWorkflowIds.set(workflow.id, desiredId);
+    }
+  });
+
+  return desiredWorkflowIds;
+};
+
+const patchExecuteWorkflowTargets = ({ workflow, desiredWorkflowIds }) => {
+  if (!Array.isArray(workflow.nodes) || !desiredWorkflowIds.size) {
+    return workflow;
+  }
+
+  workflow.nodes = workflow.nodes.map((node) => {
+    if (node.type !== "n8n-nodes-base.executeWorkflow") {
+      return node;
+    }
+
+    const currentWorkflowId = String(node.parameters?.workflowId || "").trim();
+    const resolvedWorkflowId = desiredWorkflowIds.get(currentWorkflowId);
+
+    if (!resolvedWorkflowId || resolvedWorkflowId === currentWorkflowId) {
+      return node;
+    }
+
+    return {
+      ...node,
+      parameters: {
+        ...node.parameters,
+        workflowId: resolvedWorkflowId,
+      },
+    };
+  });
+
+  return workflow;
+};
+
 const exportRuntimeWorkflows = (containerName, tempDir) => {
   const localExportPath = path.join(tempDir, "runtime-workflows.json");
 
@@ -99,16 +153,17 @@ const exportRuntimeWorkflows = (containerName, tempDir) => {
   return JSON.parse(fs.readFileSync(localExportPath, "utf8"));
 };
 
-const syncWorkflow = ({ containerName, workflowFile, runtimeWorkflow, tempDir, dryRun }) => {
+const syncWorkflow = ({ containerName, workflowFile, runtimeWorkflow, tempDir, dryRun, desiredWorkflowIds }) => {
   const sourcePath = path.join(WORKFLOWS_DIR, workflowFile);
-  const workflow = JSON.parse(fs.readFileSync(sourcePath, "utf8"));
+  const workflow = patchExecuteWorkflowTargets({
+    workflow: JSON.parse(fs.readFileSync(sourcePath, "utf8")),
+    desiredWorkflowIds,
+  });
   const tempLocalPath = path.join(tempDir, workflowFile);
   const tempContainerPath = `/tmp/${workflowFile}`;
 
   if (runtimeWorkflow?.id) {
     workflow.id = runtimeWorkflow.id;
-  } else {
-    delete workflow.id;
   }
 
   const action = runtimeWorkflow?.id ? "update" : "create";
@@ -190,17 +245,21 @@ const main = () => {
   }
 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "n8n-workflow-sync-"));
+  const desiredWorkflows = loadDesiredWorkflows(workflowFiles);
 
   try {
     const runtimeWorkflows = exportRuntimeWorkflows(options.container, tempDir);
     const runtimeByName = new Map(
       runtimeWorkflows.map((workflow) => [normalizeName(workflow.name), workflow])
     );
+    const desiredWorkflowIds = buildDesiredWorkflowIdMap({
+      desiredWorkflows,
+      runtimeWorkflows,
+    });
 
     console.log(`Sincronizando ${workflowFiles.length} workflow(s) com o container ${options.container}.`);
 
-    for (const workflowFile of workflowFiles) {
-      const workflow = JSON.parse(fs.readFileSync(path.join(WORKFLOWS_DIR, workflowFile), "utf8"));
+    for (const { workflowFile, workflow } of desiredWorkflows) {
       const runtimeWorkflow = runtimeByName.get(normalizeName(workflow.name));
 
       syncWorkflow({
@@ -209,6 +268,7 @@ const main = () => {
         runtimeWorkflow,
         tempDir,
         dryRun: options.dryRun,
+        desiredWorkflowIds,
       });
     }
 

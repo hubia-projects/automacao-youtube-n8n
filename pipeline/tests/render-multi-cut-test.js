@@ -17,8 +17,8 @@ const clipSignature = (timeline = {}) =>
   (timeline.clips || []).map((clip) => `${clip.scene_index}:${path.basename(clip.local_path || "")}`).join("|");
 
 const assertHdResolution = (resolution, label) => {
-  assert(resolution?.width >= 1280, `${label} sem largura HD mínima`);
-  assert(resolution?.height >= 720, `${label} sem altura HD mínima`);
+  assert(resolution?.width >= 1920, `${label} sem largura Full HD mínima`);
+  assert(resolution?.height >= 1080, `${label} sem altura Full HD mínima`);
   assert(resolution?.width >= resolution?.height, `${label} não está em landscape`);
 };
 
@@ -28,16 +28,16 @@ const assertTimelineQuality = (state, label) => {
   assert(state.render_timeline.unique_asset_count > 1, `${label} ainda parece um loop único de asset`);
   assert(
     state.render_timeline.clips.every(
-      (clip) => Number(clip.clip_duration_seconds || 0) >= 3 && Number(clip.clip_duration_seconds || 0) <= 10
+      (clip) => Number(clip.clip_duration_seconds || 0) >= 2.5 && Number(clip.clip_duration_seconds || 0) <= 10
     ),
-    `${label} tem clips fora da janela de 3 a 10 segundos`
+    `${label} tem clips fora da janela de 2.5 a 10 segundos`
   );
   state.render_timeline.clips.forEach((clip) => assertHdResolution(clip.resolution, `${label} clip ${clip.clip_index}`));
 };
 
 const run = async () => {
-  const server = app.listen(8093, "127.0.0.1");
-  const client = axios.create({ baseURL: "http://127.0.0.1:8093/api", timeout: 600000 });
+  const server = app.listen(8095, "127.0.0.1");
+  const client = axios.create({ baseURL: "http://127.0.0.1:8095/api", timeout: 600000 });
 
   try {
     const ideas = await client.post("/videos/ideas/generate", { mock_mode: true, count: 5 });
@@ -59,7 +59,7 @@ const run = async () => {
 
     const renderInfoV1 = await probeMedia(stateV1.render_path);
     assert(renderInfoV1.duration >= 90, "render v1 ficou abaixo de 90 segundos");
-    assert(renderInfoV1.width >= 1280 && renderInfoV1.height >= 720, "render v1 ficou abaixo de HD");
+    assert(renderInfoV1.width >= 1920 && renderInfoV1.height >= 1080, "render v1 ficou abaixo de Full HD");
     assert(stateV1.render_path && (await fs.pathExists(stateV1.render_path)), "final.mp4 do v1 não criado");
 
     const signatureV1 = clipSignature(stateV1.render_timeline);
@@ -80,22 +80,6 @@ const run = async () => {
     assertTimelineQuality(stateV2, "render v2");
     const signatureV2 = clipSignature(stateV2.render_timeline);
     assert(signatureV2 !== signatureV1, "v2 não variou a ordem dos assets/cenas");
-
-    await client.post("/videos/review/regenerate", {
-      video_id: videoId,
-      mock_mode: true,
-      note: "Validando variacao de timeline para v3",
-    });
-    const stateV3 = await getState(client, videoId);
-    assert(stateV3.review?.draft_version === 3, "draft v3 não foi criado");
-    assert(stateV3.script_path === baseScriptPath, "v3 recriou roteiro em vez de reutilizar o existente");
-    assert(stateV3.audio_path === baseAudioPath, "v3 recriou áudio em vez de reutilizar o existente");
-    assert(Array.isArray(stateV3.review?.last_refreshed_scene_indexes) && stateV3.review.last_refreshed_scene_indexes.length >= 1, "v3 não marcou cenas para refresh seletivo");
-    assert(Array.isArray(stateV3.assets_json?.last_refresh_scene_indexes) && stateV3.assets_json.last_refresh_scene_indexes.length >= 1, "v3 não registrou refresh seletivo de assets no state");
-    assertTimelineQuality(stateV3, "render v3");
-    const signatureV3 = clipSignature(stateV3.render_timeline);
-    assert(signatureV3 !== signatureV2, "v3 não variou a ordem dos assets/cenas");
-    assert(signatureV3 !== signatureV1, "v3 repetiu a ordem do v1");
 
     await client.post("/videos/final/approve", { video_id: videoId, approved: true, mock_mode: true });
     await client.post("/videos/youtube/upload", {

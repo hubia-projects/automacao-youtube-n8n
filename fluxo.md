@@ -21,13 +21,15 @@ Este documento descreve o fluxo real do pipeline entre n8n, backend local e APIs
 | Componente | Papel no fluxo | Arquivos principais |
 | --- | --- | --- |
 | n8n Workflow 1 | Inicio manual/agendado, geracao de ideias, aprovacao da ideia, roteiro com visual_plan, chamada do W2 | pipeline/n8n/workflow1_weekly_topic_script.json |
-| n8n Workflow 2 | Audio, legendas SRT/VTT, busca video-first de assets HD por cena, analise visual por janela, chamada do W3 | pipeline/n8n/workflow2_audio_captions_assets.json |
-| n8n Workflow 3 | Render multi-clip por janelas semanticas de video sem queima de legenda, metadata, aprovacao final, upload | pipeline/n8n/workflow3_render_youtube.json |
+| n8n Workflow 2 | Audio, audio intelligence obrigatoria, legendas SRT/VTT, busca video-first de assets HD por cena com query planner por visual intent, rejeicao previa de assets genericos e analise visual por janela, chamada do W3 | pipeline/n8n/workflow2_audio_captions_assets.json |
+| n8n Workflow 3 | Render multi-clip por janelas semanticas de video, score por visual intent, QA tecnico + semantico com quotas gastronomicas apenas quando o tema declarado ou dominante e gastronomico, fix sync seletivo, metadata, aprovacao final, upload | pipeline/n8n/workflow3_render_youtube.json |
 | Backend local | Executa todas as operacoes reais via rotas e services | pipeline/src/routes/videoRoutes.js |
-| Audio Intelligence | Timestamps word-level do audio via OpenAI Whisper, deteccao de pausas e transicoes | pipeline/src/services/audioIntelligence.js |
+| Audio Intelligence | Timestamps word-level do audio via OpenAI Whisper ou fallback, deteccao de pausas e boundaries sugeridas | pipeline/src/services/audioIntelligence.js |
+| Narrative Block Planner | Agrupa roteiro e visual_plan em macroblocos e microblocos com keywords, visual_intent, evidencias obrigatorias e categorias proibidas | pipeline/src/services/narrativeBlockPlanner.js |
+| Visual Intent Layer | Detecta intencao visual da cena, categorias detectadas no asset e mismatch tematico | pipeline/src/services/visualIntentService.js |
 | Semantic Matcher | Matching semantico via embeddings OpenAI entre narracao e janelas de video | pipeline/src/services/semanticMatcher.js |
-| Timeline Planner V2 | Planeja timeline usando timestamps reais de audio + matching semantico por embedding | pipeline/src/services/timelinePlanner.js |
-| Sync Validator | Valida sincronia pos-re
+| Timeline Planner V2 | Planeja timeline usando texto real do audio por intervalo + score composto por visual_intent + anti-repeticao | pipeline/src/services/timelinePlanner.js |
+| Sync Validator | Valida sincronia, diversidade, black frames, silencio, aplica quotas gastronomicas so para tema declarado ou dominante e aciona fix sync seletivo | pipeline/src/services/syncValidator.js |
 
 ## Fluxo Visual
 
@@ -63,21 +65,26 @@ flowchart TD
     V --> W[ttsService]
     W --> X[API Multivozes BR]
     W -. fallback .-> X2[OpenAI TTS]
-    U --> U1[Generate Captions]
+    U --> U0[Analyze Audio Intelligence]
+    U0 --> U01[POST /api/videos/audio/intelligence]
+    U01 --> U1[Generate Captions]
     U1 --> U2[POST /api/videos/captions/generate]
     U2 --> U3[captionsService gera SRT e VTT]
     U3 --> AC[Search Assets]
     AC --> AD[POST /api/videos/assets/search]
     AD --> AE[assetsService]
     AE --> AF[busca por cena em Pexels Pixabay com filtro HD horizontal]
-    AF --> AF1[extrai frames por janela e descreve o video com OpenAI vision]
+    AF --> AF0[assetQueryPlanner gera queries por visual_intent e assetRejectionService corta skyline paisagem e cidade generica quando a cena pede comida]
+    AF0 --> AF1[extrai frames por janela e descreve o video com OpenAI vision ou provider local]
     AF1 --> AG[Call Workflow 3]
 
     AG --> AH[Workflow 3 Start]
     AH --> AI[Render Video]
     AI --> AJ[POST /api/videos/render]
     AJ --> AK[renderService]
-    AK --> AK1[timeline multi clip por janela semantica com xfade e fallback concat]
+    AK --> AK1[timeline multi clip por bloco narrativo, texto real do audio e visual_intent_match]
+    AK1 --> AK2[Validate Render Sync e Quality com quotas gastronomicas e mismatch tematico]
+    AK2 --> AK3[Fix Sync seletivo por scene_index com reason especifica]
     AK1 --> AL[Generate Metadata]
     AL --> AM[POST /api/videos/metadata/generate]
     AM --> AN[metadataService]
@@ -265,13 +272,16 @@ APIs usadas hoje:
 Comportamento atual da busca de assets:
 
 - usa visual_plan salvo no state para buscar assets por cena
-- gera ate 4 queries por cena com base nos keywords e entidades geograficas extraidos do proprio roteiro
+- gera ate 4 queries por cena com base em keywords, entidades geograficas e visual_intent de cada bloco narrativo
 - tenta fechar cada cena com ate 3 videos externos longos antes de aceitar imagem
 - aceita apenas assets em landscape com HD minimo 1280x720
 - prioriza Full HD 1920x1080 ou maior quando disponivel
+- para cenas de gastronomia, mercado, vinho, pastelaria, restaurante ou cafe, remove queries genericas de skyline travel e aerial city e amplia o pool de candidatos especificos
+- antes do download, aplica score e rejeicao previa para cortar assets de cidade errada, paisagem bonita sem comida, janela generica longa demais e categorias proibidas para a cena
 - apos baixar cada video, extrai de 1 a 3 frames representativos em janelas internas do proprio asset
-- usa OpenAI vision para gerar analysis_summary, analysis_tags e analysis_windows por video quando a chave estiver configurada
-- salva scene_index, resolucao, provider, duration_estimate e a analise visual por janela em assets_json.items
+- usa OpenAI vision ou provider local para gerar analysis_summary, analysis_tags e analysis_windows por video quando configurado
+- enriquece cada janela com detected_visual_categories, visual_intent_match, generic_visual, required_evidence_found e missing_required_visual_evidence
+- salva scene_index, resolucao, provider, duration_estimate, query_used e a analise visual por janela em assets_json.items
 
 Arquivos principais que controlam essa etapa:
 
@@ -313,10 +323,13 @@ Comportamento atual do render:
 - tenta manter cada clip entre 3 e 10 segundos
 - usa o audio narrado como trilha principal e limita a duracao final ao audio
 - recorta subclips reais dos videos baixados em vez de repetir sempre o inicio do arquivo
-- escolhe a janela do asset de cada corte com score semantico por trecho de roteiro, usando query, metadados do provider e analysis_windows geradas sobre frames reais do video, e grava clip_script_excerpt, asset_semantic_text, asset_window_summary, asset_window_start_seconds, asset_window_end_seconds e semantic_match_score no render_timeline para revalidacao
+- escolhe a janela do asset de cada corte com score semantico por trecho de roteiro, match de visual_intent, required_visual_evidence, categorias proibidas, genericidade e anti-repeticao, usando query, metadados do provider e analysis_windows geradas sobre frames reais do video
+- grava clip_script_excerpt, asset_semantic_text, asset_window_summary, asset_window_start_seconds, asset_window_end_seconds, semantic_match_score, visual_intent, detected_visual_categories, visual_intent_match e query_used no render_timeline para revalidacao
 - tenta aplicar xfade entre clips e cai para concat simples se o xfade falhar
 - para imagens usa zoompan apenas como fallback duro; o caminho principal agora e video-first por cena
-- salva render_timeline no state com clips, resolucao final, quantidade de cortes e estrategia usada
+- o QA final bloqueia publicacao quando um video gastronomico declarado ou dominantemente gastronomico fica subrepresentado em comida mercado vinho restaurante ou cafe, ou quando cidade generica paisagem e skyline passam do limite permitido
+- uma cena isolada de comida dentro de um video geral de viagem nao ativa sozinha essas quotas gastronomicas
+- salva render_timeline no state com clips, resolucao final, quantidade de cortes, distribuicao visual e estrategia usada
 
 #### Metadata
 
@@ -382,9 +395,9 @@ Quando a resposta final e NAO:
 - o Workflow 3 chama POST /api/videos/review/regenerate
 - o backend incrementa a versao do draft
 - o roteiro, audio e captions sao reaproveitados
-- o backend analisa semantic_match_score, reuso de asset e reuso de janela no render_timeline para escolher as cenas mais fracas
+- o backend analisa semantic_match_score, visual_intent_match, categorias detectadas, excesso de cidade generica em temas gastronomicos dominantes, reuso de asset e reuso de janela no render_timeline para escolher as cenas mais fracas
 - o assetsService rebusca apenas essas cenas e tenta evitar os mesmos source_urls ja usados nelas, preservando o restante do pool
-- o render gera uma nova timeline v2 ou v3 variando ordem, janela semantica e offset dos assets, agora com pool renovado nas cenas selecionadas
+- o render gera uma nova timeline v2 ou v3 variando ordem, janela semantica e offset dos assets, agora com pool renovado nas cenas selecionadas e refreshReason como theme_visual_mismatch, visual_intent_underrepresented, generic_asset_overuse ou wrong_visual_category
 - metadata e revisao final sao geradas de novo
 - um novo link de revisao e uma nova mensagem de aprovacao sao enviados ao Telegram
 
@@ -405,7 +418,8 @@ Quando a resposta final e NAO:
 - gera audio
 - gera legendas sidecar SRT/VTT
 - busca assets e faz refresh seletivo de cenas fracas na revisao
-- analisa frames dos assets por janela
+- analisa frames dos assets por janela e detecta categorias visuais reais
+- aplica visual_intent por cena para orientar query, rejeicao e score final
 - renderiza o video
 - gera metadata
 - envia mensagens para o Telegram
@@ -414,6 +428,7 @@ Quando a resposta final e NAO:
 - salva estado e arquivos
 - publica o render de revisao em Drive/Sheets quando configurado
 - faz upload para o YouTube e tenta anexar a trilha sidecar
+- bloqueia videos gastronomicos quando a distribuicao visual fica generica demais
 
 ## Onde alterar cada parte no futuro
 
@@ -424,9 +439,11 @@ Quando a resposta final e NAO:
 | Titulo descricao tags | pipeline/src/services/openaiService.js e pipeline/src/services/metadataService.js |
 | Provider de voz principal | pipeline/src/services/ttsService.js |
 | Segmentacao visual por cena | pipeline/src/utils/visualPlan.js e pipeline/src/services/scriptService.js |
-| Busca de assets HD por cena e refresh seletivo | pipeline/src/services/assetsService.js e pipeline/src/utils/mediaUtils.js |
-| Analise visual por frames e janelas | pipeline/src/services/assetsService.js, pipeline/src/services/openaiService.js e pipeline/src/utils/mediaUtils.js |
-| Timeline multi-clip e transicoes | pipeline/src/services/renderService.js, pipeline/src/services/openaiService.js e pipeline/src/utils/mediaUtils.js |
+| Visual intent, evidencias obrigatorias e categorias proibidas | pipeline/src/services/visualIntentService.js e pipeline/src/services/narrativeBlockPlanner.js |
+| Busca de assets HD por cena e refresh seletivo | pipeline/src/services/assetsService.js, pipeline/src/services/assetQueryPlanner.js e pipeline/src/services/assetRejectionService.js |
+| Analise visual por frames e janelas | pipeline/src/services/assetsService.js, pipeline/src/services/localVideoUnderstandingService.js, pipeline/src/services/openaiService.js e pipeline/src/utils/mediaUtils.js |
+| Timeline multi-clip, score e transicoes | pipeline/src/services/timelinePlanner.js, pipeline/src/services/timelineScoringService.js, pipeline/src/services/renderService.js e pipeline/src/utils/mediaUtils.js |
+| QA semantico, quotas gastronomicas e fix sync seletivo | pipeline/src/services/syncValidator.js |
 | Legenda sidecar do YouTube | pipeline/src/services/captionsService.js e pipeline/src/services/youtubeService.js |
 | Status enviados no Telegram | pipeline/src/services/telegramService.js |
 | Publicacao da revisao online | pipeline/src/services/reviewPublishingService.js |

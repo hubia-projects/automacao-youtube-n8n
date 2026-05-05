@@ -1,4 +1,5 @@
 {
+  "id": "SWfoFJ3aNt2nJboC",
   "name": "Workflow 3 — Render and YouTube Preparation",
   "active": true,
   "nodes": [
@@ -15,7 +16,7 @@
       "name": "Render Video",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [500, 220],
+      "position": [460, 220],
       "parameters": {
         "method": "POST",
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/render",
@@ -25,11 +26,101 @@
       }
     },
     {
+      "id": "validate_render_sync",
+      "name": "Validate Render Sync",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 220],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/render/validate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ video_id: $json.video_id, mock_mode: $env.MOCK_MODE === 'true' }) }}"
+      }
+    },
+    {
+      "id": "if_render_ok",
+      "name": "If Render OK",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [940, 220],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.is_publishable}}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "fix_render_sync",
+      "name": "Fix Render Sync",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1180, 320],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/render/fix-sync",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ video_id: $json.video_id, mock_mode: $env.MOCK_MODE === 'true' }) }}"
+      }
+    },
+    {
+      "id": "validate_render_sync_after_fix",
+      "name": "Validate Render Sync After Fix",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1420, 320],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/render/validate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ video_id: $json.video_id, mock_mode: $env.MOCK_MODE === 'true' }) }}"
+      }
+    },
+    {
+      "id": "if_render_ok_after_fix",
+      "name": "If Render OK After Fix",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1660, 320],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.is_publishable}}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      }
+    },
+    {
       "id": "generate_metadata",
       "name": "Generate Metadata",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [780, 220],
+      "position": [1180, 140],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/metadata/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ video_id: $json.video_id, mock_mode: $env.MOCK_MODE === 'true' }) }}"
+      }
+    },
+    {
+      "id": "generate_metadata_with_warning",
+      "name": "Generate Metadata With Warning",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1900, 400],
       "parameters": {
         "method": "POST",
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/metadata/generate",
@@ -44,7 +135,7 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "webhookId": "yt-w3-final-approval",
-      "position": [1060, 380],
+      "position": [1460, 140],
       "parameters": {
         "path": "final-approval",
         "httpMethod": "POST",
@@ -57,7 +148,7 @@
       "name": "Save Approval",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1320, 220],
+      "position": [1700, 140],
       "parameters": {
         "method": "POST",
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/final/approve",
@@ -71,7 +162,7 @@
       "name": "If Approved",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1580, 220],
+      "position": [1940, 140],
       "parameters": {
         "conditions": {
           "boolean": [
@@ -88,7 +179,7 @@
       "name": "Upload to YouTube",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1840, 140],
+      "position": [2180, 80],
       "parameters": {
         "method": "POST",
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/youtube/upload",
@@ -102,7 +193,7 @@
       "name": "Regenerate Review Draft",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1840, 300],
+      "position": [2180, 200],
       "parameters": {
         "method": "POST",
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/review/regenerate",
@@ -114,7 +205,24 @@
   ],
   "connections": {
     "Start": { "main": [[{ "node": "Render Video", "type": "main", "index": 0 }]] },
-    "Render Video": { "main": [[{ "node": "Generate Metadata", "type": "main", "index": 0 }]] },
+    "Render Video": { "main": [[{ "node": "Validate Render Sync", "type": "main", "index": 0 }]] },
+    "Validate Render Sync": { "main": [[{ "node": "If Render OK", "type": "main", "index": 0 }]] },
+    "If Render OK": {
+      "main": [
+        [{ "node": "Generate Metadata", "type": "main", "index": 0 }],
+        [{ "node": "Fix Render Sync", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fix Render Sync": { "main": [[{ "node": "Validate Render Sync After Fix", "type": "main", "index": 0 }]] },
+    "Validate Render Sync After Fix": { "main": [[{ "node": "If Render OK After Fix", "type": "main", "index": 0 }]] },
+    "If Render OK After Fix": {
+      "main": [
+        [{ "node": "Generate Metadata", "type": "main", "index": 0 }],
+        [{ "node": "Generate Metadata With Warning", "type": "main", "index": 0 }]
+      ]
+    },
+    "Generate Metadata": { "main": [[{ "node": "Final Approval Webhook", "type": "main", "index": 0 }]] },
+    "Generate Metadata With Warning": { "main": [[{ "node": "Final Approval Webhook", "type": "main", "index": 0 }]] },
     "Final Approval Webhook": { "main": [[{ "node": "Save Approval", "type": "main", "index": 0 }]] },
     "Save Approval": { "main": [[{ "node": "If Approved", "type": "main", "index": 0 }]] },
     "If Approved": {

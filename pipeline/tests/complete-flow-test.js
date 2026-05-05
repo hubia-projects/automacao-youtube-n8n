@@ -10,83 +10,69 @@ const assert = (condition, message) => {
   if (condition) throw new Error(message);
 };
 
-// Tema novo: "Segurança na Tecnologia"
-const topic = "5 Dicas Essenciais de Segurança Digital em 2026";
-const angle = "guia prático com proteção contra hackers, fraudes e vazamento de dados";
+const topic = "Portugal gastronómico: Lisboa, Porto, mercados e vinhos";
+const angle = "guia narrativo focado em comida local, mercados, cafes e vinhos";
 
 const visualPlan = [
   {
     scene_index: 1,
-    title: "Ameaças Digitais Modernas",
-    narration_excerpt: "O mundo digital está cheio de perigos invisíveis, desde phishing sofisticado até ransomware que pode destruir seus dados em segundos.",
-    keywords: ["cybersecurity threat", "hacker attack", "malware virus", "phishing email", "digital crime", "data breach"],
+    title: "Portugal em sabores",
+    narration_excerpt: "Portugal abre o roteiro com uma promessa simples: viajar pelo país através dos mercados, cafés, pratos e vinhos.",
+    keywords: ["portugal food travel", "portugal market", "travel overview", "portugal cafe", "food journey"],
     target_duration_seconds: 8,
   },
   {
     scene_index: 2,
-    title: "Senhas Fortes e Autenticação",
-    narration_excerpt: "Criar senhas complexas não é suficiente. Use autenticação de dois fatores e gerenciadores de senhas para proteção real.",
-    keywords: ["password security", "two factor authentication", "password manager", "digital protection", "login security", "biometric access"],
+    title: "Lisboa gastronómica",
+    narration_excerpt: "Em Lisboa, confeitarias, cafés históricos e mercados dão o tom da primeira grande parada do vídeo.",
+    keywords: ["lisbon food market", "lisbon pastry", "lisbon cafe", "portugal bakery", "lisbon street food"],
     target_duration_seconds: 8,
   },
   {
     scene_index: 3,
-    title: "Redes Wi-Fi Públicas",
-    narration_excerpt: "Redes públicas são campos minados digitais. Use VPN sempre e evite transações bancárias em Wi-Fi desconhecido.",
-    keywords: ["public wifi danger", "vpn protection", "network security", "hotspot risk", "encrypted connection", "cyber safety"],
+    title: "Porto gastronómico",
+    narration_excerpt: "No Porto, a narrativa muda para caves, vinho do Porto, restaurantes junto ao Douro e comida mais densa.",
+    keywords: ["porto wine cellar", "porto food market", "porto restaurant", "douro food", "porto gastronomy"],
     target_duration_seconds: 8,
   },
   {
     scene_index: 4,
-    title: "Proteção de Dispositivos",
-    narration_excerpt: "Mantenha tudo atualizado: antivírus, sistemas operacionais e apps. Cada update é uma porta fechada para invasores.",
-    keywords: ["antivirus software", "system update", "device security", "malware protection", "cyber defense", "digital shield"],
+    title: "Mercados e comida local",
+    narration_excerpt: "Mercados, bancas, pratos servidos na hora e cenas de rua humanizam a montagem e trazem textura ao roteiro.",
+    keywords: ["portugal food market", "street market food", "local dishes", "food hall portugal", "market people"],
     target_duration_seconds: 8,
   },
   {
     scene_index: 5,
-    title: "Privacidade nas Redes Sociais",
-    narration_excerpt: "Configure privacidade máxima, revele o mínimo e pense duas vezes antes de compartilhar informações pessoais online.",
-    keywords: ["social media privacy", "data protection", "online safety", "personal information", "digital footprint", "privacy settings"],
+    title: "Vinhos e doçaria",
+    narration_excerpt: "Vinho, pastelaria, sobremesas e cafés fecham a viagem com um bloco visual mais específico e memorável.",
+    keywords: ["portugal wine tasting", "portugal pastry", "bakery dessert", "cafe dessert", "sweet food portugal"],
     target_duration_seconds: 8,
   },
   {
     scene_index: 6,
-    title: "Backup e Recuperação",
-    narration_excerpt: "Tenha backup automático na nuvem e físico. Quando o desastre acontecer, você terá seus dados salvos em outro lugar.",
-    keywords: ["data backup", "cloud storage", "recovery plan", "data loss prevention", "backup system", "disaster recovery"],
+    title: "Fechamento",
+    narration_excerpt: "No final, o vídeo resume por que Portugal funciona tão bem quando a narrativa segue o ritmo dos sabores e das cidades.",
+    keywords: ["portugal travel closing", "food montage", "city food summary", "portugal cafe closing", "travel lifestyle"],
     target_duration_seconds: 8,
-  },
-  {
-    scene_index: 7,
-    title: "Futuro da Segurança Digital",
-    narration_excerpt: "IA e biometria estão mudando o jogo, mas a educação continua sendo sua melhor defesa contra ameaças digitais.",
-    keywords: ["artificial intelligence security", "biometric protection", "future technology", "cyber trends", "digital evolution", "tech security"],
-    target_duration_seconds: 7,
   },
 ];
 
 const scriptText = [
-  "O mundo digital evoluiu rapidamente, mas os perigos cresceram na mesma proporção.",
-  "Cada clique pode expor seus dados, cada senha pode ser quebrada, cada dispositivo pode ser invadido.",
-  "Phishing se tornou sofisticado, hackers usam IA para criar ataques personalizados e ransomware pode parar sua vida.",
-  "A primeira linha de defesa começa com senhas fortes: combinações únicas de letras, números e símbolos.",
-  "Mas senhas não são suficientes. Autenticação de dois fatores é essencial, transformando uma barreira em duas.",
-  "Gerenciadores de senhas criam combinações complexas para cada serviço, eliminando o risco de reutilização.",
-  "Redes Wi-Fi públicas são verdadeiros campos minados digitais, onde hackers esperam por dados desprotegidos.",
-  "Use VPN sempre, criptografe sua conexão e nunca acesse dados sensíveis em redes desconhecidas.",
-  "Mantenha todos os dispositivos atualizados: cada patch de segurança é uma porta fechada para invasores.",
-  "Antivírus moderno, firewalls ativos e sistemas operacionais atualizados formam sua muralha digital.",
-  "Nas redes sociais, configure privacidade máxima, revele o mínimo necessário e pense antes de postar.",
-  "Backup automático é seu seguro contra desastres: nuvem para acesso rápido e físico para emergências.",
-  "O futuro trará IA preditiva e biometria avançada, mas a educação continuará sendo sua melhor arma.",
-  "Segurança digital não é opção, é necessidade. Proteja hoje para não se arrepender amanhã."
+  "Portugal é um país que funciona muito bem quando o roteiro segue comida, cidade e atmosfera no tempo certo da narração.",
+  "A abertura precisa vender essa promessa com imagens que pareçam uma viagem de sabores, não uma sequência aleatória de paisagens.",
+  "Lisboa entra primeiro com cafés históricos, vitrines de pastelaria, mercados e cenas de rua onde a comida aparece como parte da cidade.",
+  "Depois o Porto muda a energia com caves, vinho do Porto, restaurantes perto do Douro e planos mais densos de gastronomia local.",
+  "No meio do vídeo, os mercados e os pratos servidos na hora ajudam a humanizar a narrativa e aproximam o espectador do cotidiano.",
+  "Mais à frente, vinho, sobremesas, cafés e doçaria criam um bloco visual mais específico e memorável.",
+  "A ideia deste teste é validar se a timeline acompanha exatamente o áudio e evita repetir costa, skyline ou cenas genéricas quando o texto fala de comida.",
+  "Se a edição respeitar o tempo da fala e a ordem dos blocos, o resultado final deve parecer muito mais humano."
 ].join(" ");
 
 const run = async () => {
   const videoId = `security_test_${Date.now()}`;
 
-  console.log("🔐 Iniciando teste completo: Segurança Digital 2026");
+  console.log("🍷 Iniciando teste completo: Portugal gastronomia");
 
   // Configurar estado inicial
   await updateState(
@@ -97,9 +83,9 @@ const run = async () => {
       selected_idea: { topic, angle },
       script_text: scriptText,
       visual_plan: visualPlan,
-      youtube_title: "5 Dicas de Segurança Digital Essenciais 2026",
-      youtube_description: "Proteja-se contra hackers, fraudes e vazamento de dados com este guia completo de segurança digital.",
-      youtube_tags: ["segurança digital", "cibersegurança", "proteção de dados", "hackers", "segurança na internet"],
+      youtube_title: "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      youtube_description: "Uma viagem guiada por comida local, mercados, cafés históricos e vinhos em Portugal.",
+      youtube_tags: ["portugal gastronomia", "lisboa comida", "porto vinho", "mercados portugal", "travel food"],
       approved: false,
       error_message: "",
     },
@@ -115,7 +101,7 @@ const run = async () => {
   console.log(`✅ Áudio gerado: ${audio.provider} - ${audio.voice}`);
 
   // Buscar assets
-  console.log("🎬 Buscando assets de tecnologia...");
+  console.log("🎬 Buscando assets de gastronomia e cidades...");
   const assets = await generateAssets({ 
     videoId, 
     mockMode: false, 
