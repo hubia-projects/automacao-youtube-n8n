@@ -1,14 +1,11 @@
+const assert = require("assert");
 const { updateState, loadState } = require("../src/services/stateService");
-const { generateScript } = require("../src/services/scriptService");
 const { generateAudio } = require("../src/services/ttsService");
 const { generateAssets } = require("../src/services/assetsService");
 const { renderVideo } = require("../src/services/renderService");
+const { validateRender } = require("../src/services/syncValidator");
 const { uploadToYoutube } = require("../src/services/youtubeService");
 const { probeMedia } = require("../src/utils/mediaUtils");
-
-const assert = (condition, message) => {
-  if (condition) throw new Error(message);
-};
 
 const topic = "Portugal gastronómico: Lisboa, Porto, mercados e vinhos";
 const angle = "guia narrativo focado em comida local, mercados, cafes e vinhos";
@@ -120,8 +117,17 @@ const run = async () => {
   
   const stateAfterRender = await loadState(videoId);
   const renderInfo = await probeMedia(stateAfterRender.render_path);
+  const validation = await validateRender({ videoId, mockMode: false });
+
+  assert(validation, "validacao de render deveria retornar payload");
+  assert.strictEqual(
+    validation.is_publishable,
+    true,
+    `render completo deveria ser publicavel antes do upload. issues: ${(validation.issues || []).map((issue) => issue.type || issue.message).join(", ")}`
+  );
   
   console.log(`✅ Render concluído: ${renderInfo.duration}s @ ${renderInfo.width}x${renderInfo.height}`);
+  console.log(`✅ Render validado: quality=${validation.quality_score} publishable=${validation.is_publishable}`);
 
   // Aprovar para upload
   await updateState(
@@ -162,6 +168,7 @@ const run = async () => {
     output_duration_seconds: finalState.render_timeline?.output_duration_seconds,
     semantic_alignment_score_average: finalState.render_timeline?.semantic_alignment_score_average,
     low_confidence_clip_count: finalState.render_timeline?.low_confidence_clip_count,
+    render_quality_score: finalState.render_validation?.quality_score,
     variety_score: ((finalState.render_timeline?.unique_asset_count || 0) / (finalState.render_timeline?.total_clips || 1) * 100).toFixed(1) + "%",
   }, null, 2));
 

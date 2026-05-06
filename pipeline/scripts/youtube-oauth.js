@@ -10,6 +10,8 @@ const requestedScopes = [
   "https://www.googleapis.com/auth/youtube.force-ssl",
   "https://www.googleapis.com/auth/youtube.upload",
 ];
+const uploadScope = "https://www.googleapis.com/auth/youtube.upload";
+const captionScope = "https://www.googleapis.com/auth/youtube.force-ssl";
 
 const command = process.argv[2] || "url";
 const code = process.argv[3] || "";
@@ -32,7 +34,7 @@ const main = async () => {
     const url = auth.generateAuthUrl({
       access_type: "offline",
       prompt: "consent",
-      include_granted_scopes: true,
+      include_granted_scopes: false,
       scope: requestedScopes,
     });
 
@@ -47,12 +49,38 @@ const main = async () => {
     }
 
     const { tokens } = await auth.getToken(code);
+    const scopeList = String(tokens.scope || "")
+      .split(/\s+/)
+      .filter(Boolean);
+    const warnings = [];
+
+    if (!tokens.refresh_token) {
+      warnings.push("Google nao retornou refresh_token. Refaca a autorizacao com prompt=consent.");
+    }
+
+    if (!scopeList.includes(uploadScope)) {
+      warnings.push(`Token retornado sem escopo obrigatorio de upload: ${uploadScope}`);
+    }
+
+    if (!scopeList.includes(captionScope)) {
+      warnings.push(`Token retornado sem escopo de legenda: ${captionScope}`);
+    }
+
+    if (tokens.refresh_token_expires_in) {
+      warnings.push(
+        `refresh_token com expiracao reportada pelo Google (${tokens.refresh_token_expires_in}s). Se isso vier como ~604800s, o app OAuth provavelmente esta em Testing no Google Auth Platform.`
+      );
+    }
 
     console.log(
       JSON.stringify(
         {
           has_refresh_token: Boolean(tokens.refresh_token),
           scope: tokens.scope || "",
+          refresh_token_expires_in: tokens.refresh_token_expires_in || 0,
+          has_upload_scope: scopeList.includes(uploadScope),
+          has_caption_scope: scopeList.includes(captionScope),
+          warnings,
           youtube_refresh_token: tokens.refresh_token || "",
         },
         null,

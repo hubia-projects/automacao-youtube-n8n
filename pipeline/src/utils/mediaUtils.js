@@ -120,10 +120,32 @@ const extractVideoFrame = async ({ inputPath, outputPath, timeSeconds = 0, width
   return outputPath;
 };
 
+const extractFrameRawRgb = async ({ inputPath, timeSeconds = 0, width = 64, height = 64 }) => {
+  const { stdout } = await runFfmpeg(
+    [
+      "-ss",
+      Number(Number(timeSeconds || 0).toFixed(3)).toString(),
+      "-i",
+      inputPath,
+      "-frames:v",
+      "1",
+      "-vf",
+      `scale=${width}:${height},format=rgb24`,
+      "-f",
+      "rawvideo",
+      "-",
+    ],
+    { encoding: "buffer" }
+  );
+
+  return stdout;
+};
+
 module.exports = {
   runFfmpeg,
   probeMedia,
   createPlaceholderImage,
   extractVideoFrame,
+  extractFrameRawRgb,
   getResolutionLabel,
 };

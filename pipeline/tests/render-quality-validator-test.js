@@ -27,6 +27,7 @@ const run = async () => {
   assert(result.issues.some((issue) => issue.type === "resolution_below_target"), "deveria detectar output abaixo de 1080p");
   assert(result.issues.some((issue) => issue.type === "missing_audio"), "deveria detectar audio ausente");
   assert(result.issues.some((issue) => issue.type === "black_frames_detected"), "deveria detectar black frames");
+  assert(result.issues.some((issue) => issue.type === "solid_color_frames_detected"), "deveria detectar frame solido placeholder-like");
 
   console.log("render quality validator validado com sucesso");
 };

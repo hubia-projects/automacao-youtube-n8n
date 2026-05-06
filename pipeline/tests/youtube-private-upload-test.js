@@ -94,6 +94,11 @@ const run = async () => {
     videoId,
     {
       approved: true,
+      render_validation: {
+        is_publishable: true,
+        needs_regeneration: false,
+        needs_manual_review: false,
+      },
       error_message: "",
     },
     {

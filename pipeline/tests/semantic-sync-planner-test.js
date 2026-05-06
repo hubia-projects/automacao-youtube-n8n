@@ -76,6 +76,7 @@ const run = async () => {
     state,
     audioDuration: 20,
     draftVersion: 1,
+    allowPlaceholderFallback: true,
     fallbackAsset: {
       provider: "fallback",
       asset_type: "image",
@@ -97,9 +98,10 @@ const run = async () => {
     "clips de Lisboa nao podem continuar depois da boundary Porto"
   );
   assert(
-    clipsAfterPortoBoundary[0].detected_location?.city === "Porto" || clipsAfterPortoBoundary[0].neutral_fallback,
-    "primeiro clip apos boundary deve ser Porto ou fallback neutro"
+    clipsAfterPortoBoundary[0].detected_location?.city === "Porto",
+    "primeiro clip apos boundary hard deve corresponder ao novo bloco"
   );
+  assert.strictEqual(Boolean(clipsAfterPortoBoundary[0].neutral_fallback), false, "primeiro clip hard nao pode ser neutro");
 
   const portoBlock = timeline.microBlocks.find((block) => block.macro_topic === "Porto");
   const assetWindows = __test__.flattenAssetWindows(state.assets_json.items);
@@ -108,6 +110,14 @@ const run = async () => {
     assetWindows,
     previousMacroTopic: "Lisboa",
     fallbackAsset: state.assets_json.items[1],
+    isBoundaryFirstSlot: true,
+    hardBoundaryPolicy: {
+      enabled: true,
+      max_topic_switch_latency_sec: 0.5,
+      forbid_neutral_first_clip: true,
+      require_location_on_hard_boundary: true,
+      fail_on_missing_boundary_candidate: true,
+    },
   });
 
   assert(

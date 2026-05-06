@@ -11,6 +11,7 @@ const { analyzeAudio } = require("../services/audioIntelligence");
 const { validateRender, fixRenderSync } = require("../services/syncValidator");
 const { generateMetadata } = require("../services/metadataService");
 const { uploadToYoutube } = require("../services/youtubeService");
+const { markNeedsManualReview } = require("../services/manualReviewService");
 const { loadState, updateState, setStateError } = require("../services/stateService");
 const { triggerWorkflow2, triggerWorkflow3 } = require("../services/workflowHandoffService");
 const { requestReviewRegeneration } = require("../services/reviewRevisionService");
@@ -242,6 +243,7 @@ router.post("/videos/render/validate", async (req, res, next) => {
     const parsed = bodyWithVideoId.parse(req.body || {});
     const result = await validateRender({
       videoId: parsed.video_id,
+      mockMode: withDefaultMock(parsed),
     });
     res.json({ ok: true, ...result });
   } catch (error) {
@@ -337,6 +339,28 @@ router.post("/videos/review/regenerate", async (req, res, next) => {
   }
 });
 
+router.post("/videos/review/mark-manual-review", async (req, res, next) => {
+  try {
+    const schema = bodyWithVideoId.extend({
+      note: z.string().optional(),
+      source: z.string().optional(),
+    });
+
+    const parsed = schema.parse(req.body || {});
+
+    const result = await markNeedsManualReview({
+      videoId: parsed.video_id,
+      note: parsed.note,
+      source: parsed.source,
+    });
+
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    await setStateError(req.body?.video_id, error, "manual_review_mark_failed").catch(() => null);
+    next(error);
+  }
+});
+
 router.post("/videos/youtube/upload", async (req, res, next) => {
   try {
     const schema = bodyWithVideoId.extend({
@@ -344,6 +368,28 @@ router.post("/videos/youtube/upload", async (req, res, next) => {
     });
 
     const parsed = schema.parse(req.body || {});
+    const state = await loadState(parsed.video_id);
+    const hardBoundaryStatus = state?.render_validation?.hard_boundary_status || "unknown";
+    const maxVisualLagSec = Number(state?.render_validation?.max_visual_lag_sec || 0);
+    const maxAllowedLagSec = Number(config.HARD_BOUNDARY_MAX_LAG_SEC || 0.5);
+
+    if (hardBoundaryStatus !== "pass") {
+      return res.status(409).json({
+        ok: false,
+        error: "Upload bloqueado: hard boundary QA reprovado.",
+        hard_boundary_status: hardBoundaryStatus,
+        max_visual_lag_sec: maxVisualLagSec,
+      });
+    }
+
+    if (maxVisualLagSec > maxAllowedLagSec) {
+      return res.status(409).json({
+        ok: false,
+        error: "Upload bloqueado: max_visual_lag_sec acima do limite configurado.",
+        max_visual_lag_sec: maxVisualLagSec,
+        hard_boundary_max_lag_sec: maxAllowedLagSec,
+      });
+    }
 
     const result = await uploadToYoutube({
       videoId: parsed.video_id,

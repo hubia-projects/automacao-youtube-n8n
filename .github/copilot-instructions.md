@@ -7,3 +7,5 @@
 - Mantenha o HTML visual coerente com a implementacao atual, incluindo os blocos de n8n, backend local, Telegram, providers externos e pontos de aprovacao humana.
 - Ao mudar agendamentos ou triggers do Workflow 1, atualize em fluxo.md a configuracao vigente de start manual e start agendado.
 - Ao trocar providers externos, registre em fluxo.md qual provider e principal, quais sao os fallbacks e em quais arquivos isso e controlado.
+- Antes de rodar testes que envolvam geracao de audio, valide se o multivozes_br_engine esta ativo e acessivel.
+- Se o multivozes_br_engine nao estiver rodando, inicie o servico antes dos testes (localmente em C:\Users\HABILFIX\Desktop\Hubia\Projetos\multivozes_br_engine ou no container) e so depois execute a bateria de testes.

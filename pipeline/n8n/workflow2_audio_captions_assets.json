@@ -68,6 +68,23 @@
       }
     },
     {
+      "id": "if_assets_ready",
+      "name": "If Assets Ready",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1140, 200],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{!$json.missing_assets}}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      }
+    },
+    {
       "id": "call_workflow3",
       "name": "Call Workflow 3",
       "type": "n8n-nodes-base.executeWorkflow",
@@ -79,6 +96,20 @@
         "input": "json",
         "jsonData": "={{$json.handoff_payload_workflow_3}}"
       }
+    },
+    {
+      "id": "mark_manual_review_missing_assets",
+      "name": "Mark Needs Manual Review Missing Assets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1380, 320],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/review/mark-manual-review",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ video_id: $json.video_id, note: $json.blocking_scene_indexes?.length ? `Assets insuficientes para render. Cenas bloqueadas: ${$json.blocking_scene_indexes.join(', ')}.` : 'Assets insuficientes para render.', source: 'workflow2_missing_assets', mock_mode: $env.MOCK_MODE === 'true' }) }}"
+      }
     }
   ],
   "connections": {
@@ -86,7 +117,13 @@
     "Generate Audio": { "main": [[{ "node": "Analyze Audio Intelligence", "type": "main", "index": 0 }]] },
     "Analyze Audio Intelligence": { "main": [[{ "node": "Generate Captions", "type": "main", "index": 0 }]] },
     "Generate Captions": { "main": [[{ "node": "Search Assets", "type": "main", "index": 0 }]] },
-    "Search Assets": { "main": [[{ "node": "Call Workflow 3", "type": "main", "index": 0 }]] }
+    "Search Assets": { "main": [[{ "node": "If Assets Ready", "type": "main", "index": 0 }]] },
+    "If Assets Ready": {
+      "main": [
+        [{ "node": "Call Workflow 3", "type": "main", "index": 0 }],
+        [{ "node": "Mark Needs Manual Review Missing Assets", "type": "main", "index": 0 }]
+      ]
+    }
   },
   "settings": { "executionOrder": "v1" }
 }

@@ -12,18 +12,39 @@ const escapeDrawtext = (value = "") =>
     .replace(/'/g, "\\'")
     .replace(/%/g, "\\%");
 
-const buildBlockOverlays = ({ narrativeBlocks = [], enabled = config.ENABLE_BLOCK_OVERLAYS }) => {
+const buildBlockOverlays = ({
+  narrativeBlocks = [],
+  clips = [],
+  enabled = config.ENABLE_BLOCK_OVERLAYS,
+  requireChapterOverlay = Boolean(config.HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY),
+}) => {
   if (!enabled) return [];
 
-  return (Array.isArray(narrativeBlocks) ? narrativeBlocks : [])
-    .filter((block, index) => index > 0 || String(block.topic || "").trim())
-    .map((block, index) => ({
-      start_seconds: round3(Number(block.start_seconds ?? block.start_sec ?? 0)),
-      end_seconds: round3(Number(block.start_seconds ?? block.start_sec ?? 0) + 2.6),
-      text: block.overlay_title || `${index + 1}. ${block.label || block.topic || "Bloco"}`,
-      type: "block_title",
-      block_id: block.block_id || block.id,
-    }));
+  const safeBlocks = Array.isArray(narrativeBlocks) ? narrativeBlocks : [];
+  const safeClips = Array.isArray(clips) ? clips : [];
+
+  return safeBlocks
+    .filter((block, index) => {
+      if (index === 0) return String(block.topic || "").trim();
+      return requireChapterOverlay ? true : Boolean(block.hard_boundary);
+    })
+    .map((block, index) => {
+      const isBoundary = index > 0;
+      const firstBoundaryClip = safeClips.find((clip) => {
+        if (clip.macro_block_id && block.id && clip.macro_block_id === block.id) return true;
+        return Number(clip.timeline_start_sec || 0) >= Number(block.start_seconds ?? block.start_sec ?? 0) - 0.001;
+      });
+      const startSeconds = round3(Number(firstBoundaryClip?.timeline_start_sec ?? block.start_seconds ?? block.start_sec ?? 0));
+
+      return {
+        start_seconds: startSeconds,
+        end_seconds: round3(startSeconds + 2.6),
+        text: block.overlay_title || `${index + 1}. ${block.label || block.topic || "Bloco"}`,
+        type: isBoundary ? "chapter_card_clip" : "block_title",
+        block_id: block.block_id || block.id,
+        boundary_id: block.boundary_id || "",
+      };
+    });
 };
 
 const buildOverlayFilter = ({ overlays = [] }) => {

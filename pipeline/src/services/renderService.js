@@ -3,6 +3,7 @@ const fs = require("fs-extra");
 const { ensureVideoStructure, loadState, updateState } = require("./stateService");
 const { sendWorkflowStatus } = require("./telegramService");
 const { createPlaceholderImage, probeMedia, runFfmpeg } = require("../utils/mediaUtils");
+const { isPlaceholderAsset, shouldAllowPlaceholderAssets } = require("./assetReadinessService");
 const { buildTimeline, chooseOutputResolution } = require("./timelinePlanner");
 const { analyzeAudio } = require("./audioIntelligence");
 const { applyOverlaysToVideo, buildBlockOverlays } = require("./overlayService");
@@ -1586,6 +1587,7 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
   let state = await loadState(videoId);
   const paths = await ensureVideoStructure(videoId);
   const draftVersion = getDraftVersion(state);
+  const allowPlaceholderAssets = shouldAllowPlaceholderAssets({ mockMode });
 
   if (!state.audio_path || !(await fs.pathExists(state.audio_path))) {
     throw new Error("Áudio não encontrado para renderização.");
@@ -1593,22 +1595,26 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
 
   const renderPath = paths.renderPath;
   const fallbackImagePath = path.join(paths.base, "assets", "raw", "render-fallback.png");
-  await createFallbackImage(fallbackImagePath, draftVersion);
+  if (allowPlaceholderAssets) {
+    await createFallbackImage(fallbackImagePath, draftVersion);
+  }
 
   const audioInfo = await probeMedia(state.audio_path).catch(() => ({ duration: 0 }));
   const audioDuration = Math.max(10, Number(audioInfo.duration || state.duration_seconds || 95));
-  const fallbackAsset = {
-    scene_index: 0,
-    provider: "render_fallback",
-    asset_type: "image",
-    local_path: fallbackImagePath,
-    resolution: {
-      width: PREFERRED_OUTPUT.width,
-      height: PREFERRED_OUTPUT.height,
-      label: "Full HD",
-    },
-    duration_estimate: 6,
-  };
+  const fallbackAsset = allowPlaceholderAssets
+    ? {
+        scene_index: 0,
+        provider: "render_fallback",
+        asset_type: "image",
+        local_path: fallbackImagePath,
+        resolution: {
+          width: PREFERRED_OUTPUT.width,
+          height: PREFERRED_OUTPUT.height,
+          label: "Full HD",
+        },
+        duration_estimate: 6,
+      }
+    : null;
 
   state = await ensureAudioIntelligenceReady({ videoId, state });
 
@@ -1624,9 +1630,14 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     audioDuration,
     draftVersion,
     fallbackAsset,
+    allowPlaceholderFallback: allowPlaceholderAssets,
   });
 
   const clipPlan = timelineResult.clipPlan || timelineResult.clips || [];
+
+  if (!allowPlaceholderAssets && clipPlan.some((clip) => isPlaceholderAsset(clip.asset))) {
+    throw new Error("Render blocked: placeholder asset detected in clip plan.");
+  }
 
   logger.info("renderService: timeline pronta, preparando render", {
     videoId,
@@ -1662,6 +1673,10 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
         assetDurationSeconds: clip.asset_duration_seconds,
       });
     } catch {
+      if (!allowPlaceholderAssets) {
+        throw new Error(`Render blocked: segment fallback disabled for scene ${clip.scene_index}.`);
+      }
+
       await createFallbackImage(segmentPath.replace(/\.mp4$/i, ".png"), clip.scene_index + draftVersion);
       await renderClipSegment({
         asset: {
@@ -1728,6 +1743,9 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     } catch {
       renderStrategy = "single_fallback";
       transition = "none";
+      if (!allowPlaceholderAssets) {
+        throw new Error("Render blocked: final composition fallback disabled in production.");
+      }
       await renderUltimateFallback({
         renderPath,
         audioPath: state.audio_path,
@@ -1743,7 +1761,9 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
 
   const overlays = buildBlockOverlays({
     narrativeBlocks: timelineResult.narrativeBlocks || [],
+    clips: clipPlan,
     enabled: config.ENABLE_BLOCK_OVERLAYS,
+    requireChapterOverlay: Boolean(config.HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY),
   });
   let finalRenderPath = renderPath;
   if (overlays.length) {
@@ -1789,8 +1809,11 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
         semantic_alignment_score_average: round3(average(semanticScores)),
         low_confidence_clip_count: semanticScores.filter((score) => score < 0).length,
         sync_policy: timelineResult.syncPolicy || {},
+        hard_boundary_policy: timelineResult.hardBoundaryPolicy || {},
         narrative_blocks: timelineResult.narrativeBlocks || [],
         timeline_sync_metrics: timelineResult.timelineSyncMetrics || {},
+        hard_boundary_status: timelineResult.timelineSyncMetrics?.hard_boundary_status || "unknown",
+        max_visual_lag_sec: Number(timelineResult.timelineSyncMetrics?.max_visual_lag_sec || 0),
         asset_windows_count: Array.isArray(timelineResult.assetWindows) ? timelineResult.assetWindows.length : 0,
         clips: clipPlan.map((clip) => ({
           clip_index: clip.clip_index,

@@ -1,0 +1,119 @@
+{
+  "video_id": "final_validation_1778072500653",
+  "mode": "real_hibrido",
+  "topic": "3 cidades mais bonitas de Portugal: Lisboa, Porto e Faro",
+  "angle": "roteiro serio de estilo documental para video faceless com 5 blocos obrigatorios: Intro, Lisboa, Porto, Faro e Fechamento; na narracao de cada cidade, separar claramente: 1) identidade da cidade e pontos mais bonitos, 2) experiencia local e gastronomia, 3) proposta visual cinematografica; usar transicoes explicitas: 'Numero 1 Lisboa', 'Numero 2 Porto', 'Numero 3 Faro'; incluir pontos fortes por cidade: Lisboa (Alfama, Belem, miradouros), Porto (Ribeira, Ponte Dom Luis I, caves de vinho), Faro (Cidade Velha, Ria Formosa, ilhas do Algarve); incluir gastronomia local de forma natural em cada cidade: Lisboa (pastel de nata, bacalhau a bras), Porto (francesinha, vinho do Porto), Faro (cataplana, ameijoas, peixe fresco); escrever em portugues do brasil com tom confiavel, informativo e pronto para publicacao real",
+  "audio_provider": "multivozes",
+  "audio_voice": "pt-BR-AntonioNeural",
+  "openai_script_source": "openai",
+  "openai_attempts": 1,
+  "openai_script_chars": 2531,
+  "script_length_chars": 2104,
+  "script_preview": "Introdução Olá, viajantes! Neste roteiro, voce vai conhecer tres cidades que representam o melhor do pais em historia, paisagem e experiencia local. Numero 1 Lisboa. Lisboa mistura tradicao e energia contemporanea como poucas capitais europeias. Comece pela Alfama, caminhe pelas ruas de pedra e suba aos miradouros para ver o Tejo iluminando a cidade. No eixo de Belem, o roteiro ganha imponencia com a Torre de Belem e o Mosteiro dos Jeronimos. Visualmente, a cidade funciona em camadas: bondes amarelos, fachadas de azulejo, pracas abertas e fim de tarde dourado. Na gastronomia, Lisboa entrega identidade: pastel de nata saindo do forno, bacalhau a bras e sardinha assada em ambientes cheios de vida local. Numero 2 Porto. Porto e intensidade arquitetonica e cultural. A Ribeira, de frente para o Douro, oferece um dos cenarios urbanos mais fotogenicos de Portugal, com casarios coloridos, barcos tradicionais e pontes historicas. A Ponte Dom Luis I e as margens de Vila Nova de Gaia criam o momento visual mais emblematico da cidade, especialmente no por do sol. No ritmo da visita, entram livrarias historicas, igrejas revestidas de azulejo e ruas elegantes. No prato, Porto e memoravel: france",
+  "render_path": "\\app\\pipeline\\output\\draft\\final_validation_1778072500653\\render\\final.mp4",
+  "state_path": "\\app\\pipeline\\output\\draft\\final_validation_1778072500653\\state.json",
+  "output_duration_seconds": 142.704,
+  "output_resolution": "1920x1080",
+  "render_validation": {
+    "is_publishable": true,
+    "hard_boundary_status": "pass",
+    "max_visual_lag_sec": 0,
+    "needs_regeneration": false,
+    "needs_manual_review": false,
+    "issues": []
+  },
+  "boundary_transition_validation": [
+    {
+      "boundary_id": "hb_003_porto",
+      "boundary_label": "Lisboa -> Porto",
+      "boundary_sec": 55.24,
+      "expected": "Porto",
+      "first_correct_visual": "Porto",
+      "first_correct_visual_delay_sec": 0,
+      "previous_block_exposure_after_boundary_sec": 0,
+      "status": "PASS",
+      "first_clip_index": 15,
+      "first_clip_neutral": false,
+      "violations": []
+    },
+    {
+      "boundary_id": "hb_004_faro",
+      "boundary_label": "Porto -> Faro",
+      "boundary_sec": 87.464,
+      "expected": "Faro",
+      "first_correct_visual": "Faro",
+      "first_correct_visual_delay_sec": 0,
+      "previous_block_exposure_after_boundary_sec": 0,
+      "status": "PASS",
+      "first_clip_index": 23,
+      "first_clip_neutral": false,
+      "violations": []
+    },
+    {
+      "boundary_id": "hb_005_lisboa",
+      "boundary_label": "Faro -> Lisboa",
+      "boundary_sec": 119.687,
+      "expected": "Lisboa",
+      "first_correct_visual": "Lisboa",
+      "first_correct_visual_delay_sec": 0,
+      "previous_block_exposure_after_boundary_sec": 0,
+      "status": "PASS",
+      "first_clip_index": 31,
+      "first_clip_neutral": false,
+      "violations": []
+    }
+  ],
+  "overlays": [
+    {
+      "block_index": 1,
+      "block": "Lisboa",
+      "expected_start_seconds": 0,
+      "overlay_text": "1. Lisboa",
+      "overlay_start_seconds": 0,
+      "overlay_type": "block_title",
+      "status": "PASS"
+    },
+    {
+      "block_index": 2,
+      "block": "Porto",
+      "expected_start_seconds": 55.24,
+      "overlay_text": "2. Porto",
+      "overlay_start_seconds": 55.24,
+      "overlay_type": "chapter_card_clip",
+      "status": "PASS"
+    },
+    {
+      "block_index": 3,
+      "block": "Faro",
+      "expected_start_seconds": 87.464,
+      "overlay_text": "3. Faro",
+      "overlay_start_seconds": 87.464,
+      "overlay_type": "chapter_card_clip",
+      "status": "PASS"
+    },
+    {
+      "block_index": 4,
+      "block": "Lisboa",
+      "expected_start_seconds": 119.687,
+      "overlay_text": "1. Lisboa",
+      "overlay_start_seconds": 0,
+      "overlay_type": "block_title",
+      "status": "PASS"
+    }
+  ],
+  "clips_count": 36,
+  "missing_assets": false,
+  "needs_manual_review_state": false,
+  "needs_manual_review_validation": false,
+  "scene_readiness": {
+    "total_scenes": 5,
+    "ready_scenes": 5,
+    "missing_scenes": 0,
+    "blocking_scene_indexes": []
+  },
+  "first_city_checks": {
+    "lisboa_first_clip_city": "Lisboa",
+    "porto_first_clip_city": "Porto",
+    "faro_first_clip_city": "Faro"
+  }
+}

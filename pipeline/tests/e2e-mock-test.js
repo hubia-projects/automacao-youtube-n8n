@@ -20,6 +20,8 @@ const run = async () => {
     await client.post("/videos/captions/generate", { video_id: videoId, mock_mode: true });
     await client.post("/videos/assets/search", { video_id: videoId, mock_mode: true, max_assets: 6 });
     await client.post("/videos/render", { video_id: videoId, mock_mode: true });
+    const validation = await client.post("/videos/render/validate", { video_id: videoId, mock_mode: true });
+    assert(validation.data.is_publishable === true, "render mock deveria ficar publicavel antes do upload");
     await client.post("/videos/metadata/generate", { video_id: videoId, mock_mode: true });
     await client.post("/videos/final/approve", { video_id: videoId, approved: true, mock_mode: true });
     await client.post("/videos/youtube/upload", { video_id: videoId, mock_mode: true, privacy_status: "private" });

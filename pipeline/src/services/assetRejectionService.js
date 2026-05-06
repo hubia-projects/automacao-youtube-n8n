@@ -1,3 +1,4 @@
+const { config } = require("../config/env");
 const { detectLocation, isSameLocation } = require("./narrativeBlockPlanner");
 const { detectVisualCategories, evaluateVisualEvidence, normalizeLabel } = require("./visualIntentService");
 
@@ -108,8 +109,28 @@ const shouldRejectAssetForScene = ({ asset = {}, scene = {}, window = {} }) => {
   const text = [window.summary, window.description, asset.semantic_text, asset.query].filter(Boolean).join(" ");
   const detectedLocation = detectLocation(text, window.location);
   const windowDuration = Number(window.duration_seconds || Math.max(0, Number(window.end_seconds || 0) - Number(window.start_seconds || 0)));
+  const expectedLocation = scene.expected_location || scene.location?.city || (scene.topic_type === "city" ? scene.macro_topic : "");
+  const isHardBoundaryFirstSlot = Boolean(scene.hard_boundary && scene.is_boundary_first_slot);
 
-  if (scene.location?.city && detectedLocation.city && !isSameLocation(detectedLocation.city, scene.location.city)) {
+  if (isHardBoundaryFirstSlot && config.HARD_BOUNDARY_FORBID_NEUTRAL_FIRST_CLIP && (asset.neutral || window.neutral || evidence.generic_visual)) {
+    return {
+      reject: true,
+      reason: "neutral_first_clip_forbidden",
+      warnings: ["hard_boundary_first_clip_must_be_specific"],
+      evidence,
+    };
+  }
+
+  if (isHardBoundaryFirstSlot && config.HARD_BOUNDARY_REQUIRE_LOCATION && expectedLocation && !detectedLocation.city) {
+    return {
+      reject: true,
+      reason: "hard_boundary_missing_location",
+      warnings: ["missing_location"],
+      evidence,
+    };
+  }
+
+  if (expectedLocation && detectedLocation.city && !isSameLocation(detectedLocation.city, expectedLocation)) {
     return {
       reject: true,
       reason: "wrong_block_city",

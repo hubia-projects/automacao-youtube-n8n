@@ -12,6 +12,7 @@ const { enrichVisualPlan } = require("./narrativeBlockPlanner");
 const { analyzeLocalVideo } = require("./localVideoUnderstandingService");
 const { buildSceneQueryPlan } = require("./assetQueryPlanner");
 const { scorePreDownloadCandidate } = require("./assetRejectionService");
+const { summarizeAssetReadiness, shouldAllowPlaceholderAssets } = require("./assetReadinessService");
 const { evaluateVisualEvidence } = require("./visualIntentService");
 const { logger } = require("../utils/logger");
 
@@ -264,6 +265,7 @@ const buildFallbackAnalysisPayload = ({ asset, scene }) => {
       },
       confidence: 0.35,
       method: "metadata_fallback",
+      visual_evidence_source: "metadata_fallback",
     };
     const evidence = evaluateVisualEvidence({ scene, window: baseWindow, asset });
     return {
@@ -300,6 +302,7 @@ const mergeAnalysisPayload = ({ asset, scene, payload = {} }) => {
           generic_visual: typeof window.generic_visual === "boolean" ? window.generic_visual : evidence.generic_visual,
           required_evidence_found: window.required_evidence_found || evidence.required_evidence_found,
           missing_required_visual_evidence: window.missing_required_visual_evidence || evidence.missing_required_visual_evidence,
+          visual_evidence_source: window.visual_evidence_source || payload.analysis_provider || payload.provider || fallback.analysis_provider,
         };
       })
     : fallback.analysis_windows;
@@ -790,6 +793,8 @@ const downloadSceneCandidate = async ({ candidate, scene, paths, sequence }) => 
     query: candidate.query,
     query_used: candidate.query_used || candidate.query,
     search_reason: candidate.search_reason || "",
+    block_intro_candidate: /hard_boundary_block_intro_asset|intro establishing shot/i.test(`${candidate.search_reason || ""} ${candidate.query_used || ""}`),
+    chapter_card_candidate: /hard_boundary_chapter_card_clip|chapter transition card/i.test(`${candidate.search_reason || ""} ${candidate.query_used || ""}`),
     pre_download_score: Number(candidate.pre_download_score || 0),
     intent_match: candidate.intent_match === true,
     generic_asset: candidate.generic_asset === true,
@@ -825,6 +830,7 @@ const generateAssets = async ({
   const state = await loadState(videoId);
   const paths = await ensureVideoStructure(videoId);
   const audioIntelligence = await getCachedAudioIntelligence({ videoId }).catch(() => null);
+  const allowPlaceholderAssets = shouldAllowPlaceholderAssets({ mockMode });
 
   const baseVisualPlan = Array.isArray(state.visual_plan) && state.visual_plan.length
     ? state.visual_plan
@@ -968,8 +974,12 @@ const generateAssets = async ({
       if (queryPlan.specificIntentRequired) {
         fallbackPlan.push(`Cena ${scene.scene_index}: asset_search_failed_specific_intent para ${scene.title}.`);
       }
-      downloadedItems.push(await createSceneFallbackAsset({ scene, paths }));
-      fallbackPlan.push(`Cena ${scene.scene_index}: fallback local usado para ${scene.title}.`);
+      if (allowPlaceholderAssets) {
+        downloadedItems.push(await createSceneFallbackAsset({ scene, paths }));
+        fallbackPlan.push(`Cena ${scene.scene_index}: fallback local usado para ${scene.title}.`);
+      } else {
+        fallbackPlan.push(`Cena ${scene.scene_index}: sem asset real disponivel para ${scene.title}; render deve ser bloqueado.`);
+      }
     }
 
     const specificMatches = downloadedItems.filter((item) => item.intent_match && !item.generic_asset).length;
@@ -1019,14 +1029,24 @@ const generateAssets = async ({
     : mergeFallbackPlan({ nextFallbackPlan: fallbackPlan });
   const flattenedKeywords = unique(visualPlan.flatMap((scene) => scene.keywords || [])).slice(0, 30);
   const searchQueries = unique(mergedSceneQueries.flatMap((entry) => entry.queries || []));
-  const missingAssets = mergedItems.some((item) => item.is_fallback);
+  const readinessSummary = summarizeAssetReadiness({
+    visualPlan,
+    assets: mergedItems,
+    mockMode,
+  });
+  const missingAssets = readinessSummary.missing_assets;
   const refreshSceneIndexes = selectiveRefresh ? selectedSceneIndexes : [];
   const refreshedAt = new Date().toISOString();
+  const assetFailureMessage = missingAssets
+    ? `Assets insuficientes para render: cenas bloqueadas ${readinessSummary.blocking_scene_indexes.join(", ")}.`
+    : "";
 
   const nextState = await updateState(
     videoId,
     {
       visual_plan: visualPlan,
+      asset_failure: missingAssets,
+      failure_reason: readinessSummary.failure_reason || "",
       assets_json: {
         visual_keywords: flattenedKeywords,
         search_queries: searchQueries,
@@ -1034,11 +1054,13 @@ const generateAssets = async ({
         items: mergedItems,
         fallback_plan: mergedFallbackPlan,
         missing_assets: missingAssets,
+        blocking_scene_indexes: readinessSummary.blocking_scene_indexes,
+        scene_asset_readiness: readinessSummary.scene_asset_readiness,
         last_refresh_scene_indexes: refreshSceneIndexes,
         last_refresh_reason: refreshReason || (selectiveRefresh ? "scene_refresh" : "full_refresh"),
         last_refreshed_at: refreshedAt,
       },
-      error_message: "",
+      error_message: assetFailureMessage,
     },
     { currentStep: "assets_searched", status: "assets_searched" }
   );
@@ -1051,7 +1073,9 @@ const generateAssets = async ({
       `${mergedItems.length} asset(s) válidos distribuídos em ${visualPlan.length} cena(s).`,
       `${mergedItems.filter((item) => item.asset_type === "video").length} vídeo(s) e ${mergedItems.filter((item) => item.asset_type !== "video").length} imagem(ns) selecionados.`,
       selectiveRefresh ? `Rebusca seletiva em ${refreshSceneIndexes.length} cena(s): ${refreshSceneIndexes.join(", ")}.` : null,
-      missingAssets ? `${mergedFallbackPlan.length} cena(s) usaram fallback local em HD.` : "Todas as cenas receberam assets externos em resolução HD ou maior.",
+      missingAssets
+        ? `Render bloqueado para ${readinessSummary.blocking_scene_indexes.length} cena(s) sem asset real: ${readinessSummary.blocking_scene_indexes.join(", ")}.`
+        : "Todas as cenas receberam assets externos em resolução HD ou maior.",
     ],
   }).catch(() => null);
 

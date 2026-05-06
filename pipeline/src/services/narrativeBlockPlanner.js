@@ -273,6 +273,9 @@ const buildBlockId = (label = "", index = 0) => {
   return slug;
 };
 
+const buildBoundaryId = ({ sceneOrder = 1, topic = "" }) =>
+  `hb_${String(sceneOrder).padStart(3, "0")}_${buildBlockId(topic, Math.max(0, sceneOrder - 1))}`;
+
 const buildNarrativeBlocks = ({ state = {}, audioIntelligence = null, audioDuration = 0 }) => {
   const scenes = Array.isArray(state.visual_plan) && state.visual_plan.length
     ? state.visual_plan
@@ -282,6 +285,10 @@ const buildNarrativeBlocks = ({ state = {}, audioIntelligence = null, audioDurat
     : Array.isArray(state.scene_boundaries)
       ? state.scene_boundaries
       : [];
+  const chapterTriggerBySceneIndex = new Map(
+    (Array.isArray(audioIntelligence?.chapter_triggers) ? audioIntelligence.chapter_triggers : [])
+      .map((trigger) => [Number(trigger.scene_index || 0), trigger])
+  );
   const safeDuration = Math.max(1, Number(audioDuration || state.duration_seconds || 0) || 1);
   const starts = normalizeBoundaryStarts({ scenes, sceneBoundaries, audioDuration: safeDuration });
 
@@ -342,6 +349,13 @@ const buildNarrativeBlocks = ({ state = {}, audioIntelligence = null, audioDurat
       negative_keywords: [],
       forbidden_locations: [],
       hard_boundary: false,
+      boundary_id: "",
+      transition_type: "soft",
+      expected_location: location.city || "",
+      expected_visual_start_sec: round3(startSec),
+      chapter_trigger: null,
+      chapter_card_required: false,
+      block_intro_asset: null,
       overlay_title: scene.overlay_title || "",
     };
   });
@@ -355,6 +369,7 @@ const buildNarrativeBlocks = ({ state = {}, audioIntelligence = null, audioDurat
 
     if (!current || isTopicChange) {
       const blockIndex = macroBlocks.length + 1;
+      const macroHardBoundary = blockIndex > 1;
       current = {
         id: `macro_${String(blockIndex).padStart(3, "0")}`,
         block_id: buildBlockId(micro.macro_topic, blockIndex - 1),
@@ -368,7 +383,20 @@ const buildNarrativeBlocks = ({ state = {}, audioIntelligence = null, audioDurat
         end_sec: micro.end_sec,
         start_seconds: micro.start_sec,
         end_seconds: micro.end_sec,
-        hard_boundary: true,
+        hard_boundary: macroHardBoundary,
+        boundary_id: macroHardBoundary ? buildBoundaryId({ sceneOrder: micro.scene_order, topic: micro.macro_topic }) : "",
+        transition_type: macroHardBoundary ? "hard" : "soft",
+        expected_location: micro.location?.city || "",
+        expected_visual_start_sec: round3(micro.start_sec),
+        chapter_trigger: null,
+        chapter_card_required: macroHardBoundary,
+        block_intro_asset: macroHardBoundary
+          ? {
+              required: true,
+              location: micro.location?.city || micro.macro_topic || "",
+              query_hint: `${micro.location?.city || micro.macro_topic || "destination"} ${micro.subtheme_label || micro.subtheme || "city"} intro`,
+            }
+          : null,
         allowed_locations: [...micro.allowed_locations],
         forbidden_locations: [],
         keywords: [...micro.keywords],
@@ -387,6 +415,39 @@ const buildNarrativeBlocks = ({ state = {}, audioIntelligence = null, audioDurat
     micro.block_type = current.type;
     micro.overlay_title = micro.overlay_title || current.overlay_title;
     micro.hard_boundary = isTopicChange;
+    micro.transition_type = isTopicChange ? "hard" : "soft";
+    micro.boundary_id = isTopicChange ? buildBoundaryId({ sceneOrder: micro.scene_order, topic: micro.macro_topic }) : "";
+    micro.expected_location = micro.location?.city || (micro.topic_type === "city" ? micro.macro_topic : "");
+    micro.expected_visual_start_sec = round3(micro.start_sec);
+    const sceneChapterTrigger = chapterTriggerBySceneIndex.get(Number(micro.scene_index || 0));
+    micro.chapter_trigger = isTopicChange
+      ? {
+          detected: true,
+          source: sceneChapterTrigger?.source || "topic_change",
+          confidence: Number(sceneChapterTrigger?.confidence || 0.9),
+          timestamp_sec: round3(sceneChapterTrigger?.timestamp_sec ?? micro.start_sec),
+          anchor_word: sceneChapterTrigger?.anchor_word || "",
+        }
+      : null;
+    micro.chapter_card_required = Boolean(isTopicChange);
+    micro.block_intro_asset = isTopicChange
+      ? {
+          required: true,
+          location: micro.expected_location || micro.macro_topic || "",
+          query_hint: `${micro.expected_location || micro.macro_topic || "destination"} ${micro.subtheme_label || micro.subtheme || "city"} intro`,
+        }
+      : null;
+
+    if (micro.hard_boundary) {
+      current.boundary_id = micro.boundary_id;
+      current.transition_type = "hard";
+      current.expected_location = micro.expected_location;
+      current.expected_visual_start_sec = micro.expected_visual_start_sec;
+      current.chapter_trigger = micro.chapter_trigger;
+      current.chapter_card_required = micro.chapter_card_required;
+      current.block_intro_asset = micro.block_intro_asset;
+    }
+
     current.children.push(micro);
     current.end_sec = micro.end_sec;
     current.end_seconds = micro.end_sec;
@@ -446,6 +507,14 @@ const enrichVisualPlan = ({ topic = "", visualPlan = [], audioIntelligence = nul
         generic_asset_allowed: block.generic_asset_allowed,
         generic_asset_allowed_reason: block.generic_asset_allowed_reason,
         max_generic_establishing_seconds: block.max_generic_establishing_seconds,
+        hard_boundary: block.hard_boundary,
+        boundary_id: block.boundary_id,
+        transition_type: block.transition_type,
+        expected_location: block.expected_location,
+        expected_visual_start_sec: block.expected_visual_start_sec,
+        chapter_trigger: block.chapter_trigger,
+        chapter_card_required: block.chapter_card_required,
+        block_intro_asset: block.block_intro_asset,
       };
     }),
     macroBlocks,

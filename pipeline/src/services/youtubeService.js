@@ -21,19 +21,28 @@ const createYoutubeOAuthClient = () => {
   return oauth2Client;
 };
 
-const getYoutubeScopes = async (oauth2Client) => {
+const getYoutubeScopesInfo = async (oauth2Client) => {
   try {
     const accessTokenResponse = await oauth2Client.getAccessToken();
     const accessToken = accessTokenResponse?.token || accessTokenResponse;
 
     if (!accessToken) {
-      return [];
+      return {
+        scopes: [],
+        errorMessage: "Access token do YouTube nao retornado a partir do refresh token.",
+      };
     }
 
     const tokenInfo = await oauth2Client.getTokenInfo(accessToken);
-    return Array.isArray(tokenInfo?.scopes) ? tokenInfo.scopes : [];
-  } catch {
-    return [];
+    return {
+      scopes: Array.isArray(tokenInfo?.scopes) ? tokenInfo.scopes : [],
+      errorMessage: "",
+    };
+  } catch (error) {
+    return {
+      scopes: [],
+      errorMessage: error?.message || "Falha ao renovar access token do YouTube.",
+    };
   }
 };
 
@@ -138,7 +147,16 @@ const uploadCaptionTrack = async ({ youtube, oauth2Client, state, youtubeId }) =
     });
   }
 
-  const scopes = await getYoutubeScopes(oauth2Client);
+  const { scopes, errorMessage } = await getYoutubeScopesInfo(oauth2Client);
+  if (!scopes.length && errorMessage) {
+    return buildCaptionUploadResult({
+      status: "skipped_oauth_error",
+      format: captionSource.format,
+      errorMessage,
+      message: `Legenda nao enviada: OAuth YouTube falhou (${errorMessage}).`,
+    });
+  }
+
   if (scopes.length > 0 && !hasCaptionUploadScope(scopes)) {
     return buildCaptionUploadResult({
       status: "skipped_missing_scope",
@@ -197,12 +215,38 @@ const hasYoutubeCredentials = () =>
       config.YOUTUBE_REFRESH_TOKEN
   );
 
+const ensureRenderIsPublishableForUpload = (state = {}) => {
+  const renderValidation = state.render_validation || {};
+  const isPublishable = renderValidation.is_publishable === true;
+  const needsRegeneration = renderValidation.needs_regeneration === true;
+  const needsManualReview = renderValidation.needs_manual_review === true;
+  const hardBoundaryStatus = renderValidation.hard_boundary_status || "unknown";
+  const maxVisualLagSec = Number(renderValidation.max_visual_lag_sec || 0);
+  const maxAllowedLagSec = Number(config.HARD_BOUNDARY_MAX_LAG_SEC || 0.5);
+
+  if (!isPublishable || needsRegeneration || needsManualReview) {
+    throw new Error(
+      "Upload bloqueado: render reprovado no QA ou pendente de regeneracao/revisao manual."
+    );
+  }
+
+  if (hardBoundaryStatus !== "pass") {
+    throw new Error("Upload bloqueado: hard boundary QA reprovado.");
+  }
+
+  if (maxVisualLagSec > maxAllowedLagSec) {
+    throw new Error("Upload bloqueado: max_visual_lag_sec acima do limite permitido.");
+  }
+};
+
 const uploadToYoutube = async ({ videoId, mockMode = false, privacyStatus = config.YOUTUBE_DEFAULT_PRIVACY }) => {
   const state = await loadState(videoId);
 
   if (!state.approved) {
     throw new Error("Upload bloqueado: aprovação final não foi confirmada.");
   }
+
+  ensureRenderIsPublishableForUpload(state);
 
   if (!state.render_path || !fs.existsSync(state.render_path)) {
     throw new Error("Arquivo de vídeo final não encontrado para upload.");
@@ -336,10 +380,10 @@ const basicYoutubeHealthcheck = async () => {
 
   try {
     const oauth2Client = createYoutubeOAuthClient();
-    const scopes = await getYoutubeScopes(oauth2Client);
+    const { scopes, errorMessage } = await getYoutubeScopesInfo(oauth2Client);
 
     if (!scopes.length) {
-      throw new Error("Não foi possível obter scopes do access token do YouTube.");
+      throw new Error(errorMessage || "Nao foi possivel obter scopes do access token do YouTube.");
     }
 
     const captionScopePresent = hasCaptionUploadScope(scopes);
@@ -367,4 +411,7 @@ const basicYoutubeHealthcheck = async () => {
 module.exports = {
   uploadToYoutube,
   basicYoutubeHealthcheck,
+  __test__: {
+    ensureRenderIsPublishableForUpload,
+  },
 };

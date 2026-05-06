@@ -9,6 +9,7 @@ const {
   belongsToTopic,
   buildSemanticTerms,
 } = require("./narrativeBlockPlanner");
+const { isPublishableAsset } = require("./assetReadinessService");
 const { rankCandidates, registerClipUsage, buildVisualSignature } = require("./timelineScoringService");
 
 const OUTPUT_WIDTH = Number(config.OUTPUT_WIDTH || 1920);
@@ -18,7 +19,7 @@ const PREFERRED_OUTPUT = { width: OUTPUT_WIDTH, height: OUTPUT_HEIGHT };
 const SYNC_POLICIES = {
   "cost-efficient": {
     mode: "cost-efficient",
-    max_topic_switch_latency_sec: Number(config.SEMANTIC_SYNC_MAX_LATENCY_SEC || 1),
+    max_topic_switch_latency_sec: Number(config.HARD_BOUNDARY_MAX_LAG_SEC || config.SEMANTIC_SYNC_MAX_LATENCY_SEC || 0.5),
     min_clip_duration_sec: 2.8,
     max_clip_duration_sec: 6.5,
     preferred_clip_duration_sec: 4.5,
@@ -26,7 +27,7 @@ const SYNC_POLICIES = {
   },
   "high-quality": {
     mode: "high-quality",
-    max_topic_switch_latency_sec: Number(config.SEMANTIC_SYNC_MAX_LATENCY_SEC || 1),
+    max_topic_switch_latency_sec: Number(config.HARD_BOUNDARY_MAX_LAG_SEC || config.SEMANTIC_SYNC_MAX_LATENCY_SEC || 0.5),
     min_clip_duration_sec: 2.5,
     max_clip_duration_sec: 7,
     preferred_clip_duration_sec: 4.2,
@@ -49,6 +50,15 @@ const getSyncPolicy = () => {
   return SYNC_POLICIES[mode] || SYNC_POLICIES["cost-efficient"];
 };
 
+const getHardBoundaryPolicy = () => ({
+  enabled: config.HARD_BOUNDARY_ENABLED !== false,
+  max_topic_switch_latency_sec: Number(config.HARD_BOUNDARY_MAX_LAG_SEC || config.SEMANTIC_SYNC_MAX_LATENCY_SEC || 0.5),
+  forbid_neutral_first_clip: Boolean(config.HARD_BOUNDARY_FORBID_NEUTRAL_FIRST_CLIP),
+  require_location_on_hard_boundary: Boolean(config.HARD_BOUNDARY_REQUIRE_LOCATION),
+  require_chapter_overlay: Boolean(config.HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY),
+  fail_on_missing_boundary_candidate: Boolean(config.HARD_BOUNDARY_FAIL_ON_MISS),
+});
+
 const normalizeAssetAnalysisWindows = (asset = {}) => {
   const assetDuration = round3(getAssetDuration(asset));
   const fallbackEndSeconds = assetDuration || Number(asset.analysis_window_seconds || 6) || 6;
@@ -62,6 +72,7 @@ const normalizeAssetAnalysisWindows = (asset = {}) => {
         tags: unique([...(asset.analysis_tags || []), ...(asset.provider_tags || [])]),
         confidence: asset.is_fallback ? 0.35 : 0.45,
         method: asset.analysis_provider || "metadata_fallback",
+        visual_evidence_source: asset.analysis_provider || "metadata_fallback",
       }];
 
   return rawWindows.map((window, index) => {
@@ -72,7 +83,9 @@ const normalizeAssetAnalysisWindows = (asset = {}) => {
     const visualText = `${description} ${tags.join(" ")} ${asset.query || ""} ${asset.semantic_text || ""}`;
     const location = detectLocation(visualText, window.location);
     const landmarks = detectLandmarks(visualText, window.landmarks);
-    const confidence = clamp(Number(window.confidence || window.visual_confidence || 0.45), 0, 1);
+    const visualEvidenceSource = window.visual_evidence_source || window.method || asset.analysis_provider || "metadata_fallback";
+    const rawConfidence = clamp(Number(window.confidence || window.visual_confidence || 0.45), 0, 1);
+    const confidence = visualEvidenceSource === "metadata_fallback" ? Math.min(rawConfidence, 0.35) : rawConfidence;
     const brightness = Number(window.quality?.brightness || 0.7);
 
     return {
@@ -110,6 +123,7 @@ const normalizeAssetAnalysisWindows = (asset = {}) => {
       confidence,
       neutral: Boolean(window.neutral) || (!location.city && /travel|road|map|airplane|landscape|generic|overview/i.test(visualText)),
       analysis_provider: window.method || asset.analysis_provider || "metadata_fallback",
+      visual_evidence_source: visualEvidenceSource,
     };
   });
 };
@@ -153,6 +167,7 @@ const flattenAssetWindows = (assets = []) => {
         missing_required_visual_evidence: window.missing_required_visual_evidence,
         confidence: window.confidence,
         neutral: window.neutral,
+        visual_evidence_source: window.visual_evidence_source,
         semantic_text: semanticText,
         window_index: window.window_index,
         analysis_provider: window.analysis_provider,
@@ -169,6 +184,28 @@ const buildFallbackCandidate = (fallbackAsset) => ({
   confidence: 0.25,
   semantic_text: fallbackAsset.semantic_text || fallbackAsset.query || "neutral travel fallback",
 });
+
+const buildChapterCardCandidate = ({ block, fallbackAsset }) => {
+  if (!fallbackAsset) return null;
+  const base = buildFallbackCandidate(fallbackAsset);
+  const expectedLocation = block.expected_location || block.location?.city || block.macro_topic || "";
+
+  return {
+    ...base,
+    neutral: false,
+    chapter_card_clip: true,
+    semantic_text: `${expectedLocation} chapter transition card`.trim(),
+    description: `${expectedLocation} chapter transition card`.trim(),
+    location: {
+      city: expectedLocation,
+      country: block.location?.country || "",
+      confidence: 1,
+      source: "chapter_card",
+    },
+    visual_evidence_source: "chapter_card",
+    analysis_provider: "chapter_card",
+  };
+};
 
 const isCandidateAllowedByHardRules = ({ block, candidate, previousMacroTopic }) => {
   if (candidate.quality?.usable === false) return false;
@@ -193,9 +230,41 @@ const isCandidateAllowedByHardRules = ({ block, candidate, previousMacroTopic })
   return true;
 };
 
-const filterCandidatesByHardRules = ({ block, assetWindows, previousMacroTopic, fallbackAsset }) => {
-  const strict = assetWindows.filter((candidate) => isCandidateAllowedByHardRules({ block, candidate, previousMacroTopic }));
+const filterCandidatesByHardRules = ({
+  block,
+  assetWindows,
+  previousMacroTopic,
+  fallbackAsset,
+  allowPlaceholderFallback = true,
+  isBoundaryFirstSlot = false,
+  hardBoundaryPolicy = getHardBoundaryPolicy(),
+}) => {
+  const expectedLocation = block.expected_location || block.location?.city || (block.topic_type === "city" ? block.macro_topic : "");
+  let strict = assetWindows.filter((candidate) => isCandidateAllowedByHardRules({ block, candidate, previousMacroTopic }));
+
+  if (isBoundaryFirstSlot && hardBoundaryPolicy.forbid_neutral_first_clip) {
+    strict = strict.filter((candidate) => !candidate.neutral);
+  }
+
+  if (isBoundaryFirstSlot && hardBoundaryPolicy.require_location_on_hard_boundary && expectedLocation) {
+    strict = strict.filter((candidate) => {
+      const candidateCity = candidate.location?.city || "";
+      return candidateCity && isSameLocation(candidateCity, expectedLocation);
+    });
+  }
+
   if (strict.length) return strict;
+
+  if (isBoundaryFirstSlot) {
+    if (block.chapter_card_required && allowPlaceholderFallback) {
+      const chapterCardCandidate = buildChapterCardCandidate({ block, fallbackAsset });
+      if (chapterCardCandidate) return [chapterCardCandidate];
+    }
+
+    if (hardBoundaryPolicy.fail_on_missing_boundary_candidate || hardBoundaryPolicy.forbid_neutral_first_clip) {
+      return [];
+    }
+  }
 
   const neutral = assetWindows.filter((candidate) => candidate.neutral && candidate.scene_index === block.scene_index);
   if (neutral.length) return neutral;
@@ -203,7 +272,7 @@ const filterCandidatesByHardRules = ({ block, assetWindows, previousMacroTopic, 
   const generalNeutral = assetWindows.filter((candidate) => candidate.neutral);
   if (generalNeutral.length) return generalNeutral;
 
-  return [buildFallbackCandidate(fallbackAsset)];
+  return allowPlaceholderFallback ? [buildFallbackCandidate(fallbackAsset)] : [];
 };
 
 const getNarrationTextBetween = ({ words = [], startSeconds = 0, endSeconds = 0, fallback = "" }) => {
@@ -328,6 +397,80 @@ const summarizeRejectedReasons = (ranked = []) => {
   return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([reason]) => reason);
 };
 
+const evaluateHardBoundaryDeterministic = ({ clips = [], microBlocks = [], hardBoundaryPolicy = getHardBoundaryPolicy() }) => {
+  const hardBoundaries = microBlocks.filter((block) => block.hard_boundary);
+  if (!hardBoundaries.length || !hardBoundaryPolicy.enabled) {
+    return {
+      status: "pass",
+      max_visual_lag_sec: 0,
+      avg_visual_lag_sec: 0,
+      boundaries: [],
+      violations: [],
+    };
+  }
+
+  const reports = [];
+  const violations = [];
+  const lagValues = [];
+
+  hardBoundaries.forEach((block) => {
+    const boundarySec = Number(block.expected_visual_start_sec ?? block.start_sec ?? 0);
+    const expectedLocation = block.expected_location || block.location?.city || (block.topic_type === "city" ? block.macro_topic : "");
+    const boundaryId = block.boundary_id || block.id;
+    const crossingClip = clips.find((clip) => {
+      const start = Number(clip.timeline_start_sec || 0);
+      const end = Number(clip.timeline_end_sec || 0);
+      return start < boundarySec - 0.001 && end > boundarySec + 0.001;
+    });
+    const firstClip = clips.find((clip) => Number(clip.timeline_start_sec || 0) >= boundarySec - 0.001);
+    const detectedCity = firstClip?.detected_location?.city || "";
+    const lagSec = firstClip
+      ? Math.max(0, Number(firstClip.timeline_start_sec || boundarySec) - boundarySec)
+      : hardBoundaryPolicy.max_topic_switch_latency_sec + 1;
+
+    lagValues.push(round3(lagSec));
+
+    const boundaryViolations = [];
+    if (crossingClip) boundaryViolations.push("boundary_crossing");
+    if (!firstClip) boundaryViolations.push("missing_first_clip");
+    if (hardBoundaryPolicy.forbid_neutral_first_clip && firstClip?.neutral_fallback) boundaryViolations.push("neutral_first_clip_forbidden");
+    if (hardBoundaryPolicy.require_location_on_hard_boundary && expectedLocation && !detectedCity) boundaryViolations.push("missing_location_on_first_clip");
+    if (expectedLocation && detectedCity && !isSameLocation(detectedCity, expectedLocation)) boundaryViolations.push("wrong_boundary_city");
+    if (lagSec > hardBoundaryPolicy.max_topic_switch_latency_sec) boundaryViolations.push("max_visual_lag_exceeded");
+
+    const report = {
+      boundary_id: boundaryId,
+      boundary_sec: round3(boundarySec),
+      expected_location: expectedLocation,
+      transition_type: block.transition_type || "hard",
+      first_clip_index: firstClip?.clip_index || null,
+      first_clip_start_sec: round3(firstClip?.timeline_start_sec || 0),
+      first_clip_end_sec: round3(firstClip?.timeline_end_sec || 0),
+      first_clip_city: detectedCity,
+      first_clip_neutral: Boolean(firstClip?.neutral_fallback),
+      lag_sec: round3(lagSec),
+      crossing_detected: Boolean(crossingClip),
+      chapter_card_required: Boolean(block.chapter_card_required),
+      chapter_trigger: block.chapter_trigger || null,
+      status: boundaryViolations.length ? "fail" : "pass",
+      violations: boundaryViolations,
+    };
+
+    reports.push(report);
+    if (boundaryViolations.length) {
+      violations.push(report);
+    }
+  });
+
+  return {
+    status: violations.length ? "fail" : "pass",
+    max_visual_lag_sec: round3(Math.max(0, ...lagValues, 0)),
+    avg_visual_lag_sec: round3(lagValues.reduce((acc, lag) => acc + lag, 0) / Math.max(1, lagValues.length)),
+    boundaries: reports,
+    violations,
+  };
+};
+
 const computeTimelineSyncMetrics = ({ clips, macroBlocks, policy }) => {
   const lags = [];
   let wrongTopicExposureSec = 0;
@@ -337,9 +480,20 @@ const computeTimelineSyncMetrics = ({ clips, macroBlocks, policy }) => {
     if (index === 0) return;
     const boundary = Number(macro.start_sec || 0);
     const previousTopic = macroBlocks[index - 1]?.topic || "";
-    const firstAfterBoundary = clips.find((clip) => Number(clip.timeline_end_sec || 0) > boundary + 0.001);
+    const crossingClip = clips.find((clip) => Number(clip.timeline_start_sec || 0) < boundary - 0.001 && Number(clip.timeline_end_sec || 0) > boundary + 0.001);
+    if (crossingClip) {
+      issues.push({
+        type: "boundary_crossing",
+        boundary_sec: round3(boundary),
+        previous_topic: previousTopic,
+        expected_topic: macro.topic,
+        clip_index: crossingClip.clip_index,
+      });
+    }
+
+    const firstAfterBoundary = clips.find((clip) => Number(clip.timeline_start_sec || 0) >= boundary - 0.001);
     const isWrong = firstAfterBoundary?.detected_location?.city && belongsToTopic(firstAfterBoundary.detected_location.city, previousTopic);
-    const lag = isWrong ? Math.max(0, Number(firstAfterBoundary.timeline_end_sec || boundary) - boundary) : 0;
+    const lag = isWrong ? Math.max(0, Number(firstAfterBoundary.timeline_start_sec || boundary) - boundary) : 0;
     lags.push(round3(lag));
 
     if (lag > policy.max_topic_switch_latency_sec) {
@@ -349,6 +503,16 @@ const computeTimelineSyncMetrics = ({ clips, macroBlocks, policy }) => {
         previous_topic: previousTopic,
         expected_topic: macro.topic,
         lag_sec: round3(lag),
+      });
+    }
+
+    if (macro.topic_type === "city" && firstAfterBoundary?.detected_location?.city && !isSameLocation(firstAfterBoundary.detected_location.city, macro.topic)) {
+      issues.push({
+        type: "wrong_boundary_city",
+        boundary_sec: round3(boundary),
+        expected_topic: macro.topic,
+        detected_city: firstAfterBoundary.detected_location.city,
+        clip_index: firstAfterBoundary.clip_index,
       });
     }
   });
@@ -368,6 +532,7 @@ const computeTimelineSyncMetrics = ({ clips, macroBlocks, policy }) => {
   return {
     avg_topic_lag_sec: round3(lags.reduce((acc, item) => acc + item, 0) / Math.max(1, lags.length)),
     p95_topic_lag_sec: round3(sortedLags[p95Index] || 0),
+    max_visual_lag_sec: round3(sortedLags.length ? sortedLags[sortedLags.length - 1] : 0),
     wrong_topic_exposure_sec: round3(wrongTopicExposureSec),
     semantic_alignment_score: round3(semanticScores.reduce((acc, item) => acc + item, 0) / Math.max(1, semanticScores.length)),
     hard_boundary_count: Math.max(0, macroBlocks.length - 1),
@@ -375,14 +540,33 @@ const computeTimelineSyncMetrics = ({ clips, macroBlocks, policy }) => {
   };
 };
 
-const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset }) => {
+const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset, allowPlaceholderFallback = config.ALLOW_PLACEHOLDER_ASSETS }) => {
   const videoId = state.video_id || "unknown";
   const policy = getSyncPolicy();
+  const hardBoundaryPolicy = getHardBoundaryPolicy();
   const audioIntelligence = await getCachedAudioIntelligence({ videoId }).catch(() => null);
   const { macroBlocks, microBlocks } = buildNarrativeBlocks({ state, audioIntelligence, audioDuration });
   const allAssets = Array.isArray(state.assets_json?.items) ? state.assets_json.items : [];
-  const assetWindows = flattenAssetWindows(allAssets.length ? allAssets : [fallbackAsset]);
-  const fallbackCandidate = buildFallbackCandidate(fallbackAsset);
+  const sceneAssetReadiness = Array.isArray(state.assets_json?.scene_asset_readiness)
+    ? state.assets_json.scene_asset_readiness
+    : [];
+  const blockingSceneIndexes = !allowPlaceholderFallback
+    ? sceneAssetReadiness.filter((entry) => entry.ready === false).map((entry) => Number(entry.scene_index || 0))
+    : [];
+
+  if (!allowPlaceholderFallback && blockingSceneIndexes.length) {
+    throw new Error(`Timeline blocked: missing publishable assets for scene(s) ${blockingSceneIndexes.join(", ")}.`);
+  }
+
+  const eligibleAssets = allowPlaceholderFallback
+    ? allAssets
+    : allAssets.filter((asset) => isPublishableAsset(asset, { mockMode: false }));
+  const assetWindows = flattenAssetWindows(eligibleAssets.length ? eligibleAssets : allowPlaceholderFallback ? [fallbackAsset] : []);
+  const fallbackCandidate = allowPlaceholderFallback ? buildFallbackCandidate(fallbackAsset) : null;
+
+  if (!allowPlaceholderFallback && !assetWindows.length) {
+    throw new Error("Timeline blocked: no publishable assets available for render.");
+  }
   const usage = {
     usedSourceUrls: new Map(),
     usedAssetIds: new Map(),
@@ -402,7 +586,9 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
     const previousMacroTopic = block.hard_boundary ? previousBlock?.macro_topic || "" : "";
     const slots = splitBlockIntoTimelineSlots({ block, policy, pauseMarkers });
 
-    for (const slot of slots) {
+    for (let slotIndex = 0; slotIndex < slots.length; slotIndex += 1) {
+      const slot = slots[slotIndex];
+      const isBoundaryFirstSlot = Boolean(block.hard_boundary && slotIndex === 0);
       const sceneFallbackNarration = `${block.topic || ""} ${block.narration_excerpt || ""} ${(block.keywords || []).join(" ")}`.trim();
       const narrationText = getNarrationTextBetween({
         words: audioIntelligence?.words || [],
@@ -410,18 +596,54 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         endSeconds: slot.end,
         fallback: sceneFallbackNarration,
       });
-      const candidates = filterCandidatesByHardRules({ block, assetWindows, previousMacroTopic, fallbackAsset });
-      const ranked = await rankCandidates({
+      const candidates = filterCandidatesByHardRules({
         block,
+        assetWindows,
+        previousMacroTopic,
+        fallbackAsset,
+        allowPlaceholderFallback,
+        isBoundaryFirstSlot,
+        hardBoundaryPolicy,
+      });
+      const ranked = await rankCandidates({
+        block: {
+          ...block,
+          is_boundary_first_slot: isBoundaryFirstSlot,
+        },
         narrationText,
         candidates,
         previousMacroTopic,
         usage,
         videoId,
         clipIndex: clips.length + 1,
+        hardBoundaryPolicy,
+        isBoundaryFirstSlot,
       });
-      const selected = ranked[0] || { candidate: fallbackCandidate, score: -10, features: {}, selection_reason: "fallback" };
+      const selected = ranked.find((item) => !item.hard_blocked) || ranked[0] || (fallbackCandidate
+        ? { candidate: fallbackCandidate, score: -10, features: {}, selection_reason: "fallback" }
+        : null);
+
+      if (!selected?.candidate || (isBoundaryFirstSlot && selected.hard_blocked && hardBoundaryPolicy.fail_on_missing_boundary_candidate)) {
+        throw new Error(`Timeline blocked: no publishable candidate available for scene ${block.scene_index}.`);
+      }
+
       const candidate = selected.candidate || fallbackCandidate;
+      const expectedLocation = block.expected_location || block.location?.city || (block.topic_type === "city" ? block.macro_topic : "");
+      if (
+        isBoundaryFirstSlot
+        && hardBoundaryPolicy.forbid_neutral_first_clip
+        && candidate.neutral
+      ) {
+        throw new Error(`Hard boundary blocked: neutral first clip is forbidden for scene ${block.scene_index}.`);
+      }
+      if (
+        isBoundaryFirstSlot
+        && hardBoundaryPolicy.require_location_on_hard_boundary
+        && expectedLocation
+        && !candidate.location?.city
+      ) {
+        throw new Error(`Hard boundary blocked: missing location for first clip of ${expectedLocation}.`);
+      }
       const assetReuseIndex = usage.usedAssetIds.get(candidate.asset_id) || 0;
       const sourceWindow = buildVideoSourceWindow({
         asset: candidate.asset,
@@ -492,7 +714,16 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         subtheme: block.subtheme,
         topic_type: block.topic_type,
         hard_boundary: Boolean(block.hard_boundary),
-        transition: block.hard_boundary ? "cut" : "soft_cut",
+        hard_boundary_first_clip: isBoundaryFirstSlot,
+        transition_type: block.transition_type || (block.hard_boundary ? "hard" : "soft"),
+        boundary_id: block.boundary_id || "",
+        expected_location: block.expected_location || "",
+        expected_visual_start_sec: Number(block.expected_visual_start_sec || block.start_sec || 0),
+        chapter_trigger: block.chapter_trigger || null,
+        chapter_card_required: Boolean(block.chapter_card_required),
+        block_intro_asset: block.block_intro_asset || null,
+        chapter_card_clip: Boolean(candidate.chapter_card_clip),
+        transition: isBoundaryFirstSlot ? (block.hard_boundary ? "hard_cut" : "soft_cut") : "none",
         detected_location: candidate.location,
         detected_landmarks: candidate.landmarks,
         neutral_fallback: Boolean(candidate.neutral),
@@ -515,7 +746,31 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
 
   const uniqueAssetCount = new Set(clips.map((clip) => clip.asset?.local_path || clip.asset?.source_url).filter(Boolean)).size;
   const semanticScores = clips.map((clip) => Number(clip.timeline_score || 0));
-  const timelineSyncMetrics = computeTimelineSyncMetrics({ clips, macroBlocks, policy });
+  const hardBoundaryValidation = evaluateHardBoundaryDeterministic({ clips, microBlocks, hardBoundaryPolicy });
+  if (hardBoundaryPolicy.enabled && hardBoundaryPolicy.fail_on_missing_boundary_candidate && hardBoundaryValidation.status === "fail") {
+    const firstViolation = hardBoundaryValidation.violations[0];
+    throw new Error(`Hard boundary blocked: ${firstViolation?.violations?.[0] || "validation_failed"} at ${firstViolation?.boundary_id || "unknown_boundary"}.`);
+  }
+
+  const timelineSyncMetricsBase = computeTimelineSyncMetrics({
+    clips,
+    macroBlocks,
+    policy: {
+      ...policy,
+      max_topic_switch_latency_sec: hardBoundaryPolicy.max_topic_switch_latency_sec,
+    },
+  });
+  const timelineSyncMetrics = {
+    ...timelineSyncMetricsBase,
+    hard_boundary_status: hardBoundaryValidation.status,
+    max_visual_lag_sec: round3(Math.max(
+      Number(timelineSyncMetricsBase.max_visual_lag_sec || 0),
+      Number(hardBoundaryValidation.max_visual_lag_sec || 0)
+    )),
+    avg_visual_lag_sec: hardBoundaryValidation.avg_visual_lag_sec,
+    hard_boundary_reports: hardBoundaryValidation.boundaries,
+    hard_boundary_violations: hardBoundaryValidation.violations,
+  };
 
   return {
     clips,
@@ -540,8 +795,10 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
       location_type: window.location_type,
       confidence: window.confidence,
       neutral: window.neutral,
+      visual_evidence_source: window.visual_evidence_source,
     })),
     syncPolicy: policy,
+    hardBoundaryPolicy,
     timelineSyncMetrics,
     transition: "none",
     renderStrategy: "concat",
@@ -565,6 +822,7 @@ module.exports = {
     flattenAssetWindows,
     filterCandidatesByHardRules,
     computeTimelineSyncMetrics,
+    evaluateHardBoundaryDeterministic,
     detectLocation,
     detectLandmarks,
     detectSubtheme,

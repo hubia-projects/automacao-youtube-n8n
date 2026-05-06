@@ -21,15 +21,15 @@ Este documento descreve o fluxo real do pipeline entre n8n, backend local e APIs
 | Componente | Papel no fluxo | Arquivos principais |
 | --- | --- | --- |
 | n8n Workflow 1 | Inicio manual/agendado, geracao de ideias, aprovacao da ideia, roteiro com visual_plan, chamada do W2 | pipeline/n8n/workflow1_weekly_topic_script.json |
-| n8n Workflow 2 | Audio, audio intelligence obrigatoria, legendas SRT/VTT, busca video-first de assets HD por cena com query planner por visual intent, rejeicao previa de assets genericos e analise visual por janela, chamada do W3 | pipeline/n8n/workflow2_audio_captions_assets.json |
-| n8n Workflow 3 | Render multi-clip por janelas semanticas de video, score por visual intent, QA tecnico + semantico com quotas gastronomicas apenas quando o tema declarado ou dominante e gastronomico, fix sync seletivo, metadata, aprovacao final, upload | pipeline/n8n/workflow3_render_youtube.json |
+| n8n Workflow 2 | Audio, audio intelligence obrigatoria, legendas SRT/VTT, busca video-first de assets HD por cena com query planner por visual intent e fallback cidade->pais->equivalente tematico, rejeicao previa de assets genericos, analise visual por janela, scene_asset_readiness para bloquear cenas sem asset real em producao e gate explicito antes do W3; quando missing_assets=true marca needs_manual_review e nao segue para render | pipeline/n8n/workflow2_audio_captions_assets.json |
+| n8n Workflow 3 | Render multi-clip por janelas semanticas de video, lock editorial de hard boundary (primeiro clip da troca obrigatoriamente do novo bloco), QA tecnico + semantico deterministico por boundary com lag maximo, gate de metadata/upload por hard_boundary_status=pass e max_visual_lag_sec dentro do limite, fix sync seletivo, needs_manual_review apos falha no pos-fix, metadata, aprovacao final, upload | pipeline/n8n/workflow3_render_youtube.json |
 | Backend local | Executa todas as operacoes reais via rotas e services | pipeline/src/routes/videoRoutes.js |
 | Audio Intelligence | Timestamps word-level do audio via OpenAI Whisper ou fallback, deteccao de pausas e boundaries sugeridas | pipeline/src/services/audioIntelligence.js |
-| Narrative Block Planner | Agrupa roteiro e visual_plan em macroblocos e microblocos com keywords, visual_intent, evidencias obrigatorias e categorias proibidas | pipeline/src/services/narrativeBlockPlanner.js |
+| Narrative Block Planner | Agrupa roteiro e visual_plan em macroblocos e microblocos com keywords, visual_intent, evidencias obrigatorias, chapter_trigger e contrato de transicao (boundary_id, expected_location, expected_visual_start_sec, chapter_card_required, block_intro_asset) | pipeline/src/services/narrativeBlockPlanner.js |
 | Visual Intent Layer | Detecta intencao visual da cena, categorias detectadas no asset e mismatch tematico | pipeline/src/services/visualIntentService.js |
 | Semantic Matcher | Matching semantico via embeddings OpenAI entre narracao e janelas de video | pipeline/src/services/semanticMatcher.js |
-| Timeline Planner V2 | Planeja timeline usando texto real do audio por intervalo + score composto por visual_intent + anti-repeticao | pipeline/src/services/timelinePlanner.js |
-| Sync Validator | Valida sincronia, diversidade, black frames, silencio, aplica quotas gastronomicas so para tema declarado ou dominante e aciona fix sync seletivo | pipeline/src/services/syncValidator.js |
+| Timeline Planner V2 | Planeja timeline usando texto real do audio por intervalo, aplica lock do primeiro clip em hard boundary, impede crossing de bloco, proibe neutral_fallback no primeiro slot hard e mede lag de transicao por clip_start | pipeline/src/services/timelinePlanner.js |
+| Sync Validator | Valida sincronia, diversidade, black frames, silencio, aplica QA deterministico por hard boundary (status pass/fail, max_visual_lag_sec, chapter overlay) e quotas gastronomicas so para tema declarado ou dominante | pipeline/src/services/syncValidator.js |
 
 ## Fluxo Visual
 
@@ -76,16 +76,20 @@ flowchart TD
     AE --> AF[busca por cena em Pexels Pixabay com filtro HD horizontal]
     AF --> AF0[assetQueryPlanner gera queries por visual_intent e assetRejectionService corta skyline paisagem e cidade generica quando a cena pede comida]
     AF0 --> AF1[extrai frames por janela e descreve o video com OpenAI vision ou provider local]
-    AF1 --> AG[Call Workflow 3]
+    AF1 --> AF2[scene_asset_readiness marca cenas sem asset real e asset_failure em producao]
+    AF2 --> AF3{Assets prontos?}
+    AF3 -->|sim| AG[Call Workflow 3]
+    AF3 -->|nao| AF4[POST /api/videos/review/mark-manual-review e encerra o fluxo normal]
 
     AG --> AH[Workflow 3 Start]
     AH --> AI[Render Video]
     AI --> AJ[POST /api/videos/render]
     AJ --> AK[renderService]
-    AK --> AK1[timeline multi clip por bloco narrativo, texto real do audio e visual_intent_match]
-    AK1 --> AK2[Validate Render Sync e Quality com quotas gastronomicas e mismatch tematico]
+    AK --> AK1[timeline multi clip por bloco narrativo com lock hard boundary, texto real do audio e visual_intent_match]
+    AK1 --> AK2[Validate Render Sync e Quality com QA deterministico por boundary, lag maximo e mismatch tematico]
     AK2 --> AK3[Fix Sync seletivo por scene_index com reason especifica]
-    AK1 --> AL[Generate Metadata]
+    AK2 --> AK4[Se o pos-fix ainda falhar, marca needs_manual_review e para o fluxo normal]
+    AK1 --> AL[Generate Metadata apenas quando hard_boundary_status=pass e max_visual_lag_sec <= limite]
     AL --> AM[POST /api/videos/metadata/generate]
     AM --> AN[metadataService]
     AN --> AO[openaiService gera titulo descricao tags]
@@ -101,7 +105,7 @@ flowchart TD
     AW --> AX{If Approved}
     AX -->|true| AY[Upload to YouTube]
     AY --> AZ[POST /api/videos/youtube/upload]
-    AZ --> BA[youtubeService sobe video e tenta anexar legenda sidecar]
+    AZ --> BA[youtubeService sobe video apenas se approved e render_validation.is_publishable forem verdadeiros]
     BA --> BB[Video publicado no YouTube]
     AX -->|false| BC[POST /api/videos/review/regenerate]
     BC --> BD[reviewRevisionService incrementa versao do draft]
@@ -199,11 +203,18 @@ O Workflow 2 comeca em um Execute Workflow Trigger e roda:
 - Generate Audio
 - Generate Captions
 - Search Assets
-- Call Workflow 3
+- If Assets Ready
+- Call Workflow 3 somente quando missing_assets=false
+- Mark Needs Manual Review Missing Assets quando missing_assets=true
 
 Arquivo:
 
 - pipeline/n8n/workflow2_audio_captions_assets.json
+
+Regra estrutural atual do W2:
+
+- se Search Assets retornar missing_assets=false, o workflow segue para o W3
+- se Search Assets retornar missing_assets=true, o W2 chama /api/videos/review/mark-manual-review com as blocking_scene_indexes e para o fluxo normal antes do render
 
 #### Audio
 
@@ -267,16 +278,19 @@ Servico:
 APIs usadas hoje:
 
 - principal para busca visual: Pexels e Pixabay
-- fallback por cena: imagem local 1920x1080 gerada via FFmpeg apenas quando nenhum video externo valido e encontrado
+- placeholder local: permitido apenas em mock/debug com ALLOW_PLACEHOLDER_ASSETS=true; em producao a cena fica bloqueada se nao houver asset real
 
 Comportamento atual da busca de assets:
 
 - usa visual_plan salvo no state para buscar assets por cena
 - gera ate 4 queries por cena com base em keywords, entidades geograficas e visual_intent de cada bloco narrativo
+- expande fallback de busca em ordem cidade -> pais -> equivalente tematico do intent quando a primeira rodada especifica nao basta
 - tenta fechar cada cena com ate 3 videos externos longos antes de aceitar imagem
 - aceita apenas assets em landscape com HD minimo 1280x720
 - prioriza Full HD 1920x1080 ou maior quando disponivel
 - para cenas de gastronomia, mercado, vinho, pastelaria, restaurante ou cafe, remove queries genericas de skyline travel e aerial city e amplia o pool de candidatos especificos
+- persiste assets_json.scene_asset_readiness por cena e marca asset_failure/failure_reason quando nao existe asset visual real publicavel
+- com MOCK_MODE=false e ALLOW_PLACEHOLDER_ASSETS=false, nao cria placeholder local para mascarar sucesso; o render deve parar antes da timeline
 - antes do download, aplica score e rejeicao previa para cortar assets de cidade errada, paisagem bonita sem comida, janela generica longa demais e categorias proibidas para a cena
 - apos baixar cada video, extrai de 1 a 3 frames representativos em janelas internas do proprio asset
 - usa OpenAI vision ou provider local para gerar analysis_summary, analysis_tags e analysis_windows por video quando configurado
@@ -294,6 +308,9 @@ Arquivos principais que controlam essa etapa:
 O Workflow 3 roda:
 
 - Render Video
+- Validate Render Sync
+- Fix Render Sync quando necessario
+- Mark Needs Manual Review quando o pos-fix continua ruim
 - Generate Metadata
 - Final Approval Webhook
 - Save Approval
@@ -320,6 +337,9 @@ Comportamento atual do render:
 
 - monta uma timeline com varios clips em vez de loopar um unico asset
 - usa o visual_plan para distribuir duracao por cena, separa a janela de exibicao da janela semantica do roteiro, ancora a entrada real de cada cena no trecho correspondente do script e cria blocos neutros de intro/outro quando o texto tem trechos genericos sem uma cena tematica clara
+- em cada hard boundary, trava o primeiro clip no novo bloco narrativo, proibe neutral_fallback no primeiro slot hard e exige location valida quando a transicao e de cidade
+- calcula lag visual de troca por clip_start e nao por clip_end, com limite configuravel via HARD_BOUNDARY_MAX_LAG_SEC
+- valida crossing de boundary como falha estrutural (um clip nao pode atravessar a fronteira hard)
 - tenta manter cada clip entre 3 e 10 segundos
 - usa o audio narrado como trilha principal e limita a duracao final ao audio
 - recorta subclips reais dos videos baixados em vez de repetir sempre o inicio do arquivo
@@ -327,7 +347,10 @@ Comportamento atual do render:
 - grava clip_script_excerpt, asset_semantic_text, asset_window_summary, asset_window_start_seconds, asset_window_end_seconds, semantic_match_score, visual_intent, detected_visual_categories, visual_intent_match e query_used no render_timeline para revalidacao
 - tenta aplicar xfade entre clips e cai para concat simples se o xfade falhar
 - para imagens usa zoompan apenas como fallback duro; o caminho principal agora e video-first por cena
+- bloqueia a timeline quando assets_json.scene_asset_readiness indicar cena sem asset publicavel em producao
+- desabilita fallback visual local de segmento e fallback final de composicao quando ALLOW_PLACEHOLDER_ASSETS=false
 - o QA final bloqueia publicacao quando um video gastronomico declarado ou dominantemente gastronomico fica subrepresentado em comida mercado vinho restaurante ou cafe, ou quando cidade generica paisagem e skyline passam do limite permitido
+- o QA final agora tambem bloqueia publicacao quando hard_boundary_status != pass, quando max_visual_lag_sec excede o limite e quando falta chapter overlay em trocas hard obrigatorias
 - uma cena isolada de comida dentro de um video geral de viagem nao ativa sozinha essas quotas gastronomicas
 - salva render_timeline no state com clips, resolucao final, quantidade de cortes, distribuicao visual e estrategia usada
 
@@ -367,6 +390,7 @@ Quando voce responde SIM ou NAO:
 - o backend local recebe a resposta
 - chama o webhook final-approval do Workflow 3
 - o Workflow 3 salva a aprovacao e decide se faz upload ou se gera uma nova versao do draft
+- se o render continuar ruim depois do fix sync, o Workflow 3 agora marca needs_manual_review e nao segue para metadata com warning
 
 Rotas envolvidas:
 
@@ -380,6 +404,8 @@ Servico do upload:
 
 No upload atual para o YouTube, o backend:
 
+- exige approved=true e render_validation.is_publishable=true, com needs_regeneration=false e needs_manual_review=false
+- exige render_validation.hard_boundary_status=pass e render_validation.max_visual_lag_sec <= HARD_BOUNDARY_MAX_LAG_SEC
 - sobe o MP4 final
 - tenta anexar a legenda SRT/VTT gerada no W2 como trilha sidecar no player
 - depende de YOUTUBE_REFRESH_TOKEN com escopo youtube.force-ssl ou youtubepartner para captions.insert
@@ -418,8 +444,10 @@ Quando a resposta final e NAO:
 - gera audio
 - gera legendas sidecar SRT/VTT
 - busca assets e faz refresh seletivo de cenas fracas na revisao
+- persiste scene_asset_readiness e bloqueia render quando so houver placeholder local em producao
 - analisa frames dos assets por janela e detecta categorias visuais reais
 - aplica visual_intent por cena para orientar query, rejeicao e score final
+- aplica contrato hard boundary por bloco com boundary_id, expected_location, chapter_trigger e block_intro_asset
 - renderiza o video
 - gera metadata
 - envia mensagens para o Telegram
@@ -428,6 +456,9 @@ Quando a resposta final e NAO:
 - salva estado e arquivos
 - publica o render de revisao em Drive/Sheets quando configurado
 - faz upload para o YouTube e tenta anexar a trilha sidecar
+- bloqueia upload quando o QA nao marcar o render como publicavel
+- bloqueia metadata/upload quando o gate de hard boundary reprovar
+- marca needs_manual_review quando o W2 detecta missing_assets ou quando o pos-fix do QA falha, sempre parando o caminho normal antes da publicacao
 - bloqueia videos gastronomicos quando a distribuicao visual fica generica demais
 
 ## Onde alterar cada parte no futuro
@@ -440,10 +471,13 @@ Quando a resposta final e NAO:
 | Provider de voz principal | pipeline/src/services/ttsService.js |
 | Segmentacao visual por cena | pipeline/src/utils/visualPlan.js e pipeline/src/services/scriptService.js |
 | Visual intent, evidencias obrigatorias e categorias proibidas | pipeline/src/services/visualIntentService.js e pipeline/src/services/narrativeBlockPlanner.js |
-| Busca de assets HD por cena e refresh seletivo | pipeline/src/services/assetsService.js, pipeline/src/services/assetQueryPlanner.js e pipeline/src/services/assetRejectionService.js |
+| Busca de assets HD por cena, readiness por cena e refresh seletivo | pipeline/src/services/assetsService.js, pipeline/src/services/assetReadinessService.js, pipeline/src/services/assetQueryPlanner.js e pipeline/src/services/assetRejectionService.js |
+| Marcacao de revisao manual por assets ausentes no W2 ou falha no pos-fix do W3 | pipeline/src/services/manualReviewService.js, pipeline/n8n/workflow2_audio_captions_assets.json e pipeline/n8n/workflow3_render_youtube.json |
 | Analise visual por frames e janelas | pipeline/src/services/assetsService.js, pipeline/src/services/localVideoUnderstandingService.js, pipeline/src/services/openaiService.js e pipeline/src/utils/mediaUtils.js |
 | Timeline multi-clip, score e transicoes | pipeline/src/services/timelinePlanner.js, pipeline/src/services/timelineScoringService.js, pipeline/src/services/renderService.js e pipeline/src/utils/mediaUtils.js |
-| QA semantico, quotas gastronomicas e fix sync seletivo | pipeline/src/services/syncValidator.js |
+| QA semantico, hard boundary deterministico, quotas gastronomicas e fix sync seletivo | pipeline/src/services/syncValidator.js |
+| Contrato de hard boundary por bloco e chapter triggers | pipeline/src/services/narrativeBlockPlanner.js e pipeline/src/services/audioIntelligence.js |
+| Limites e politicas de hard boundary (env) | pipeline/src/config/env.js e pipeline/.env.example |
 | Legenda sidecar do YouTube | pipeline/src/services/captionsService.js e pipeline/src/services/youtubeService.js |
 | Status enviados no Telegram | pipeline/src/services/telegramService.js |
 | Publicacao da revisao online | pipeline/src/services/reviewPublishingService.js |
@@ -452,7 +486,7 @@ Quando a resposta final e NAO:
 | Mensagens do Telegram | pipeline/src/services/telegramService.js |
 | Logica de retorno do Telegram para o n8n | pipeline/src/services/telegramApprovalService.js |
 | Agendamento do start | pipeline/n8n/workflow1_weekly_topic_script.json |
-| Upload do YouTube | pipeline/src/services/youtubeService.js |
+| Upload do YouTube e gate de publicabilidade hard boundary | pipeline/src/services/youtubeService.js e pipeline/src/routes/videoRoutes.js |
 
 ## Regra de Manutencao
 

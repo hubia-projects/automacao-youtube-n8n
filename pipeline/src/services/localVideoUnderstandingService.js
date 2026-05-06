@@ -34,6 +34,7 @@ const enrichWindowsWithEvidence = ({ windows = [], sceneContext = {}, assetMetad
       generic_visual: typeof window.generic_visual === "boolean" ? window.generic_visual : evidence.generic_visual,
       required_evidence_found: window.required_evidence_found || evidence.required_evidence_found,
       missing_required_visual_evidence: window.missing_required_visual_evidence || evidence.missing_required_visual_evidence,
+      visual_evidence_source: window.visual_evidence_source || window.method || assetMetadata.analysis_provider || "local_video_understanding",
     };
   });
 
@@ -55,6 +56,7 @@ const buildFallbackWindows = ({ duration = 0, windowSeconds = 8, maxWindows = 20
       ]).slice(0, 10),
       confidence: 0.35,
       method: "local_video_understanding_fallback",
+      visual_evidence_source: "local_video_understanding_fallback",
       location: { city: "", country: "", confidence: 0 },
       landmarks: [],
       location_type: sceneContext.subtheme || "general",

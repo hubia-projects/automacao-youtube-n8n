@@ -42,13 +42,19 @@ const findNarrativeBlockAtTime = (macroBlocks = [], timestampSec = 0) => {
 };
 
 const getHardBoundaries = (macroBlocks = []) =>
-  macroBlocks.slice(1).map((block, index) => ({
-    timestamp_sec: Number(block.start_sec || 0),
-    expected_topic: block.topic,
-    expected_topic_type: block.topic_type || "",
-    previous_topic: macroBlocks[index]?.topic || "",
-    previous_topic_type: macroBlocks[index]?.topic_type || "",
-  }));
+  macroBlocks.slice(1).map((block, index) => {
+    const firstChild = Array.isArray(block.children) ? block.children[0] : null;
+    return {
+      boundary_id: firstChild?.boundary_id || block.boundary_id || `hb_${String(index + 2).padStart(3, "0")}`,
+      timestamp_sec: Number(firstChild?.expected_visual_start_sec ?? block.start_sec ?? 0),
+      expected_topic: firstChild?.expected_location || block.expected_location || block.topic,
+      expected_topic_type: firstChild?.topic_type || block.topic_type || "",
+      previous_topic: macroBlocks[index]?.topic || "",
+      previous_topic_type: macroBlocks[index]?.topic_type || "",
+      chapter_card_required: Boolean(firstChild?.chapter_card_required),
+      chapter_trigger: firstChild?.chapter_trigger || block.chapter_trigger || null,
+    };
+  });
 
 const buildQaSampleTimestamps = ({ duration, hardBoundaries = [], intervalSec = 2 }) => {
   const safeDuration = Math.max(1, Number(duration || 0));
@@ -183,8 +189,91 @@ const computeQaMetrics = ({ samples = [], hardBoundaries = [], sampleIntervalSec
   return {
     avg_topic_lag_sec: round3(lags.reduce((acc, item) => acc + item, 0) / Math.max(1, lags.length)),
     p95_topic_lag_sec: round3(sortedLags[p95Index] || 0),
+    max_visual_lag_sec: round3(sortedLags.length ? sortedLags[sortedLags.length - 1] : 0),
     wrong_topic_exposure_sec: round3(wrongTopicExposureSec),
     semantic_alignment_score: round3(scores.reduce((acc, item) => acc + item, 0) / Math.max(1, scores.length)),
+  };
+};
+
+const evaluateHardBoundaryDeterministic = ({
+  clips = [],
+  hardBoundaries = [],
+  overlays = [],
+  maxLagSec = 0.5,
+  requireLocation = true,
+  forbidNeutralFirstClip = true,
+  requireChapterOverlay = true,
+}) => {
+  if (!hardBoundaries.length) {
+    return {
+      status: "pass",
+      max_visual_lag_sec: 0,
+      avg_visual_lag_sec: 0,
+      boundaries: [],
+      violations: [],
+    };
+  }
+
+  const lagValues = [];
+  const boundaries = [];
+  const violations = [];
+
+  hardBoundaries.forEach((boundary) => {
+    const boundarySec = Number(boundary.timestamp_sec || 0);
+    const crossingClip = clips.find((clip) => {
+      const start = Number(clip.timeline_start_sec || 0);
+      const end = Number(clip.timeline_end_sec || 0);
+      return start < boundarySec - 0.001 && end > boundarySec + 0.001;
+    });
+    const firstClip = clips.find((clip) => Number(clip.timeline_start_sec || 0) >= boundarySec - 0.001);
+    const detectedCity = firstClip?.detected_location?.city || "";
+    const lagSec = firstClip ? Math.max(0, Number(firstClip.timeline_start_sec || boundarySec) - boundarySec) : maxLagSec + 1;
+    lagValues.push(round3(lagSec));
+
+    const overlayFound = !requireChapterOverlay
+      || !boundary.chapter_card_required
+      || overlays.some((overlay) => {
+        if ((overlay.type || "") !== "chapter_card_clip") return false;
+        const start = Number(overlay.start_seconds || 0);
+        return Math.abs(start - Number(firstClip?.timeline_start_sec || boundarySec)) <= 0.25;
+      });
+
+    const boundaryViolations = [];
+    if (crossingClip) boundaryViolations.push("boundary_crossing");
+    if (!firstClip) boundaryViolations.push("missing_first_clip");
+    if (forbidNeutralFirstClip && firstClip?.neutral_fallback) boundaryViolations.push("neutral_first_clip_forbidden");
+    if (requireLocation && boundary.expected_topic_type === "city" && !detectedCity) boundaryViolations.push("missing_location_on_first_clip");
+    if (boundary.expected_topic_type === "city" && detectedCity && !isSameLocation(detectedCity, boundary.expected_topic)) boundaryViolations.push("wrong_boundary_city");
+    if (lagSec > maxLagSec) boundaryViolations.push("max_visual_lag_exceeded");
+    if (!overlayFound) boundaryViolations.push("chapter_overlay_missing");
+
+    const report = {
+      boundary_id: boundary.boundary_id || "",
+      boundary_sec: round3(boundarySec),
+      expected_topic: boundary.expected_topic,
+      expected_topic_type: boundary.expected_topic_type,
+      first_clip_index: firstClip?.clip_index || null,
+      first_clip_start_sec: round3(firstClip?.timeline_start_sec || 0),
+      first_clip_end_sec: round3(firstClip?.timeline_end_sec || 0),
+      first_clip_city: detectedCity,
+      first_clip_neutral: Boolean(firstClip?.neutral_fallback),
+      lag_sec: round3(lagSec),
+      chapter_overlay_found: overlayFound,
+      crossing_detected: Boolean(crossingClip),
+      violations: boundaryViolations,
+      status: boundaryViolations.length ? "fail" : "pass",
+    };
+
+    boundaries.push(report);
+    if (boundaryViolations.length) violations.push(report);
+  });
+
+  return {
+    status: violations.length ? "fail" : "pass",
+    max_visual_lag_sec: round3(Math.max(...lagValues, 0)),
+    avg_visual_lag_sec: round3(lagValues.reduce((acc, lag) => acc + lag, 0) / Math.max(1, lagValues.length)),
+    boundaries,
+    violations,
   };
 };
 
@@ -206,7 +295,11 @@ const detectFailedRanges = ({ samples = [], metrics, threshold }) => {
     });
   });
 
-  if (metrics.p95_topic_lag_sec > threshold.maxP95LagSec || metrics.wrong_topic_exposure_sec > threshold.maxWrongTopicExposureSec) return failed;
+  if (
+    metrics.p95_topic_lag_sec > threshold.maxP95LagSec
+    || metrics.wrong_topic_exposure_sec > threshold.maxWrongTopicExposureSec
+    || Number(metrics.max_visual_lag_sec || 0) > Number(threshold.maxVisualLagSec || threshold.maxP95LagSec || 1)
+  ) return failed;
   return failed.filter((range) => range.reason !== "neutral_fallback");
 };
 
@@ -344,6 +437,16 @@ const collectTimelineIssues = ({ timeline, technical, visual, diversityScore }) 
   const issues = [...(technical.issues || [])];
   const clips = timeline?.clips || [];
   const fallbackClipCount = clips.filter((clip) => clip.clip_script_source === "scene_fallback").length;
+  const metadataFallbackClipCount = clips.filter((clip) => clip.asset_analysis_provider === "metadata_fallback").length;
+
+  if (visual.hard_boundary_status === "fail") {
+    issues.push({
+      type: "hard_boundary_violation",
+      severity: "critical",
+      max_visual_lag_sec: Number(visual.max_visual_lag_sec || visual.metrics?.max_visual_lag_sec || 0),
+      violations: (visual.hard_boundary_report?.violations || []).slice(0, 6),
+    });
+  }
 
   if (Number(visual.metrics?.p95_topic_lag_sec || 0) > Number(timeline?.sync_policy?.max_topic_switch_latency_sec || config.SEMANTIC_SYNC_MAX_LATENCY_SEC || 1)) {
     issues.push({ type: "semantic_lag", severity: "high", p95_topic_lag_sec: visual.metrics.p95_topic_lag_sec });
@@ -356,6 +459,14 @@ const collectTimelineIssues = ({ timeline, technical, visual, diversityScore }) 
   }
   if (diversityScore < 0.45) {
     issues.push({ type: "low_diversity", severity: "medium", diversity_score: diversityScore });
+  }
+  if (metadataFallbackClipCount / Math.max(1, clips.length) > 0.35) {
+    issues.push({
+      type: "metadata_fallback_overuse",
+      severity: "high",
+      count: metadataFallbackClipCount,
+      ratio: round3(metadataFallbackClipCount / Math.max(1, clips.length)),
+    });
   }
   return issues;
 };
@@ -432,6 +543,13 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
     ? timeline.narrative_blocks
     : buildNarrativeBlocks({ state, audioIntelligence, audioDuration: renderDuration }).macroBlocks;
   const hardBoundaries = getHardBoundaries(narrativeBlocks);
+  const hardBoundaryMaxLagSec = Number(
+    config.HARD_BOUNDARY_MAX_LAG_SEC
+    || timeline?.hard_boundary_policy?.max_topic_switch_latency_sec
+    || timeline?.sync_policy?.max_topic_switch_latency_sec
+    || config.SEMANTIC_SYNC_MAX_LATENCY_SEC
+    || 0.5
+  );
   const sampleIntervalSec = Number(config.SEMANTIC_SYNC_QA_SAMPLE_INTERVAL_SEC || (config.SEMANTIC_SYNC_MODE === "high-quality" ? 1 : 2));
   const sampleTimestamps = buildQaSampleTimestamps({ duration: renderDuration, hardBoundaries, intervalSec: sampleIntervalSec });
   const visionByTimestamp = await classifyFramesWithVision({ renderPath, sampleTimestamps });
@@ -456,18 +574,52 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
     };
   });
 
-  const metrics = computeQaMetrics({
+  const metricsBase = computeQaMetrics({
     samples,
     hardBoundaries,
     sampleIntervalSec,
-    maxLatencySec: Number(timeline?.sync_policy?.max_topic_switch_latency_sec || config.SEMANTIC_SYNC_MAX_LATENCY_SEC || 1),
+    maxLatencySec: hardBoundaryMaxLagSec,
   });
+  const hardBoundaryReport = evaluateHardBoundaryDeterministic({
+    clips: timeline?.clips || [],
+    hardBoundaries,
+    overlays: state?.overlays || [],
+    maxLagSec: hardBoundaryMaxLagSec,
+    requireLocation: Boolean(config.HARD_BOUNDARY_REQUIRE_LOCATION),
+    forbidNeutralFirstClip: Boolean(config.HARD_BOUNDARY_FORBID_NEUTRAL_FIRST_CLIP),
+    requireChapterOverlay: Boolean(config.HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY),
+  });
+  const metrics = {
+    ...metricsBase,
+    max_visual_lag_sec: round3(Math.max(
+      Number(metricsBase.max_visual_lag_sec || 0),
+      Number(hardBoundaryReport.max_visual_lag_sec || 0)
+    )),
+  };
   const threshold = {
     maxWrongTopicExposureSec: 2,
-    maxP95LagSec: Number(timeline?.sync_policy?.max_topic_switch_latency_sec || config.SEMANTIC_SYNC_MAX_LATENCY_SEC || 1),
+    maxP95LagSec: hardBoundaryMaxLagSec,
+    maxVisualLagSec: hardBoundaryMaxLagSec,
     minSemanticAlignmentScore: Number(config.SEMANTIC_SYNC_QA_MIN_SCORE || DEFAULT_QA_THRESHOLD),
   };
   const failedRanges = detectFailedRanges({ samples, metrics, threshold });
+  hardBoundaryReport.violations.forEach((boundaryViolation) => {
+    failedRanges.push({
+      start_sec: boundaryViolation.boundary_sec,
+      end_sec: round3(Number(boundaryViolation.boundary_sec || 0) + 0.75),
+      reason: boundaryViolation.violations?.[0] || "hard_boundary_violation",
+      expected_topic: boundaryViolation.expected_topic,
+      detected_topic: boundaryViolation.first_clip_city || "",
+      clip_index: boundaryViolation.first_clip_index || 0,
+      scene_index: 0,
+      boundary_id: boundaryViolation.boundary_id,
+    });
+  });
+  const shouldRegenerate =
+    failedRanges.length > 0
+    || metrics.semantic_alignment_score < threshold.minSemanticAlignmentScore
+    || hardBoundaryReport.status === "fail"
+    || Number(metrics.max_visual_lag_sec || 0) > Number(threshold.maxVisualLagSec || 0.5);
 
   return {
     vision_validated: true,
@@ -478,20 +630,26 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
     frame_interval_seconds: sampleIntervalSec,
     hard_boundaries: hardBoundaries,
     metrics,
+    hard_boundary_status: hardBoundaryReport.status,
+    max_visual_lag_sec: metrics.max_visual_lag_sec,
+    hard_boundary_report: hardBoundaryReport,
     threshold,
     failed_ranges: failedRanges,
-    should_regenerate: failedRanges.length > 0 || metrics.semantic_alignment_score < threshold.minSemanticAlignmentScore,
+    should_regenerate: shouldRegenerate,
     samples: samples.slice(0, 80),
   };
 };
 
-const validateRender = async ({ videoId }) => {
+const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
   const state = await loadState(videoId);
   const renderPath = state.render_path;
   const timeline = state.render_timeline || {};
   const audioIntelligence = await getCachedAudioIntelligence({ videoId }).catch(() => null);
   const alignment = await validateTimelineAlignment({ videoId });
-  const technical = await validateRenderQuality({ renderPath }).catch(() => ({ technical_score: 0, issues: [{ type: "render_probe_failed", severity: "critical" }] }));
+  const technical = await validateRenderQuality({
+    renderPath,
+    allowPlaceholderArtifacts: Boolean(mockMode || config.ALLOW_PLACEHOLDER_ASSETS),
+  }).catch(() => ({ technical_score: 0, issues: [{ type: "render_probe_failed", severity: "critical" }] }));
   const visual = await validateRenderWithVision({ videoId, renderPath, audioIntelligence, timeline, state });
   const diversityScore = scoreTimelineDiversity(timeline.clips || []);
   const baseIssues = collectTimelineIssues({ timeline, technical, visual, diversityScore });
@@ -505,6 +663,9 @@ const validateRender = async ({ videoId }) => {
     forcedSceneIndexes: visualIntentCoverage.scene_indexes_to_refresh,
   });
   const coveragePenalty = issues.reduce((accumulator, issue) => accumulator + (["critical", "high"].includes(issue.severity) ? 0.08 : 0.03), 0);
+  const hardBoundaryStatus = visual.hard_boundary_status || "unknown";
+  const maxVisualLagSec = Number(visual.max_visual_lag_sec || visual.metrics?.max_visual_lag_sec || 0);
+  const hardBoundaryMaxLagSec = Number(config.HARD_BOUNDARY_MAX_LAG_SEC || 0.5);
 
   const qualityScore = round3(Math.max(0, Math.min(1,
     Number(technical.technical_score || 0) * 0.35 +
@@ -512,8 +673,13 @@ const validateRender = async ({ videoId }) => {
     Number(diversityScore || 0) * 0.2 -
     coveragePenalty
   )));
-  const needsRegeneration = Boolean(issues.some((issue) => ["critical", "high"].includes(issue.severity)) || visual.should_regenerate);
-  const isPublishable = !needsRegeneration && qualityScore >= 0.72;
+  const needsRegeneration = Boolean(
+    issues.some((issue) => ["critical", "high"].includes(issue.severity))
+    || visual.should_regenerate
+    || hardBoundaryStatus === "fail"
+    || maxVisualLagSec > hardBoundaryMaxLagSec
+  );
+  const isPublishable = !needsRegeneration && qualityScore >= 0.72 && hardBoundaryStatus === "pass";
 
   const validationResult = {
     video_id: videoId,
@@ -521,6 +687,9 @@ const validateRender = async ({ videoId }) => {
     is_publishable: isPublishable,
     needs_regeneration: needsRegeneration,
     needs_manual_review: !isPublishable,
+    hard_boundary_status: hardBoundaryStatus,
+    max_visual_lag_sec: round3(maxVisualLagSec),
+    hard_boundary_report: visual.hard_boundary_report || { status: hardBoundaryStatus, boundaries: [], violations: [] },
     quality_score: qualityScore,
     alignment_score: round3(visual.metrics?.semantic_alignment_score || alignment.alignment_score || 0),
     diversity_score: diversityScore,
@@ -541,7 +710,7 @@ const validateRender = async ({ videoId }) => {
 const fixRenderSync = async ({ videoId, mockMode = false }) => {
   const state = await loadState(videoId);
   const attempts = Number(state.render_sync_fix_attempts || 0);
-  const validation = await validateRender({ videoId });
+  const validation = await validateRender({ videoId, mockMode });
   if (!validation.needs_regeneration) return validation;
   if (attempts >= 2) {
     return {
@@ -567,7 +736,7 @@ const fixRenderSync = async ({ videoId, mockMode = false }) => {
   }
 
   await renderVideo({ videoId, mockMode });
-  const revalidated = await validateRender({ videoId });
+  const revalidated = await validateRender({ videoId, mockMode });
   await updateState(videoId, {
     render_sync_fix_attempts: attempts + 1,
     last_sync_fix_at: new Date().toISOString(),
@@ -588,6 +757,8 @@ module.exports = {
   __test__: {
     buildQaSampleTimestamps,
     computeQaMetrics,
+    evaluateHardBoundaryDeterministic,
+    collectTimelineIssues,
     detectFailedRanges,
     scoreExpectedVsDetected,
     findClipAtTime,

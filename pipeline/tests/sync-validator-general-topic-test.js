@@ -76,6 +76,26 @@ assert.deepStrictEqual(
   "sem issues e sem failed ranges o plano de regeneracao deve ficar vazio"
 );
 
+const metadataFallbackIssues = syncValidatorTest.collectTimelineIssues({
+  timeline: {
+    clips: [
+      { clip_index: 1, asset_analysis_provider: "metadata_fallback", clip_script_source: "selected" },
+      { clip_index: 2, asset_analysis_provider: "metadata_fallback", clip_script_source: "selected" },
+      { clip_index: 3, asset_analysis_provider: "metadata_fallback", clip_script_source: "selected" },
+      { clip_index: 4, asset_analysis_provider: "openai_vision", clip_script_source: "selected" },
+      { clip_index: 5, asset_analysis_provider: "openai_vision", clip_script_source: "selected" },
+    ],
+  },
+  technical: { issues: [] },
+  visual: { metrics: {} },
+  diversityScore: 0.8,
+});
+
+assert(
+  metadataFallbackIssues.some((issue) => issue.type === "metadata_fallback_overuse" && issue.severity === "high"),
+  "overuse de metadata_fallback deveria virar issue de QA"
+);
+
 const cityMismatchFailures = syncValidatorTest.detectFailedRanges({
   samples: [
     {
@@ -115,5 +135,70 @@ assert.strictEqual(
   true,
   "silencio longo ainda deve ser detectado"
 );
+
+const hardBoundaryFail = syncValidatorTest.evaluateHardBoundaryDeterministic({
+  clips: [
+    {
+      clip_index: 7,
+      timeline_start_sec: 12,
+      timeline_end_sec: 14,
+      detected_location: { city: "" },
+      neutral_fallback: true,
+    },
+  ],
+  hardBoundaries: [
+    {
+      boundary_id: "hb_002_porto",
+      timestamp_sec: 12,
+      expected_topic: "Porto",
+      expected_topic_type: "city",
+      chapter_card_required: true,
+    },
+  ],
+  overlays: [],
+  maxLagSec: 0.5,
+  requireLocation: true,
+  forbidNeutralFirstClip: true,
+  requireChapterOverlay: true,
+});
+
+assert.strictEqual(hardBoundaryFail.status, "fail", "hard boundary com clip neutro deveria falhar");
+assert(
+  hardBoundaryFail.violations.some((item) => item.violations.includes("neutral_first_clip_forbidden")),
+  "falha deveria marcar neutral_first_clip_forbidden"
+);
+
+const hardBoundaryPass = syncValidatorTest.evaluateHardBoundaryDeterministic({
+  clips: [
+    {
+      clip_index: 8,
+      timeline_start_sec: 12,
+      timeline_end_sec: 14,
+      detected_location: { city: "Porto" },
+      neutral_fallback: false,
+    },
+  ],
+  hardBoundaries: [
+    {
+      boundary_id: "hb_002_porto",
+      timestamp_sec: 12,
+      expected_topic: "Porto",
+      expected_topic_type: "city",
+      chapter_card_required: true,
+    },
+  ],
+  overlays: [
+    {
+      type: "chapter_card_clip",
+      start_seconds: 12,
+    },
+  ],
+  maxLagSec: 0.5,
+  requireLocation: true,
+  forbidNeutralFirstClip: true,
+  requireChapterOverlay: true,
+});
+
+assert.strictEqual(hardBoundaryPass.status, "pass", "hard boundary válido deveria passar");
 
 console.log("sync validator para blocos gerais validado com sucesso");

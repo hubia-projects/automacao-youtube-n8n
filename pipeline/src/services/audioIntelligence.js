@@ -7,6 +7,7 @@ const { transcribeWithWordTimestamps } = require("./openaiService");
 
 const FALLBACK_WPM = 144;
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
+const CHAPTER_TRIGGER_PATTERN = /(agora|seguimos|vamos|depois|em seguida|partimos|proximo|next|chapter|capitulo)/i;
 
 const normalizeLabel = (value = "") =>
   String(value || "")
@@ -183,6 +184,34 @@ const buildSemanticSceneBoundaries = async ({ scenes = [], audioIntelligence }) 
   return scenes.map((scene) => ({ ...scene, ...(boundaries.find((item) => item.scene_index === scene.scene_index) || {}) }));
 };
 
+const buildChapterTriggers = ({ scenes = [], sceneBoundaries = [], words = [] }) => {
+  if (!Array.isArray(sceneBoundaries) || !sceneBoundaries.length) return [];
+
+  const wordsSafe = Array.isArray(words) ? words : [];
+  return sceneBoundaries
+    .filter((boundary) => Number(boundary.scene_index || 0) > 1)
+    .map((boundary) => {
+      const timestamp = Number(boundary.audio_start_seconds || 0);
+      const nearWordIndex = wordsSafe.findIndex((word) => Number(word.start || 0) >= Math.max(0, timestamp - 0.25));
+      const windowWords = nearWordIndex >= 0
+        ? wordsSafe.slice(Math.max(0, nearWordIndex - 3), nearWordIndex + 4).map((word) => word.word).filter(Boolean)
+        : [];
+      const cueText = windowWords.join(" ");
+      const hasCue = CHAPTER_TRIGGER_PATTERN.test(cueText);
+      const boundaryConfidence = Number(boundary.boundary_confidence || 0.35);
+
+      return {
+        scene_index: Number(boundary.scene_index || 0),
+        timestamp_sec: Number(timestamp.toFixed(3)),
+        anchor_word: boundary.anchor_word || wordsSafe[nearWordIndex]?.word || "",
+        cue_text: cueText,
+        cue_detected: hasCue,
+        confidence: Number(Math.max(boundaryConfidence, hasCue ? 0.85 : 0.55).toFixed(3)),
+        source: hasCue ? "word_level_transition_cue" : "scene_boundary",
+      };
+    });
+};
+
 const analyzeAudio = async ({ videoId }) => {
   const state = await loadState(videoId);
   const paths = await ensureVideoStructure(videoId);
@@ -211,6 +240,11 @@ const analyzeAudio = async ({ videoId }) => {
 
   const scenes = Array.isArray(state.visual_plan) && state.visual_plan.length ? state.visual_plan : [];
   const sceneBoundaries = scenes.length ? await buildSemanticSceneBoundaries({ scenes, audioIntelligence }) : [];
+  const chapterTriggers = buildChapterTriggers({
+    scenes,
+    sceneBoundaries,
+    words: audioIntelligence.words,
+  });
   const audioIntelligenceData = {
     video_id: videoId,
     provider,
@@ -218,6 +252,7 @@ const analyzeAudio = async ({ videoId }) => {
     audio_path: state.audio_path,
     ...audioIntelligence,
     scene_boundaries: sceneBoundaries,
+    chapter_triggers: chapterTriggers,
   };
 
   const audioIntelligencePath = path.join(paths.base, "audio", "audio_intelligence.json");
@@ -226,6 +261,7 @@ const analyzeAudio = async ({ videoId }) => {
   const nextState = await updateState(videoId, {
     audio_intelligence_path: audioIntelligencePath,
     scene_boundaries: sceneBoundaries,
+    chapter_triggers: chapterTriggers,
     audio_intelligence_provider: provider,
     error_message: "",
   }, { currentStep: "audio_intelligence_ready", status: "audio_intelligence_ready" });
@@ -237,6 +273,7 @@ const analyzeAudio = async ({ videoId }) => {
     provider,
     words_count: audioIntelligence.words.length,
     pause_markers_count: audioIntelligence.pause_markers.length,
+    chapter_triggers_count: chapterTriggers.length,
     state_path: nextState.state_path,
   };
 };
@@ -257,9 +294,11 @@ module.exports = {
   getCachedAudioIntelligence,
   buildFallbackWordTiming,
   buildSemanticSceneBoundaries,
+  buildChapterTriggers,
   __test__: {
     tokenizeNormalizedWords,
     extractOriginalScriptWords,
     buildFallbackWordTiming,
+    buildChapterTriggers,
   },
 };

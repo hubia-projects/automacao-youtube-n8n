@@ -1,0 +1,130 @@
+{
+  "video_id": "final_validation_1778069333492",
+  "mode": "real_hibrido",
+  "topic": "3 cidades de Portugal para visitar em 2026: Lisboa, Porto e Faro",
+  "angle": "roteiro detalhado e cinematografico com 5 blocos obrigatorios: Intro, Lisboa, Porto, Faro e Fechamento; na narracao de cada cidade, separar claramente: 1) cidade e pontos bonitos, 2) gastronomia local, 3) experiencia visual; usar transicoes explicitas: 'Numero 1 Lisboa', 'Numero 2 Porto', 'Numero 3 Faro'; incluir pratos tipicos por cidade: Lisboa (pastel de nata, bacalhau a bras, sardinha assada), Porto (francesinha, tripas a moda do Porto, vinho do Porto), Faro (cataplana de marisco, ameijoas a bulhao pato, peixe fresco do Algarve); escrever em portugues do brasil para locucao faceless com imagens detalhadas por trecho; gerar versao de teste tecnico curta com foco em encaixe visual imediato nas transicoes",
+  "audio_provider": "multivozes",
+  "audio_voice": "pt-BR-ThalitaMultilingualNeural",
+  "openai_script_source": "openai",
+  "openai_attempts": 1,
+  "openai_script_chars": 2169,
+  "script_length_chars": 798,
+  "script_preview": "00:00 Introdução Você está pronto para explorar as joias de Portugal? Neste vídeo, vamos te levar a três cidades imperdíveis: Lisboa, Porto e Faro. Numero 1 Lisboa. 00:45 Número 1: Lisboa Lisboa, a capital vibrante de Portugal, é um destino que encanta com suas colinas e arquitetura histórica. E quando se trata de gastronomia, Lisboa não decepciona! Numero 2 Porto. 02:30 Número 2: Porto Agora, vamos para o Porto! A gastronomia do Porto é imperdível! Numero 3 Faro. 04:15 Número 3: Faro Por fim, chegamos a Faro, a capital do Algarve. Conhecida por suas praias paradisíacas e pelo centro histórico, Faro é um destino que combina natureza e cultura. Cada cidade tem seu charme único e experiências inesquecíveis. Não se esqueça de curtir o vídeo e se inscrever no canal para mais dicas de viagem!",
+  "render_path": "\\app\\pipeline\\output\\draft\\final_validation_1778069333492\\render\\final.mp4",
+  "state_path": "\\app\\pipeline\\output\\draft\\final_validation_1778069333492\\state.json",
+  "output_duration_seconds": 58.44,
+  "output_resolution": "1920x1080",
+  "render_validation": {
+    "is_publishable": false,
+    "hard_boundary_status": "pass",
+    "max_visual_lag_sec": 0,
+    "needs_regeneration": true,
+    "needs_manual_review": true,
+    "issues": [
+      {
+        "type": "visual_intent_underrepresented",
+        "severity": "high",
+        "message": "Gastronomy video has too few food/market/wine/restaurant clips"
+      },
+      {
+        "type": "wrong_visual_category",
+        "severity": "high",
+        "message": "Landscape or skyline visuals exceed the allowed ratio for a gastronomy video"
+      }
+    ]
+  },
+  "boundary_transition_validation": [
+    {
+      "boundary_id": "hb_003_porto",
+      "boundary_label": "Lisboa -> Porto",
+      "boundary_sec": 22.868,
+      "expected": "Porto",
+      "first_correct_visual": "Porto",
+      "first_correct_visual_delay_sec": 0,
+      "previous_block_exposure_after_boundary_sec": 0,
+      "status": "PASS",
+      "first_clip_index": 7,
+      "first_clip_neutral": false,
+      "violations": []
+    },
+    {
+      "boundary_id": "hb_004_faro",
+      "boundary_label": "Porto -> Faro",
+      "boundary_sec": 35.572,
+      "expected": "Faro",
+      "first_correct_visual": "Faro",
+      "first_correct_visual_delay_sec": 0,
+      "previous_block_exposure_after_boundary_sec": 0,
+      "status": "PASS",
+      "first_clip_index": 10,
+      "first_clip_neutral": false,
+      "violations": []
+    },
+    {
+      "boundary_id": "hb_005_fechamento",
+      "boundary_label": "Faro -> Fechamento",
+      "boundary_sec": 48.277,
+      "expected": "Fechamento",
+      "first_correct_visual": "",
+      "first_correct_visual_delay_sec": 0,
+      "previous_block_exposure_after_boundary_sec": 0,
+      "status": "PASS",
+      "first_clip_index": 13,
+      "first_clip_neutral": false,
+      "violations": []
+    }
+  ],
+  "overlays": [
+    {
+      "block_index": 1,
+      "block": "Lisboa",
+      "expected_start_seconds": 0,
+      "overlay_text": "1. Lisboa",
+      "overlay_start_seconds": 0,
+      "overlay_type": "block_title",
+      "status": "PASS"
+    },
+    {
+      "block_index": 2,
+      "block": "Porto",
+      "expected_start_seconds": 22.868,
+      "overlay_text": "2. Porto",
+      "overlay_start_seconds": 22.868,
+      "overlay_type": "chapter_card_clip",
+      "status": "PASS"
+    },
+    {
+      "block_index": 3,
+      "block": "Faro",
+      "expected_start_seconds": 35.572,
+      "overlay_text": "3. Faro",
+      "overlay_start_seconds": 35.572,
+      "overlay_type": "chapter_card_clip",
+      "status": "PASS"
+    },
+    {
+      "block_index": 4,
+      "block": "Fechamento",
+      "expected_start_seconds": 48.277,
+      "overlay_text": "4. Fechamento",
+      "overlay_start_seconds": 48.277,
+      "overlay_type": "chapter_card_clip",
+      "status": "PASS"
+    }
+  ],
+  "clips_count": 15,
+  "missing_assets": false,
+  "needs_manual_review_state": false,
+  "needs_manual_review_validation": true,
+  "scene_readiness": {
+    "total_scenes": 5,
+    "ready_scenes": 5,
+    "missing_scenes": 0,
+    "blocking_scene_indexes": []
+  },
+  "first_city_checks": {
+    "lisboa_first_clip_city": "Lisboa",
+    "porto_first_clip_city": "Porto",
+    "faro_first_clip_city": "Faro"
+  }
+}

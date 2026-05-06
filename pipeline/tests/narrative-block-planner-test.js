@@ -34,5 +34,12 @@ assert(enriched.every((scene) => scene.block_id), "todas as cenas precisam herda
 assert(enriched.every((scene) => scene.block_label), "todas as cenas precisam herdar block_label");
 assert(enriched.every((scene) => Array.isArray(scene.negative_keywords)), "todas as cenas precisam herdar negative_keywords");
 assert(enriched.find((scene) => scene.title === "Lisboa").block_label === "Lisboa", "cena de Lisboa deveria herdar bloco Lisboa");
+assert(enriched.every((scene) => scene.transition_type === "hard" || scene.transition_type === "soft"), "todas as cenas precisam ter transition_type");
+
+const hardBoundaryScenes = enriched.filter((scene) => scene.hard_boundary);
+assert(hardBoundaryScenes.length >= 3, "deveria haver multiplas trocas hard no roteiro");
+assert(hardBoundaryScenes.every((scene) => scene.boundary_id), "cenas hard precisam de boundary_id");
+assert(hardBoundaryScenes.every((scene) => scene.chapter_card_required === true), "cenas hard devem exigir chapter card");
+assert(hardBoundaryScenes.every((scene) => scene.block_intro_asset?.required === true), "cenas hard devem expor block_intro_asset");
 
 console.log("narrative block planner validado com sucesso");
