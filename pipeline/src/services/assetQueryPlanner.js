@@ -33,6 +33,13 @@ const GASTRONOMY_TERMS = [
 
 const GENERIC_TRAVEL_PATTERN = /(skyline|aerial|drone|travel|city street|cityscape|aerial view|bridge|river|coast)/i;
 
+
+const CITY_QUERY_PRESETS = {
+  lisboa: ["lisbon portugal tram","lisbon alfama street","lisbon belem tower","lisbon miradouro","lisbon portugal city view","lisbon azulejo street"],
+  porto: ["porto portugal ribeira","porto douro river","porto dom luis bridge","porto wine cellar","porto historic center","porto cathedral portugal"],
+  faro: ["faro portugal old town","faro marina","ria formosa portugal","faro algarve old town","faro portugal beach islands","algarve lagoon boats"],
+};
+
 const INTENT_QUERY_LIBRARY = {
   gastronomy: [
     "food market",
@@ -246,6 +253,17 @@ const buildSceneQueryPlan = ({ scene = {}, topic = "" }) => {
   const expectedLocation = normalizeLabel(scene.expected_location || scene.location?.city || scene.block_label || "");
   const prioritizedTermEntries = buildPrioritizedTermEntries({ scene, topic, intent });
   const negativeKeywords = unique([...(scene.negative_keywords || []), ...(scene.forbidden_locations || [])]);
+
+  const cityPreset = CITY_QUERY_PRESETS[expectedLocation] || [];
+  cityPreset.forEach((query, index) => {
+    pushQuery({
+      entries,
+      seen,
+      query,
+      reason: `city_preset_${expectedLocation}_${index + 1}`,
+      scene,
+    });
+  });
 
   if (isHardBoundaryScene && expectedLocation) {
     pushQuery({

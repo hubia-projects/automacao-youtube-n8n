@@ -1,9 +1,11 @@
 const fs = require("fs-extra");
+const path = require("path");
+const crypto = require("crypto");
 const { config } = require("../config/env");
 const { loadState, updateState } = require("./stateService");
 const { getCachedAudioIntelligence } = require("./audioIntelligence");
 const { hasOpenAi, describeImagesWithOpenAI } = require("./openaiService");
-const { extractVideoFrame, probeMedia } = require("../utils/mediaUtils");
+const { extractVideoFrame, probeMedia, runFfmpeg } = require("../utils/mediaUtils");
 const { buildNarrativeBlocks, isSameLocation } = require("./narrativeBlockPlanner");
 const { validateRenderQuality } = require("./renderQualityService");
 const { renderVideo } = require("./renderService");
@@ -16,6 +18,17 @@ const MIN_GASTRONOMY_THEME_INTENT_COUNT = 2;
 const MIN_GASTRONOMY_THEME_INTENT_RATIO = 0.35;
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
+const sha256File = async (filePath = "") => {
+  if (!filePath || !(await fs.pathExists(filePath))) return "";
+  const hash = crypto.createHash("sha256");
+  await new Promise((resolve, reject) => {
+    const stream = fs.createReadStream(filePath);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", resolve);
+    stream.on("error", reject);
+  });
+  return hash.digest("hex");
+};
 
 const findClipAtTime = (clips = [], timestampSec = 0) =>
   clips.find((clip) => {
@@ -95,6 +108,53 @@ const classifyFromTimelineClip = (clip = null) => {
   };
 };
 
+
+const buildAuditTimestamps = ({ duration = 0, hardBoundaries = [], overlays = [], macroBlocks = [], clips = [] }) => {
+  const safeDuration = Math.max(1, Number(duration || 0));
+  const set = new Set();
+  for (let t = 0; t <= safeDuration; t += 5) set.add(round3(Math.min(safeDuration - 0.05, t)));
+  hardBoundaries.forEach((b) => {
+    [0, 0.1, 0.5, 1.0].forEach((o) => {
+      const ts = Number(b.timestamp_sec || 0) + o;
+      if (ts >= 0 && ts < safeDuration) set.add(round3(ts));
+    });
+  });
+  (overlays || []).forEach((o) => {
+    const ts = Number(o.start_seconds || 0);
+    if (ts >= 0 && ts < safeDuration) set.add(round3(ts));
+  });
+  (macroBlocks || []).forEach((b) => {
+    const mid = (Number(b.start_sec || 0) + Number(b.end_sec || 0)) / 2;
+    if (mid >= 0 && mid < safeDuration) set.add(round3(mid));
+  });
+  (clips || []).forEach((c) => {
+    const mid = (Number(c.timeline_start_sec || 0) + Number(c.timeline_end_sec || 0)) / 2;
+    if (mid >= 0 && mid < safeDuration) set.add(round3(mid));
+  });
+  return Array.from(set).sort((a,b)=>a-b);
+};
+
+const generateContactSheetAndAudit = async ({ videoId, renderPath, duration, hardBoundaries, overlays, macroBlocks, clips }) => {
+  const reportsDir = path.join('pipeline','test_reports');
+  await fs.ensureDir(reportsDir);
+  const evidenceDir = path.join(reportsDir, `${videoId}-frames`);
+  await fs.emptyDir(evidenceDir);
+  const timestamps = buildAuditTimestamps({ duration, hardBoundaries, overlays, macroBlocks, clips });
+  const audit = [];
+  for (let i=0;i<timestamps.length;i+=1){
+    const ts=timestamps[i];
+    const framePath=path.join(evidenceDir,`frame-${String(i+1).padStart(4,'0')}-${String(ts).replace(/\./g,'_')}.jpg`);
+    await extractVideoFrame({ inputPath: renderPath, outputPath: framePath, timeSeconds: ts, width: 640, height: 360 }).catch(()=>null);
+    const clip=findClipAtTime(clips,ts);
+    const block=findNarrativeBlockAtTime(macroBlocks,ts);
+    audit.push({timestamp:ts, expected_block:block?.macro_topic||block?.topic||'', clip_index:clip?.clip_index||null, source_url:clip?.source_url||clip?.asset?.source_url||'', query_used:clip?.query_used||clip?.asset_query||'', metadata_location:clip?.detected_location?.city||'', frame_path:framePath});
+  }
+  const contactSheetPath = path.join(reportsDir, `${videoId}-contact-sheet.jpg`);
+  await runFfmpeg(['-y','-pattern_type','glob','-i',`${evidenceDir}/*.jpg`,'-vf','scale=320:180,tile=6x6','-frames:v','1',contactSheetPath]).catch(()=>null);
+  const visualAuditPath = path.join(reportsDir, `${videoId}-visual-audit.json`);
+  await fs.writeJson(visualAuditPath, { video_id: videoId, render_path: renderPath, timestamps: audit, clip_audit: [], boundary_audit: [], overlay_audit: [], resolution_audit: {}, final_decision: {} }, { spaces: 2 });
+  return { contactSheetPath, visualAuditPath, auditRows: audit };
+};
 const classifyFramesWithVision = async ({ renderPath, sampleTimestamps }) => {
   if (!hasOpenAi() || config.SEMANTIC_SYNC_MODE !== "high-quality") return new Map();
   const limitedTimestamps = sampleTimestamps.slice(0, 24);
@@ -139,6 +199,36 @@ const classifyFramesWithVision = async ({ renderPath, sampleTimestamps }) => {
   } finally {
     await fs.remove(framesDir).catch(() => null);
   }
+};
+
+const classifyFrameWithVisionAtTimestamp = async ({ renderPath, timestampSec, evidenceDir, label }) => {
+  const framePath = path.join(evidenceDir, `${label}-${String(timestampSec).replace(/\./g, "_")}.jpg`);
+  await extractVideoFrame({ inputPath: renderPath, outputPath: framePath, timeSeconds: Math.max(0, timestampSec), width: 960, height: 540 });
+  if (!hasOpenAi()) {
+    return { frame_path: framePath, method: "metadata_fallback", detected_topic: "", location: { city: "", country: "", confidence: 0 }, confidence: 0 };
+  }
+
+  const response = await describeImagesWithOpenAI({
+    prompt: `Analise o frame e retorne JSON estrito: {"topic":"","location":{"city":"","country":"","confidence":0},"landmarks":[{"name":"","confidence":0}],"overlay_text":"","overlay_visible":false,"overlay_contrast_ok":false,"confidence":0}.`,
+    imagePaths: [framePath],
+    detail: "low",
+  }).catch(() => null);
+
+  return {
+    frame_path: framePath,
+    method: "openai_vision_frame",
+    detected_topic: response?.topic || response?.location?.city || "",
+    location: {
+      city: response?.location?.city || "",
+      country: response?.location?.country || "",
+      confidence: Number(response?.location?.confidence || response?.confidence || 0),
+    },
+    landmarks: Array.isArray(response?.landmarks) ? response.landmarks : [],
+    overlay_visible: Boolean(response?.overlay_visible),
+    overlay_text: response?.overlay_text || "",
+    overlay_contrast_ok: Boolean(response?.overlay_contrast_ok),
+    confidence: Number(response?.confidence || response?.location?.confidence || 0),
+  };
 };
 
 const scoreExpectedVsDetected = ({ expectedBlock, detected }) => {
@@ -532,6 +622,120 @@ const validateTimelineAlignment = async ({ videoId }) => {
   };
 };
 
+
+const validateOverlayRenderedFrames = async ({ renderPath, overlays = [], evidenceDir }) => {
+  const results = [];
+  for (const overlay of overlays) {
+    const ts = round3(Number(overlay.start_seconds || 0) + 0.5);
+    const vision = await classifyFrameWithVisionAtTimestamp({ renderPath, timestampSec: ts, evidenceDir, label: `overlay-${overlay.type || 'overlay'}` });
+    const detected = Boolean(vision.overlay_visible || (vision.overlay_text || '').trim());
+    results.push({
+      text: overlay.text || '',
+      timestamp: ts,
+      state_overlay_exists: true,
+      frame_overlay_detected: detected,
+      frame_path: vision.frame_path,
+      status: detected ? 'pass' : 'fail',
+    });
+  }
+  return results;
+};
+
+const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir }) => {
+  const rows = [];
+  for (const clip of clips) {
+    const startSec = Number(clip.timeline_start_sec || 0);
+    const endSec = Number(clip.timeline_end_sec || startSec);
+    const duration = Math.max(0, endSec - startSec);
+    const timestamps = [round3(startSec + (duration / 2))];
+    if (duration >= 5) {
+      timestamps.push(round3(Math.min(endSec - 0.5, startSec + 0.5)));
+      timestamps.push(round3(Math.max(startSec + 0.5, endSec - 0.5)));
+    }
+    const frameChecks = [];
+    for (const ts of [...new Set(timestamps)].filter((v)=>v>=startSec && v<=endSec)) {
+      const vision = await classifyFrameWithVisionAtTimestamp({ renderPath, timestampSec: ts, evidenceDir, label: `clip-${clip.clip_index || 0}` });
+      frameChecks.push({ ts, vision });
+    }
+
+    const expected = clip.macro_topic || clip.expected_location || "";
+    const expectedLocation = clip.expected_location || expected;
+    const confirmed = frameChecks.find((item) => {
+      const location = item.vision.location?.city || item.vision.detected_topic || "";
+      return location && expectedLocation && isSameLocation(location, expectedLocation);
+    });
+    const wrong = frameChecks.find((item) => {
+      const location = item.vision.location?.city || item.vision.detected_topic || "";
+      return location && expectedLocation && !isSameLocation(location, expectedLocation);
+    });
+    let status = 'uncertain';
+    let reason = 'vision unavailable or inconclusive';
+    if (confirmed) {
+      status = 'pass';
+      reason = 'vision confirmed expected location';
+    } else if (wrong) {
+      status = 'fail';
+      reason = 'vision detected mismatched location';
+    }
+
+    const best = confirmed || wrong || frameChecks[0] || { vision: {} };
+    const visionLocation = best.vision.location?.city || best.vision.detected_topic || "";
+    const outOfDomain = /portugal|lisboa|lisbon|porto|faro|algarve|ria formosa/i.test(expectedLocation)
+      && visionLocation
+      && !isSameLocation(visionLocation, expectedLocation)
+      && !/portugal|lisboa|lisbon|porto|faro|algarve|ria formosa/i.test(visionLocation);
+
+    rows.push({
+      clip_index: clip.clip_index,
+      expected_block: expected,
+      expected_location: expectedLocation,
+      frame_timestamps: frameChecks.map((f) => f.ts),
+      frame_paths: frameChecks.map((f) => f.vision.frame_path).filter(Boolean),
+      metadata_location: clip.detected_location?.city || "",
+      vision_location: visionLocation,
+      vision_confidence: Number(best.vision.confidence || 0),
+      visual_truth_status: status,
+      visual_truth_reason: reason,
+      source_url: clip.source_url || clip.asset?.source_url || "",
+      query_used: clip.query_used || clip.asset_query || "",
+      provider: clip.provider || clip.asset_provider || "",
+      out_of_domain_asset: Boolean(outOfDomain),
+      is_hard_boundary_first_clip: Boolean(clip.hard_boundary_first_clip),
+    });
+  }
+  return rows;
+};
+
+const writeVisualTruthFinalReport = async ({ videoId, validation }) => {
+  const outPath = path.join('pipeline','reports','visual-truth-final-report.md');
+  const boundaries = validation?.visual_alignment?.boundary_visual_audit || [];
+  const clips = validation?.clip_audit || [];
+  const boundaryTable = ['| Boundary | Expected | Vision | Status |','|---|---|---|---|', ...boundaries.slice(0,60).map((b)=>`| ${b.boundary_id} @ ${b.frame_timestamp}s | ${b.expected_location||''} | ${b.vision_detected_location||''} | ${b.visual_truth_status} |`) ].join('\n');
+  const clipTable = ['| Clip | Expected | Query | Metadata | Vision | Status |','|---|---|---|---|---|---|', ...clips.slice(0,120).map((c)=>`| ${c.clip_index} | ${c.expected_block||''} | ${c.query_used||''} | ${c.metadata_location||''} | ${c.vision_location||''} | ${c.visual_truth_status} |`) ].join('\n');
+  const md = `# Visual Truth Final Report
+
+- video_id: ${videoId}
+- render_path: ${validation.render_path}
+- upload_source_path: ${validation.upload_source_path}
+- youtube_video_id: ${validation.youtube_video_id || ''}
+- ffprobe: ${validation.ffprobe_width}x${validation.ffprobe_height} / ${validation.ffprobe_duration}s
+- state_output_resolution: ${validation.state_output_resolution || ''}
+- metadata_boundary_status: ${validation.metadata_boundary_status}
+- visual_frame_boundary_status: ${validation.visual_frame_boundary_status}
+- final_hard_boundary_status: ${validation.final_hard_boundary_status}
+- contact_sheet: ${validation.contact_sheet_path || ''}
+- visual_audit_json: ${validation.visual_audit_json_path || ''}
+
+## Boundary Visual Audit
+${boundaryTable}
+
+## Clip Audit
+${clipTable}
+`;
+  await fs.ensureDir(path.dirname(outPath));
+  await fs.writeFile(outPath, md, 'utf8');
+  return outPath;
+};
 const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence, timeline, state }) => {
   if (!renderPath || !(await fs.pathExists(renderPath))) {
     return { vision_validated: false, should_regenerate: true, reason: "render_path_not_found", metrics: { semantic_alignment_score: 0, p95_topic_lag_sec: 99, wrong_topic_exposure_sec: 99 } };
@@ -589,6 +793,34 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
     forbidNeutralFirstClip: Boolean(config.HARD_BOUNDARY_FORBID_NEUTRAL_FIRST_CLIP),
     requireChapterOverlay: Boolean(config.HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY),
   });
+  const evidenceDir = path.join("pipeline", "test_reports", `${videoId}-visual-evidence`);
+  await fs.ensureDir(evidenceDir);
+  const boundaryVisualAudit = [];
+  for (const boundary of hardBoundaries) {
+    const checks = [0.1, 0.5, 1.0];
+    let boundaryPass = false;
+    for (const offset of checks) {
+      const ts = round3(Math.min(Math.max(0, boundary.timestamp_sec + offset), Math.max(0, renderDuration - 0.1)));
+      const vision = await classifyFrameWithVisionAtTimestamp({ renderPath, timestampSec: ts, evidenceDir, label: `boundary-${boundary.boundary_id}` });
+      const detectedCity = vision.location?.city || vision.detected_topic || "";
+      const status = boundary.expected_topic_type === "city" && detectedCity && isSameLocation(detectedCity, boundary.expected_topic) ? "pass" : "fail";
+      if (status === "pass") boundaryPass = true;
+      boundaryVisualAudit.push({
+        boundary_id: boundary.boundary_id,
+        expected_location: boundary.expected_topic,
+        frame_timestamp: ts,
+        vision_detected_location: detectedCity,
+        vision_confidence: Number(vision.confidence || 0),
+        metadata_location: (findClipAtTime(timeline?.clips || [], ts)?.detected_location?.city) || "",
+        visual_truth_status: status,
+        frame_path: vision.frame_path,
+      });
+    }
+    if (!boundaryPass) {
+      hardBoundaryReport.violations.push({ boundary_id: boundary.boundary_id, violations: ["visual_truth_not_confirmed"], boundary_sec: boundary.timestamp_sec, expected_topic: boundary.expected_topic });
+    }
+  }
+  if (hardBoundaryReport.violations.length) hardBoundaryReport.status = "fail";
   const metrics = {
     ...metricsBase,
     max_visual_lag_sec: round3(Math.max(
@@ -633,11 +865,21 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
     hard_boundary_status: hardBoundaryReport.status,
     max_visual_lag_sec: metrics.max_visual_lag_sec,
     hard_boundary_report: hardBoundaryReport,
+    boundary_visual_audit: boundaryVisualAudit,
     threshold,
     failed_ranges: failedRanges,
     should_regenerate: shouldRegenerate,
     samples: samples.slice(0, 80),
   };
+};
+
+
+const evaluateClipAuditGate = ({ clipAuditRows = [] }) => {
+  const uncertainCount = clipAuditRows.filter((row) => row.visual_truth_status === 'uncertain').length;
+  const uncertainRatio = clipAuditRows.length ? uncertainCount / clipAuditRows.length : 0;
+  const hardBoundaryInvalid = clipAuditRows.some((row) => row.is_hard_boundary_first_clip && row.visual_truth_status !== 'pass');
+  const outOfDomain = clipAuditRows.some((row) => row.out_of_domain_asset);
+  return { uncertainRatio: round3(uncertainRatio), hardBoundaryInvalid, outOfDomain };
 };
 
 const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
@@ -651,8 +893,38 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     allowPlaceholderArtifacts: Boolean(mockMode || config.ALLOW_PLACEHOLDER_ASSETS),
   }).catch(() => ({ technical_score: 0, issues: [{ type: "render_probe_failed", severity: "critical" }] }));
   const visual = await validateRenderWithVision({ videoId, renderPath, audioIntelligence, timeline, state });
+  const renderProbe = await probeMedia(renderPath).catch(() => ({ width: 0, height: 0, duration: 0 }));
+  const renderSha256 = await sha256File(renderPath);
+  const uploadSourcePath = state.upload_source_path || state.render_path || "";
+  const uploadedFileSha256 = uploadSourcePath ? await sha256File(uploadSourcePath) : "";
+  const narrativeBlocks = Array.isArray(timeline?.narrative_blocks) && timeline.narrative_blocks.length
+    ? timeline.narrative_blocks
+    : buildNarrativeBlocks({ state, audioIntelligence, audioDuration: Number(renderProbe.duration || 0) }).macroBlocks;
+  const contactAudit = await generateContactSheetAndAudit({
+    videoId,
+    renderPath,
+    duration: Number(renderProbe.duration || 0),
+    hardBoundaries: getHardBoundaries(narrativeBlocks),
+    overlays: state?.overlays || [],
+    macroBlocks: narrativeBlocks,
+    clips: timeline.clips || [],
+  });
   const diversityScore = scoreTimelineDiversity(timeline.clips || []);
+  const overlayValidation = await validateOverlayRenderedFrames({
+    renderPath,
+    overlays: state?.overlays || [],
+    evidenceDir: path.join('pipeline','test_reports', `${videoId}-visual-evidence`),
+  });
   const baseIssues = collectTimelineIssues({ timeline, technical, visual, diversityScore });
+  if ((state.output_resolution || "") && `${renderProbe.width}x${renderProbe.height}` !== String(state.output_resolution)) {
+    baseIssues.push({ type: "render_file_state_mismatch", severity: "critical", message: `State says ${state.output_resolution} but final file is ${renderProbe.width}x${renderProbe.height}` });
+  }
+  if ((visual.boundary_visual_audit || []).some((item) => item.visual_truth_status !== "pass")) {
+    baseIssues.push({ type: "visual_truth_not_confirmed", severity: "critical" });
+  }
+  if (overlayValidation.some((item) => item.status !== "pass")) {
+    baseIssues.push({ type: "overlay_not_rendered", severity: "high" });
+  }
   const visualIntentCoverage = evaluateVisualIntentCoverage({ state, timeline });
   const issues = [...baseIssues, ...visualIntentCoverage.issues];
   const replacement = identifyClipsForReplacement({
@@ -663,9 +935,24 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     forcedSceneIndexes: visualIntentCoverage.scene_indexes_to_refresh,
   });
   const coveragePenalty = issues.reduce((accumulator, issue) => accumulator + (["critical", "high"].includes(issue.severity) ? 0.08 : 0.03), 0);
-  const hardBoundaryStatus = visual.hard_boundary_status || "unknown";
+  const metadataBoundaryStatus = visual.hard_boundary_report?.status || "unknown";
+  const visualFrameBoundaryStatus = (visual.boundary_visual_audit || []).some((item) => item.visual_truth_status !== "pass") ? "fail" : "pass";
+  const hardBoundaryStatus = (metadataBoundaryStatus === "pass" && visualFrameBoundaryStatus === "pass") ? "pass" : "fail";
   const maxVisualLagSec = Number(visual.max_visual_lag_sec || visual.metrics?.max_visual_lag_sec || 0);
   const hardBoundaryMaxLagSec = Number(config.HARD_BOUNDARY_MAX_LAG_SEC || 0.5);
+
+  const clipAuditRows = await buildClipAuditWithVision({
+    clips: timeline.clips || [],
+    renderPath,
+    evidenceDir: path.join('pipeline','test_reports', `${videoId}-visual-evidence`),
+  });
+  const failedClipCount = clipAuditRows.filter((row) => row.visual_truth_status === 'fail').length;
+  const gate = evaluateClipAuditGate({ clipAuditRows });
+  const uncertainRatio = gate.uncertainRatio;
+  if (failedClipCount > 0) issues.push({ type: 'clip_visual_truth_mismatch', severity: 'critical', count: failedClipCount });
+  if (gate.hardBoundaryInvalid) issues.push({ type: 'hard_boundary_first_clip_not_visually_confirmed', severity: 'critical' });
+  if (gate.outOfDomain) issues.push({ type: 'out_of_domain_asset', severity: 'critical' });
+  if (uncertainRatio > 0.25) issues.push({ type: 'too_many_uncertain_clips', severity: 'high', ratio: round3(uncertainRatio) });
 
   const qualityScore = round3(Math.max(0, Math.min(1,
     Number(technical.technical_score || 0) * 0.35 +
@@ -679,7 +966,7 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     || hardBoundaryStatus === "fail"
     || maxVisualLagSec > hardBoundaryMaxLagSec
   );
-  const isPublishable = !needsRegeneration && qualityScore >= 0.72 && hardBoundaryStatus === "pass";
+  const isPublishable = !needsRegeneration && qualityScore >= 0.72 && hardBoundaryStatus === "pass" && visualFrameBoundaryStatus === "pass" && uncertainRatio <= 0.25;
 
   const validationResult = {
     video_id: videoId,
@@ -688,6 +975,9 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     needs_regeneration: needsRegeneration,
     needs_manual_review: !isPublishable,
     hard_boundary_status: hardBoundaryStatus,
+    metadata_boundary_status: metadataBoundaryStatus,
+    visual_frame_boundary_status: visualFrameBoundaryStatus,
+    final_hard_boundary_status: hardBoundaryStatus,
     max_visual_lag_sec: round3(maxVisualLagSec),
     hard_boundary_report: visual.hard_boundary_report || { status: hardBoundaryStatus, boundaries: [], violations: [] },
     quality_score: qualityScore,
@@ -699,11 +989,34 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     scene_indexes_to_refresh: replacement.scene_indexes_to_refresh,
     clip_indexes_to_replace: replacement.clip_indexes_to_replace,
     render_quality: technical,
+    render_path: renderPath,
+    upload_source_path: uploadSourcePath,
+    youtube_video_id: state.youtube_video_id || "",
+    render_sha256: renderSha256,
+    uploaded_file_sha256: uploadedFileSha256,
+    ffprobe_width: Number(renderProbe.width || 0),
+    ffprobe_height: Number(renderProbe.height || 0),
+    ffprobe_duration: round3(renderProbe.duration || 0),
+    state_output_resolution: state.output_resolution || "",
     visual_alignment: visual,
     timeline_alignment: alignment,
+    contact_sheet_path: contactAudit.contactSheetPath,
+    visual_audit_json_path: contactAudit.visualAuditPath,
+    overlay_render_validation: overlayValidation,
+    clip_audit: clipAuditRows,
   };
 
-  await updateState(videoId, { render_validation: validationResult, error_message: "" }, { currentStep: "render_validated", status: "render_validated" });
+  await fs.writeJson(contactAudit.visualAuditPath, {
+    video_id: videoId,
+    clip_audit: clipAuditRows,
+    boundary_audit: visual.boundary_visual_audit || [],
+    overlay_audit: overlayValidation,
+    resolution_audit: { ffprobe_width: validationResult.ffprobe_width, ffprobe_height: validationResult.ffprobe_height, state_output_resolution: validationResult.state_output_resolution },
+    final_decision: { is_publishable: validationResult.is_publishable, needs_manual_review: validationResult.needs_manual_review, final_hard_boundary_status: validationResult.final_hard_boundary_status },
+  }, { spaces: 2 });
+  const finalReportPath = await writeVisualTruthFinalReport({ videoId, validation: validationResult });
+  validationResult.visual_truth_final_report_path = finalReportPath;
+  await updateState(videoId, { render_validation: validationResult, visual_truth_final_report_path: finalReportPath, error_message: "" }, { currentStep: "render_validated", status: "render_validated" });
   return validationResult;
 };
 
@@ -767,5 +1080,6 @@ module.exports = {
     computeVisualIntentDistribution,
     evaluateVisualIntentCoverage,
     identifyClipsForReplacement,
+    evaluateClipAuditGate,
   },
 };
