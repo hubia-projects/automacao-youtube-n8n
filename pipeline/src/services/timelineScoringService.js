@@ -7,6 +7,12 @@ const {
   normalizeLabel,
 } = require("./narrativeBlockPlanner");
 const { evaluateVisualEvidence } = require("./visualIntentService");
+const {
+  FIT_PRIORITY,
+  buildWindowEditorialAssessment,
+  isCriticalScene,
+  isSpecificScene,
+} = require("./editorialAssetService");
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
@@ -20,6 +26,8 @@ const SCORE_WEIGHTS = {
   visualSpecificityScore: 3.0,
   gastronomySpecificityScore: 3.0,
   evidenceSourceScore: 2.5,
+  editorialFitScore: 5.5,
+  sceneBindingScore: 3.5,
   resolutionScore: 1.0,
   motionScore: 1.0,
   confidenceScore: 1.0,
@@ -29,9 +37,19 @@ const SCORE_WEIGHTS = {
   windowReusePenalty: 5.0,
   signatureReusePenalty: 3.5,
   blockMismatchPenalty: 8.0,
+  sceneBindingPenalty: 8.5,
   genericAssetPenalty: 7.0,
+  uncertainAssetPenalty: 5.0,
   metadataFallbackPenalty: 4.5,
   darkFramePenalty: 4.0,
+};
+
+const EDITORIAL_FIT_SCORES = {
+  exact: 1,
+  regional: 0.72,
+  generic: 0.28,
+  uncertain: 0.08,
+  wrong: 0,
 };
 
 const buildVisualSignature = (candidate = {}) => [
@@ -161,7 +179,9 @@ const computeDarkFramePenalty = (candidate = {}) => {
   return brightness < 0.28 ? clamp((0.28 - brightness) / 0.28, 0, 1) : 0;
 };
 
-const computeGenericAssetPenalty = ({ block, candidate }) => {
+const computeGenericAssetPenalty = ({ block, candidate, editorialAssessment }) => {
+  if (editorialAssessment?.editorial_fit === "generic") return 1;
+
   const text = normalizeLabel(`${candidate.description || ""} ${candidate.semantic_text || ""} ${(candidate.tags || []).join(" ")}`);
   if (candidate.neutral) return 0.5;
   if (/generic|travel footage|travel video|city skyline|coastline|lifestyle/.test(text) && block.topic_type === "city") return 0.75;
@@ -227,6 +247,42 @@ const computeBlockMismatchPenalty = ({ block, candidate, previousMacroTopic }) =
   return 0;
 };
 
+const computeSceneBinding = ({ block, candidate }) => {
+  const blockSceneIndex = Number(block.scene_index || 0);
+  const candidateSceneIndex = Number(candidate.scene_index || candidate.asset?.scene_index || 0);
+  const sameScene = blockSceneIndex > 0 && candidateSceneIndex > 0 && blockSceneIndex === candidateSceneIndex;
+  const specificScene = isSpecificScene(block);
+  const criticalScene = isCriticalScene(block);
+
+  if (sameScene) {
+    return {
+      sameScene: true,
+      score: 1,
+      penalty: 0,
+      hardBlocked: false,
+      reason: "scene_bound",
+    };
+  }
+
+  if (specificScene || criticalScene) {
+    return {
+      sameScene: false,
+      score: 0,
+      penalty: 1,
+      hardBlocked: true,
+      reason: "cross_scene_candidate_for_specific_slot",
+    };
+  }
+
+  return {
+    sameScene: false,
+    score: 0.15,
+    penalty: 0.45,
+    hardBlocked: false,
+    reason: "cross_scene_candidate_soft_penalty",
+  };
+};
+
 const computeHardBoundaryBlockReason = ({
   block,
   candidate,
@@ -272,7 +328,10 @@ const buildRejectedReasons = (components = {}) => {
   if (components.assetReusePenalty >= 1) reasons.push("reused_asset");
   if (components.sourceReusePenalty >= 1) reasons.push("reused_source_url");
   if (components.signatureReusePenalty >= 0.5) reasons.push("repeated_visual_signature");
-  if (components.genericAssetPenalty >= 0.6) reasons.push("generic_asset");
+  if (components.sceneBindingPenalty >= 1) reasons.push("cross_scene_candidate");
+  if (components.editorialFit === "generic") reasons.push("generic_asset");
+  if (components.editorialFit === "uncertain") reasons.push("uncertain_asset");
+  if (components.editorialFit === "wrong") reasons.push("wrong_editorial_fit");
   if (components.darkFramePenalty >= 0.5) reasons.push("dark_frame_risk");
   if (components.semanticScore < 0.2) reasons.push("low_semantic_score");
   return reasons;
@@ -294,47 +353,61 @@ const rankCandidates = async ({
 
   for (const [index, candidate] of candidates.entries()) {
     const semantic = semanticScores[index] || { score: 0, method: "keyword_fallback" };
+    const windowContext = {
+      summary: candidate.description || candidate.summary || candidate.semantic_text || "",
+      description: candidate.description || candidate.summary || candidate.semantic_text || "",
+      tags: candidate.tags || [],
+      detected_visual_categories: candidate.detected_visual_categories || [],
+      detected_objects: candidate.detected_objects || [],
+      start_seconds: candidate.start_sec,
+      end_seconds: candidate.end_sec,
+      duration_seconds: candidate.duration_sec,
+      location: candidate.location,
+    };
     const evidence = evaluateVisualEvidence({
       scene: block,
-      window: {
-        summary: candidate.description || candidate.summary || candidate.semantic_text || "",
-        description: candidate.description || candidate.summary || candidate.semantic_text || "",
-        tags: candidate.tags || [],
-        detected_visual_categories: candidate.detected_visual_categories || [],
-        detected_objects: candidate.detected_objects || [],
-        start_seconds: candidate.start_sec,
-        end_seconds: candidate.end_sec,
-        duration_seconds: candidate.duration_sec,
-        location: candidate.location,
-      },
+      window: windowContext,
       asset: candidate.asset || candidate,
     });
     const hardRejection = shouldRejectAssetForScene({
       asset: candidate.asset || candidate,
       scene: block,
       window: {
-        summary: candidate.description || candidate.summary || candidate.semantic_text || "",
-        description: candidate.description || candidate.summary || candidate.semantic_text || "",
-        tags: candidate.tags || [],
+        ...windowContext,
         detected_visual_categories: evidence.detected_visual_categories,
         detected_objects: evidence.detected_objects,
-        start_seconds: candidate.start_sec,
-        end_seconds: candidate.end_sec,
-        duration_seconds: candidate.duration_sec,
-        location: candidate.location,
       },
     });
+    const editorialAssessment = buildWindowEditorialAssessment({
+      scene: block,
+      asset: candidate.asset || candidate,
+      window: {
+        ...windowContext,
+        detected_visual_categories: evidence.detected_visual_categories,
+        detected_objects: evidence.detected_objects,
+      },
+    });
+    const sceneBinding = computeSceneBinding({ block, candidate });
     const blockMatchScore = computeBlockMatchScore({ block, candidate, previousMacroTopic });
     const entityMatchScore = computeEntityMatchScore({ block, candidate });
     const visualSpecificityScore = computeVisualSpecificityScore({ block, candidate });
     const gastronomySpecificityScore = computeGastronomySpecificityScore({ block, evidence });
     const specificIntentRequiresStrongEvidence = Array.isArray(block.required_visual_evidence) && block.required_visual_evidence.length > 0 && !block.generic_asset_allowed;
     const weakMetadataEvidence = isWeakMetadataEvidence(candidate);
-    const visualIntentMatchScore = evidence.visual_intent_match && !(weakMetadataEvidence && specificIntentRequiresStrongEvidence) ? 1 : 0;
+    const editorialFitScore = EDITORIAL_FIT_SCORES[editorialAssessment.editorial_fit] ?? 0;
+    const visualIntentMatchScore = evidence.visual_intent_match
+      ? editorialAssessment.editorial_fit === "exact"
+        ? 1
+        : editorialAssessment.editorial_fit === "regional"
+          ? 0.82
+          : editorialAssessment.editorial_fit === "generic"
+            ? 0.35
+            : 0.15
+      : 0;
     const rawRequiredEvidenceScore = clamp(Number(evidence.required_evidence_score || 0), 0, 1);
     const requiredEvidenceScore = weakMetadataEvidence && specificIntentRequiresStrongEvidence
       ? Math.min(rawRequiredEvidenceScore, 0.35)
-      : rawRequiredEvidenceScore;
+      : Math.min(rawRequiredEvidenceScore, Math.max(editorialFitScore, 0.2));
     const evidenceSourceScore = computeEvidenceSourceScore(candidate);
     const resolutionScore = computeResolutionScore(candidate);
     const motionScore = computeMotionScore(candidate);
@@ -349,12 +422,12 @@ const rankCandidates = async ({
       isBoundaryFirstSlot,
     });
     const hardBoundaryIntroBonus = computeHardBoundaryIntroBonus({ block, candidate, isBoundaryFirstSlot });
-    const hardBlocked = Boolean(hardBoundaryBlockReason);
     const genericAssetPenalty = hardRejection.reason === "generic_visual_for_specific_intent"
       ? 1
-      : Math.max(Number(evidence.generic_visual ? 1 : 0), computeGenericAssetPenalty({ block, candidate }));
+      : Math.max(Number(evidence.generic_visual ? 1 : 0), computeGenericAssetPenalty({ block, candidate, editorialAssessment }));
     const forbiddenCategoryPenalty = clamp(Number(evidence.forbidden_category_penalty || 0), 0, 1);
     const metadataFallbackPenalty = weakMetadataEvidence && specificIntentRequiresStrongEvidence ? 1 : weakMetadataEvidence ? 0.35 : 0;
+    const uncertainAssetPenalty = editorialAssessment.editorial_fit === "uncertain" ? 1 : 0;
     const darkFramePenalty = computeDarkFramePenalty(candidate);
 
     const rawScore =
@@ -366,17 +439,21 @@ const rankCandidates = async ({
       visualSpecificityScore * SCORE_WEIGHTS.visualSpecificityScore +
       gastronomySpecificityScore * SCORE_WEIGHTS.gastronomySpecificityScore +
       evidenceSourceScore * SCORE_WEIGHTS.evidenceSourceScore +
+      editorialFitScore * SCORE_WEIGHTS.editorialFitScore +
+      sceneBinding.score * SCORE_WEIGHTS.sceneBindingScore +
       resolutionScore * SCORE_WEIGHTS.resolutionScore +
       motionScore * SCORE_WEIGHTS.motionScore +
-      confidenceScore * SCORE_WEIGHTS.confidenceScore -
-      hardBoundaryIntroBonus +
+      confidenceScore * SCORE_WEIGHTS.confidenceScore +
+      hardBoundaryIntroBonus -
       forbiddenCategoryPenalty * SCORE_WEIGHTS.forbiddenCategoryPenalty -
       reuse.sourceReusePenalty * SCORE_WEIGHTS.sourceReusePenalty -
       reuse.assetReusePenalty * SCORE_WEIGHTS.assetReusePenalty -
       reuse.windowReusePenalty * SCORE_WEIGHTS.windowReusePenalty -
       reuse.signatureReusePenalty * SCORE_WEIGHTS.signatureReusePenalty -
       blockMismatchPenalty * SCORE_WEIGHTS.blockMismatchPenalty -
+      sceneBinding.penalty * SCORE_WEIGHTS.sceneBindingPenalty -
       genericAssetPenalty * SCORE_WEIGHTS.genericAssetPenalty -
+      uncertainAssetPenalty * SCORE_WEIGHTS.uncertainAssetPenalty -
       metadataFallbackPenalty * SCORE_WEIGHTS.metadataFallbackPenalty -
       darkFramePenalty * SCORE_WEIGHTS.darkFramePenalty;
 
@@ -387,14 +464,24 @@ const rankCandidates = async ({
       windowReusePenalty: reuse.windowReusePenalty,
       signatureReusePenalty: reuse.signatureReusePenalty,
       blockMismatchPenalty,
+      sceneBindingPenalty: sceneBinding.penalty,
+      editorialFit: editorialAssessment.editorial_fit,
       genericAssetPenalty,
+      uncertainAssetPenalty,
       metadataFallbackPenalty,
       forbiddenCategoryPenalty,
       darkFramePenalty,
     });
     if (hardBoundaryBlockReason) reasons.unshift(hardBoundaryBlockReason);
+    if (sceneBinding.hardBlocked && sceneBinding.reason) reasons.unshift(sceneBinding.reason);
     if (hardRejection.reject && hardRejection.reason) reasons.unshift(hardRejection.reason);
 
+    const hardBlocked = Boolean(
+      hardBoundaryBlockReason ||
+      sceneBinding.hardBlocked ||
+      editorialAssessment.editorial_fit === "wrong" ||
+      (isCriticalScene(block) && !editorialAssessment.allowed_for_critical_slot)
+    );
     const finalScore = hardBlocked ? -9999 : rawScore;
 
     ranked.push({
@@ -402,7 +489,7 @@ const rankCandidates = async ({
       score: round3(finalScore),
       method: semantic.method,
       hard_blocked: hardBlocked,
-      hard_blocked_reason: hardBoundaryBlockReason,
+      hard_blocked_reason: hardBoundaryBlockReason || (sceneBinding.hardBlocked ? sceneBinding.reason : editorialAssessment.editorial_fit === "wrong" ? "wrong_editorial_fit" : ""),
       features: {
         semanticScore: round3(semantic.score),
         visualIntentMatchScore: round3(visualIntentMatchScore),
@@ -412,6 +499,10 @@ const rankCandidates = async ({
         visualSpecificityScore: round3(visualSpecificityScore),
         gastronomySpecificityScore: round3(gastronomySpecificityScore),
         evidenceSourceScore: round3(evidenceSourceScore),
+        editorialFit: editorialAssessment.editorial_fit,
+        editorialFitScore: round3(editorialFitScore),
+        sceneBindingScore: round3(sceneBinding.score),
+        sceneBindingPenalty: round3(sceneBinding.penalty),
         resolutionScore: round3(resolutionScore),
         motionScore: round3(motionScore),
         confidenceScore: round3(confidenceScore),
@@ -422,6 +513,7 @@ const rankCandidates = async ({
         signatureReusePenalty: round3(reuse.signatureReusePenalty),
         blockMismatchPenalty: round3(blockMismatchPenalty),
         genericAssetPenalty: round3(genericAssetPenalty),
+        uncertainAssetPenalty: round3(uncertainAssetPenalty),
         metadataFallbackPenalty: round3(metadataFallbackPenalty),
         darkFramePenalty: round3(darkFramePenalty),
         hardBoundaryIntroBonus: round3(hardBoundaryIntroBonus),
@@ -432,14 +524,10 @@ const rankCandidates = async ({
         visualEvidenceSource: candidate.visual_evidence_source || candidate.analysis_provider || "metadata_fallback",
       },
       selection_reason: hardBlocked
-        ? `hard_boundary_blocked_${hardBoundaryBlockReason}`
+        ? `hard_blocked_${hardBoundaryBlockReason || sceneBinding.reason || editorialAssessment.editorial_fit}`
         : hardRejection.reject
-        ? `rejected_${hardRejection.reason}`
-        : blockMismatchPenalty >= 1
-        ? "blocked_wrong_block"
-        : reasons.length
-          ? `selected_despite_${reasons[0]}`
-          : `best_${semantic.method}`,
+          ? `rejected_${hardRejection.reason}`
+          : `best_${semantic.method}_${editorialAssessment.editorial_fit}`,
       rejected_reasons: reasons,
       visual_signature: reuse.signature,
     });
@@ -489,11 +577,13 @@ module.exports = {
     computeEntityMatchScore,
     computeReusePenalties,
     computeBlockMismatchPenalty,
+    computeSceneBinding,
     computeHardBoundaryBlockReason,
     computeHardBoundaryIntroBonus,
     computeGenericAssetPenalty,
     computeGastronomySpecificityScore,
     computeDarkFramePenalty,
     isWeakMetadataEvidence,
+    FIT_PRIORITY,
   },
 };
