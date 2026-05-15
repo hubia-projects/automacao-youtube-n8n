@@ -25,14 +25,16 @@ const buildTextCorpus = ({ scene = {}, block = {}, candidate = {} } = {}) =>
     ...(candidate.detected_objects || []),
   ].filter(Boolean).join(" ");
 
-const getNarrativeRole = ({ sceneRole = "body", sceneOrder = 1, totalScenes = 1, hardBoundary = false } = {}) => {
+const getNarrativeRole = ({ sceneRole = "body", sceneOrder = 1, totalScenes = 0, hardBoundary = false } = {}) => {
   const normalizedRole = String(sceneRole || "body").toLowerCase();
-  if (sceneOrder <= 1) return normalizedRole === "intro" ? "hook" : "hook";
-  if (sceneOrder >= totalScenes) return normalizedRole === "outro" ? "closing" : "closing";
+  const safeOrder = Number(sceneOrder || 1);
+  const safeTotalScenes = Number(totalScenes || 0);
+  if (safeOrder <= 1) return normalizedRole === "intro" ? "hook" : "hook";
+  if (safeTotalScenes > 1 && safeOrder >= safeTotalScenes) return normalizedRole === "outro" ? "closing" : "closing";
   if (normalizedRole === "intro") return "intro";
   if (normalizedRole === "outro") return "outro";
   if (hardBoundary) return "bridge";
-  if (totalScenes >= 5 && sceneOrder === Math.ceil(totalScenes / 2)) return "midpoint";
+  if (safeTotalScenes >= 5 && safeOrder === Math.ceil(safeTotalScenes / 2)) return "midpoint";
   return "body";
 };
 
@@ -79,7 +81,7 @@ const classifyEditorialCandidate = ({ scene = {}, block = {}, candidate = {}, ev
   const narrativeRole = getNarrativeRole({
     sceneRole: scene.role || block.role,
     sceneOrder: Number(scene.scene_order || block.scene_order || 1),
-    totalScenes: Number(scene.total_scenes || block.total_scenes || 1),
+    totalScenes: Number(scene.total_scenes || block.total_scenes || 0),
     hardBoundary: Boolean(scene.hard_boundary || block.hard_boundary),
   });
   const criticalRole = isCriticalNarrativeRole(narrativeRole) || Boolean(scene.hard_boundary || block.hard_boundary || scene.is_boundary_first_slot || block.is_boundary_first_slot);
