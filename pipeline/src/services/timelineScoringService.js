@@ -7,6 +7,10 @@ const {
   normalizeLabel,
 } = require("./narrativeBlockPlanner");
 const { evaluateVisualEvidence } = require("./visualIntentService");
+const {
+  buildEditorialFamilyKey,
+  classifyEditorialCandidate,
+} = require("./editorialPlanningService");
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
@@ -23,24 +27,30 @@ const SCORE_WEIGHTS = {
   resolutionScore: 1.0,
   motionScore: 1.0,
   confidenceScore: 1.0,
+  editorialStatusBonus: 2.8,
+  editorialPenalty: 5.5,
   forbiddenCategoryPenalty: 10.0,
   sourceReusePenalty: 4.0,
   assetReusePenalty: 4.0,
   windowReusePenalty: 5.0,
-  signatureReusePenalty: 3.5,
+  signatureReusePenalty: 4.5,
   blockMismatchPenalty: 8.0,
   genericAssetPenalty: 7.0,
   metadataFallbackPenalty: 4.5,
   darkFramePenalty: 4.0,
 };
 
-const buildVisualSignature = (candidate = {}) => [
-  normalizeLabel(candidate.location_type || "unknown"),
-  normalizeLabel(candidate.visual_features?.shot_type || "unknown"),
-  normalizeLabel(candidate.visual_features?.camera_motion || "unknown"),
-  normalizeLabel(candidate.location?.city || "neutral"),
-  normalizeLabel((candidate.tags || []).slice(0, 3).join(" ")),
-].join("|");
+const buildVisualSignature = (candidate = {}) => {
+  const categories = (candidate.detected_visual_categories || []).slice(0, 3).map((category) => normalizeLabel(category));
+  return [
+    normalizeLabel(candidate.location_type || "unknown"),
+    normalizeLabel(candidate.visual_features?.shot_type || "unknown"),
+    normalizeLabel(candidate.visual_features?.camera_motion || "unknown"),
+    normalizeLabel(candidate.location?.city || "neutral"),
+    categories.join("+"),
+    normalizeLabel(candidate.asset?.provider || candidate.source || "unknown"),
+  ].join("|");
+};
 
 const computeSemanticScores = async ({ narrationText, candidates, videoId }) => {
   try {
@@ -181,10 +191,23 @@ const computeGastronomySpecificityScore = ({ block, evidence }) => {
   return clamp(specificHits / 3, 0, 1);
 };
 
-const buildReuseSnapshot = ({ usage, candidate }) => {
+const computeEditorialStatusBonus = (editorial = {}) => {
+  if (editorial.status === "exact") return 1;
+  if (editorial.status === "regional") return 0.45;
+  return 0;
+};
+
+const computeEditorialPenalty = (editorial = {}) => {
+  if (editorial.status === "wrong") return 1;
+  if (editorial.status === "generic") return editorial.critical_role ? 1 : 0.7;
+  if (editorial.status === "uncertain") return editorial.critical_role ? 0.9 : 0.45;
+  return 0;
+};
+
+const buildReuseSnapshot = ({ usage, candidate, signature }) => {
   const sourceUrl = candidate.asset?.source_url || "";
   const localPath = candidate.asset?.local_path || "";
-  const signature = buildVisualSignature(candidate);
+  const resolvedSignature = signature || buildVisualSignature(candidate);
 
   return {
     sourceUrlCount: usage.usedSourceUrls?.get(sourceUrl) || 0,
@@ -192,19 +215,22 @@ const buildReuseSnapshot = ({ usage, candidate }) => {
     localPathCount: usage.usedLocalPaths?.get(localPath) || 0,
     windowCount: usage.usedWindowIds?.get(candidate.id) || 0,
     providerCount: usage.usedProviders?.get(candidate.source || candidate.asset?.provider || "unknown") || 0,
-    signatureCount: usage.usedVisualSignatures?.get(signature) || 0,
-    signature,
+    signatureCount: usage.usedVisualSignatures?.get(resolvedSignature) || 0,
+    lastSignatureClipIndex: usage.lastClipBySignature?.get(resolvedSignature) || 0,
+    signature: resolvedSignature,
   };
 };
 
-const computeReusePenalties = ({ block, candidate, usage, clipIndex }) => {
-  const snapshot = buildReuseSnapshot({ usage, candidate });
+const computeReusePenalties = ({ block, candidate, usage, clipIndex, signature }) => {
+  const snapshot = buildReuseSnapshot({ usage, candidate, signature });
   const sameAssetLastGap = usage.lastClipByAssetId?.get(candidate.asset_id);
+  const sameSignatureGap = snapshot.lastSignatureClipIndex ? clipIndex - snapshot.lastSignatureClipIndex : Infinity;
 
   const sourceReusePenalty = clamp(snapshot.sourceUrlCount > 0 ? snapshot.sourceUrlCount / 2 : 0, 0, 1);
   const assetReusePenalty = clamp(snapshot.assetCount > 0 ? snapshot.assetCount / 2 : 0, 0, 1);
   const windowReusePenalty = clamp(snapshot.windowCount > 0 ? 1 : 0, 0, 1);
   const signatureReusePenalty = clamp(snapshot.signatureCount > 0 ? Math.min(1, snapshot.signatureCount / 2) : 0, 0, 1);
+  const adjacencyPenalty = sameSignatureGap < 3 ? clamp((3 - sameSignatureGap) / 2, 0, 1) : 0;
   const minGapPenalty = sameAssetLastGap && clipIndex - sameAssetLastGap < 2 ? 1 : 0;
   const blockOverusePenalty = block.block_id && (usage.usedBlockAssetIds?.get(`${block.block_id}:${candidate.asset_id}`) || 0) > 0.5 ? 0.5 : 0;
 
@@ -212,8 +238,8 @@ const computeReusePenalties = ({ block, candidate, usage, clipIndex }) => {
     sourceReusePenalty,
     assetReusePenalty: clamp(assetReusePenalty + blockOverusePenalty + minGapPenalty, 0, 1),
     windowReusePenalty,
-    signatureReusePenalty,
-    total: clamp((sourceReusePenalty + assetReusePenalty + windowReusePenalty + signatureReusePenalty) / 4, 0, 1),
+    signatureReusePenalty: clamp(signatureReusePenalty + adjacencyPenalty, 0, 1),
+    total: clamp((sourceReusePenalty + assetReusePenalty + windowReusePenalty + signatureReusePenalty + adjacencyPenalty) / 5, 0, 1),
     signature: snapshot.signature,
   };
 };
@@ -272,10 +298,12 @@ const buildRejectedReasons = (components = {}) => {
   if (components.assetReusePenalty >= 1) reasons.push("reused_asset");
   if (components.sourceReusePenalty >= 1) reasons.push("reused_source_url");
   if (components.signatureReusePenalty >= 0.5) reasons.push("repeated_visual_signature");
+  if (components.blockMismatchPenalty >= 1) reasons.push("editorial_wrong");
   if (components.genericAssetPenalty >= 0.6) reasons.push("generic_asset");
+  if (components.editorialPenalty >= 0.7) reasons.push("editorial_status_low");
   if (components.darkFramePenalty >= 0.5) reasons.push("dark_frame_risk");
   if (components.semanticScore < 0.2) reasons.push("low_semantic_score");
-  return reasons;
+  return unique(reasons);
 };
 
 const rankCandidates = async ({
@@ -309,9 +337,11 @@ const rankCandidates = async ({
       },
       asset: candidate.asset || candidate,
     });
+    const editorial = classifyEditorialCandidate({ scene: block, block, candidate, evidence });
+    const editorialSignature = buildEditorialFamilyKey({ scene: block, block, candidate, evidence });
     const hardRejection = shouldRejectAssetForScene({
       asset: candidate.asset || candidate,
-      scene: block,
+      scene: { ...block, narrative_role: editorial.narrative_role, is_boundary_first_slot: isBoundaryFirstSlot },
       window: {
         summary: candidate.description || candidate.summary || candidate.semantic_text || "",
         description: candidate.description || candidate.summary || candidate.semantic_text || "",
@@ -339,7 +369,7 @@ const rankCandidates = async ({
     const resolutionScore = computeResolutionScore(candidate);
     const motionScore = computeMotionScore(candidate);
     const confidenceScore = weakMetadataEvidence ? Math.min(computeConfidenceScore(candidate), 0.35) : computeConfidenceScore(candidate);
-    const reuse = computeReusePenalties({ block, candidate, usage, clipIndex });
+    const reuse = computeReusePenalties({ block, candidate, usage, clipIndex, signature: editorialSignature });
     const blockMismatchPenalty = computeBlockMismatchPenalty({ block, candidate, previousMacroTopic });
     const hardBoundaryBlockReason = computeHardBoundaryBlockReason({
       block,
@@ -349,7 +379,10 @@ const rankCandidates = async ({
       isBoundaryFirstSlot,
     });
     const hardBoundaryIntroBonus = computeHardBoundaryIntroBonus({ block, candidate, isBoundaryFirstSlot });
-    const hardBlocked = Boolean(hardBoundaryBlockReason);
+    const editorialStatusBonus = computeEditorialStatusBonus(editorial);
+    const editorialPenalty = computeEditorialPenalty(editorial);
+    const hardBlocked = Boolean(hardBoundaryBlockReason)
+      || (editorial.critical_role && ["generic", "uncertain", "wrong"].includes(editorial.status));
     const genericAssetPenalty = hardRejection.reason === "generic_visual_for_specific_intent"
       ? 1
       : Math.max(Number(evidence.generic_visual ? 1 : 0), computeGenericAssetPenalty({ block, candidate }));
@@ -368,8 +401,10 @@ const rankCandidates = async ({
       evidenceSourceScore * SCORE_WEIGHTS.evidenceSourceScore +
       resolutionScore * SCORE_WEIGHTS.resolutionScore +
       motionScore * SCORE_WEIGHTS.motionScore +
-      confidenceScore * SCORE_WEIGHTS.confidenceScore -
-      hardBoundaryIntroBonus +
+      confidenceScore * SCORE_WEIGHTS.confidenceScore +
+      editorialStatusBonus * SCORE_WEIGHTS.editorialStatusBonus +
+      hardBoundaryIntroBonus -
+      editorialPenalty * SCORE_WEIGHTS.editorialPenalty -
       forbiddenCategoryPenalty * SCORE_WEIGHTS.forbiddenCategoryPenalty -
       reuse.sourceReusePenalty * SCORE_WEIGHTS.sourceReusePenalty -
       reuse.assetReusePenalty * SCORE_WEIGHTS.assetReusePenalty -
@@ -388,10 +423,12 @@ const rankCandidates = async ({
       signatureReusePenalty: reuse.signatureReusePenalty,
       blockMismatchPenalty,
       genericAssetPenalty,
+      editorialPenalty,
       metadataFallbackPenalty,
       forbiddenCategoryPenalty,
       darkFramePenalty,
     });
+    if (editorial.reason) reasons.unshift(editorial.reason);
     if (hardBoundaryBlockReason) reasons.unshift(hardBoundaryBlockReason);
     if (hardRejection.reject && hardRejection.reason) reasons.unshift(hardRejection.reason);
 
@@ -402,7 +439,7 @@ const rankCandidates = async ({
       score: round3(finalScore),
       method: semantic.method,
       hard_blocked: hardBlocked,
-      hard_blocked_reason: hardBoundaryBlockReason,
+      hard_blocked_reason: hardBoundaryBlockReason || (editorial.critical_role && ["generic", "uncertain", "wrong"].includes(editorial.status) ? `critical_slot_${editorial.status}` : ""),
       features: {
         semanticScore: round3(semantic.score),
         visualIntentMatchScore: round3(visualIntentMatchScore),
@@ -415,6 +452,13 @@ const rankCandidates = async ({
         resolutionScore: round3(resolutionScore),
         motionScore: round3(motionScore),
         confidenceScore: round3(confidenceScore),
+        editorialStatusBonus: round3(editorialStatusBonus),
+        editorialPenalty: round3(editorialPenalty),
+        editorialStatus: editorial.status,
+        editorialReason: editorial.reason,
+        narrativeRole: editorial.narrative_role,
+        criticalRole: Boolean(editorial.critical_role),
+        editorialFamilyKey: editorial.editorial_family_key,
         forbiddenCategoryPenalty: round3(forbiddenCategoryPenalty),
         sourceReusePenalty: round3(reuse.sourceReusePenalty),
         assetReusePenalty: round3(reuse.assetReusePenalty),
@@ -432,7 +476,7 @@ const rankCandidates = async ({
         visualEvidenceSource: candidate.visual_evidence_source || candidate.analysis_provider || "metadata_fallback",
       },
       selection_reason: hardBlocked
-        ? `hard_boundary_blocked_${hardBoundaryBlockReason}`
+        ? `hard_boundary_blocked_${hardBoundaryBlockReason || editorial.status}`
         : hardRejection.reject
         ? `rejected_${hardRejection.reason}`
         : blockMismatchPenalty >= 1
@@ -440,19 +484,19 @@ const rankCandidates = async ({
         : reasons.length
           ? `selected_despite_${reasons[0]}`
           : `best_${semantic.method}`,
-      rejected_reasons: reasons,
-      visual_signature: reuse.signature,
+      rejected_reasons: unique(reasons),
+      visual_signature: editorialSignature || reuse.signature,
     });
   }
 
   return ranked.sort((left, right) => right.score - left.score);
 };
 
-const registerClipUsage = ({ usage, block, candidate, clipIndex }) => {
+const registerClipUsage = ({ usage, block, candidate, clipIndex, signature = "" }) => {
   const sourceUrl = candidate.asset?.source_url || "";
   const localPath = candidate.asset?.local_path || "";
   const provider = candidate.source || candidate.asset?.provider || "unknown";
-  const signature = buildVisualSignature(candidate);
+  const resolvedSignature = signature || buildVisualSignature(candidate);
 
   usage.usedSourceUrls = usage.usedSourceUrls || new Map();
   usage.usedAssetIds = usage.usedAssetIds || new Map();
@@ -462,18 +506,20 @@ const registerClipUsage = ({ usage, block, candidate, clipIndex }) => {
   usage.usedBlockAssetIds = usage.usedBlockAssetIds || new Map();
   usage.usedVisualSignatures = usage.usedVisualSignatures || new Map();
   usage.lastClipByAssetId = usage.lastClipByAssetId || new Map();
+  usage.lastClipBySignature = usage.lastClipBySignature || new Map();
 
   if (sourceUrl) usage.usedSourceUrls.set(sourceUrl, (usage.usedSourceUrls.get(sourceUrl) || 0) + 1);
   if (localPath) usage.usedLocalPaths.set(localPath, (usage.usedLocalPaths.get(localPath) || 0) + 1);
   usage.usedAssetIds.set(candidate.asset_id, (usage.usedAssetIds.get(candidate.asset_id) || 0) + 1);
   usage.usedWindowIds.set(candidate.id, (usage.usedWindowIds.get(candidate.id) || 0) + 1);
   usage.usedProviders.set(provider, (usage.usedProviders.get(provider) || 0) + 1);
-  usage.usedVisualSignatures.set(signature, (usage.usedVisualSignatures.get(signature) || 0) + 1);
+  usage.usedVisualSignatures.set(resolvedSignature, (usage.usedVisualSignatures.get(resolvedSignature) || 0) + 1);
   if (block.block_id) {
     const blockKey = `${block.block_id}:${candidate.asset_id}`;
     usage.usedBlockAssetIds.set(blockKey, (usage.usedBlockAssetIds.get(blockKey) || 0) + 1);
   }
   usage.lastClipByAssetId.set(candidate.asset_id, clipIndex);
+  usage.lastClipBySignature.set(resolvedSignature, clipIndex);
 };
 
 module.exports = {
