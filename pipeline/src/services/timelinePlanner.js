@@ -90,6 +90,8 @@ const normalizeAssetAnalysisWindows = (asset = {}) => {
     const location = detectLocation(visualText, window.location);
     const landmarks = detectLandmarks(visualText, window.landmarks);
     const visualEvidenceSource = window.visual_evidence_source || window.method || asset.analysis_provider || "metadata_fallback";
+    const visualObservationOrigin = window.visual_observation_origin
+      || (String(visualEvidenceSource).toLowerCase().includes("fallback") ? "weak_fallback" : "real_vision");
     const rawConfidence = clamp(Number(window.confidence || window.visual_confidence || 0.45), 0, 1);
     const confidence = visualEvidenceSource === "metadata_fallback" ? Math.min(rawConfidence, 0.35) : rawConfidence;
     const brightness = Number(window.quality?.brightness || 0.7);
@@ -130,6 +132,7 @@ const normalizeAssetAnalysisWindows = (asset = {}) => {
       neutral: Boolean(window.neutral) || (!location.city && /travel|road|map|airplane|landscape|generic|overview/i.test(visualText)),
       analysis_provider: window.method || asset.analysis_provider || "metadata_fallback",
       visual_evidence_source: visualEvidenceSource,
+      visual_observation_origin: visualObservationOrigin,
     };
   });
 };
@@ -174,6 +177,7 @@ const flattenAssetWindows = (assets = []) => {
         confidence: window.confidence,
         neutral: window.neutral,
         visual_evidence_source: window.visual_evidence_source,
+        visual_observation_origin: window.visual_observation_origin || "real_vision",
         semantic_text: semanticText,
         window_index: window.window_index,
         analysis_provider: window.analysis_provider,
@@ -238,6 +242,7 @@ const buildApprovedWindowCandidates = ({ approvedWindows = [], assets = [] }) =>
       confidence: Number(contract.editorial_confidence || 0),
       neutral: contract.visual_truth_status === "generic",
       visual_evidence_source: contract.visual_evidence_source || "metadata_fallback",
+      visual_observation_origin: contract.visual_observation_origin || contract.visual_observation?.visual_observation_origin || "real_vision",
       semantic_text: `${summary} ${(tags || []).join(" ")}`.trim(),
       window_index: Number(contract.window?.window_index || 1),
       analysis_provider: asset?.analysis_provider || contract.visual_evidence_source || "metadata_fallback",
@@ -463,6 +468,62 @@ const selectBySourceTierPolicy = ({
     getSourceTierRank(left.candidate?.source_tier) - getSourceTierRank(right.candidate?.source_tier)
     || Number(right.score || 0) - Number(left.score || 0)
   )[0];
+};
+
+const buildBlockLandmarkKey = (candidate = {}) => {
+  const firstLandmark = (candidate.landmarks || [])[0];
+  const landmarkName = firstLandmark?.name || firstLandmark || "";
+  const landmarkCity = firstLandmark?.city || candidate.location?.city || "";
+  const normalized = `${String(landmarkName || "").toLowerCase().trim()}|${String(landmarkCity || "").toLowerCase().trim()}`;
+  return normalized.replace(/\s+/g, " ").trim();
+};
+
+const candidateRespectsDiversityQuotas = ({
+  candidate = {},
+  block = {},
+  usage = {},
+  criticalSlot = false,
+}) => {
+  const blockId = String(block.block_id || block.id || block.scene_index || "");
+  if (!blockId) return true;
+  const signature = buildVisualSignature(candidate);
+  const provider = String(candidate.source || candidate.asset?.provider || "unknown").toLowerCase();
+  const landmarkKey = buildBlockLandmarkKey(candidate);
+  const signatureCount = Number(usage.usedBlockVisualSignatures?.get(`${blockId}:${signature}`) || 0);
+  const providerCount = Number(usage.usedBlockProviders?.get(`${blockId}:${provider}`) || 0);
+  const landmarkCount = landmarkKey ? Number(usage.usedBlockLandmarks?.get(`${blockId}:${landmarkKey}`) || 0) : 0;
+  const maxProviderCount = criticalSlot ? 1 : 2;
+
+  if (signatureCount >= 1) return false;
+  if (providerCount >= maxProviderCount) return false;
+  if (landmarkCount >= 1) return false;
+  return true;
+};
+
+const selectWithDiversityQuota = ({
+  ranked = [],
+  preselected = null,
+  block = {},
+  usage = {},
+  criticalSlot = false,
+}) => {
+  const available = ranked.filter((item) => !item.hard_blocked);
+  if (!available.length) {
+    return { selected: preselected, forced: false };
+  }
+
+  if (preselected?.candidate && candidateRespectsDiversityQuotas({ candidate: preselected.candidate, block, usage, criticalSlot })) {
+    return { selected: preselected, forced: false };
+  }
+
+  const quotaRespecting = available.find((item) =>
+    candidateRespectsDiversityQuotas({ candidate: item.candidate, block, usage, criticalSlot })
+  );
+  if (quotaRespecting) {
+    return { selected: quotaRespecting, forced: true };
+  }
+
+  return { selected: preselected || available[0], forced: false };
 };
 
 const splitBlockIntoTimelineSlots = ({ block, policy, pauseMarkers = [] }) => {
@@ -785,6 +846,9 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
     usedProviders: new Map(),
     usedBlockAssetIds: new Map(),
     usedVisualSignatures: new Map(),
+    usedBlockVisualSignatures: new Map(),
+    usedBlockProviders: new Map(),
+    usedBlockLandmarks: new Map(),
     lastClipByAssetId: new Map(),
   };
   const clips = [];
@@ -844,9 +908,17 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         block,
         freeCriticalUsageByBlock,
       });
-      const selected = selectedFromPolicy || ranked.find((item) => !item.hard_blocked) || ranked[0] || (fallbackCandidate
+      const policySelected = selectedFromPolicy || ranked.find((item) => !item.hard_blocked) || ranked[0] || (fallbackCandidate
         ? { candidate: fallbackCandidate, score: -10, features: {}, selection_reason: "fallback" }
         : null);
+      const diversitySelection = selectWithDiversityQuota({
+        ranked,
+        preselected: policySelected,
+        block,
+        usage,
+        criticalSlot,
+      });
+      const selected = diversitySelection.selected;
 
       if (!selected?.candidate) {
         throw new Error(`Timeline blocked: no publishable candidate available for scene ${block.scene_index}.`);
@@ -960,6 +1032,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         visual_signature: buildVisualSignature(candidate),
         query_used: candidate.asset?.query_used || candidate.asset?.query || "",
         visual_truth_status: candidate.visual_truth_status || "regional",
+        visual_observation_origin: candidate.visual_observation_origin || "real_vision",
         narrative_role_selected: slotRole,
         critical_slot: criticalSlot,
         editorial_slot_ok: candidate.editorial_approved === true
@@ -973,10 +1046,12 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
           ...(candidate.editorial_approved !== true ? ["not_editorially_approved"] : []),
           ...(criticalSlot && ["free", "generated"].includes(String(candidate.source_tier || "free").toLowerCase()) ? ["critical_slot_weak_source_tier"] : []),
           ...(selected?.hard_blocked ? ["hard_boundary_candidate_forced"] : []),
+          ...(diversitySelection.forced ? ["diversity_quota_enforced"] : []),
           ...boundaryForcedViolationCodes,
         ]),
         source_tier: candidate.source_tier || "free",
         approved_window_id: candidate.approved_window_id || candidate.id,
+        visual_observation_origin: candidate.visual_observation_origin || "real_vision",
         asset: candidate.asset,
       });
     }
@@ -1042,6 +1117,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
       confidence: window.confidence,
       neutral: window.neutral,
       visual_evidence_source: window.visual_evidence_source,
+      visual_observation_origin: window.visual_observation_origin || "real_vision",
       visual_truth_status: window.visual_truth_status || "regional",
       source_tier: window.source_tier || "free",
     })),

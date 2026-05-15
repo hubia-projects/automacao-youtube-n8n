@@ -7,6 +7,7 @@ const ISSUE_TO_FAILURE_CODE = {
   timeline_not_using_approved_pool: "TIMELINE_OUTSIDE_APPROVED_POOL",
   generic_asset_overuse: "GENERIC_OVERUSE",
   wrong_visual_category: "WRONG_VISUAL_CATEGORY",
+  runtime_degradation_used: "RUNTIME_DEGRADATION_USED",
   theme_visual_mismatch: "THEME_VISUAL_MISMATCH",
   no_proof_for_promise: "NO_PROOF_FOR_PROMISE",
 };
@@ -30,6 +31,7 @@ const buildRepairActionFromCode = (failureCode = "") => {
       };
     case "GENERIC_OVERUSE":
     case "WRONG_VISUAL_CATEGORY":
+    case "RUNTIME_DEGRADATION_USED":
       return {
         target_narrative_roles: ["proof_exact", "detail_cutaway"],
         enforce_source_tier: ["curated", "premium", "free"],
@@ -109,4 +111,3 @@ module.exports = {
     buildRepairActionFromCode,
   },
 };
-

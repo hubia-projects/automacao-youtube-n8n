@@ -253,8 +253,8 @@ const buildAnalysisWindowBlueprints = ({ assetDuration = 0 }) => {
 };
 
 const buildFallbackAnalysisPayload = ({ asset, scene }) => {
-  const baseSummary = asset.semantic_text || asset.query || scene.narration_excerpt || scene.title || "travel footage";
-  const baseTags = unique([...(asset.provider_tags || []), ...(scene.keywords || []), ...extractKeywords(baseSummary)]).slice(0, 10);
+  const baseSummary = "visual evidence unavailable - weak fallback";
+  const baseTags = [];
   const windows = buildAnalysisWindowBlueprints({ assetDuration: asset.source_duration_seconds || asset.duration_estimate || 0 }).map((window) => {
     const baseWindow = {
       window_index: window.window_index,
@@ -288,6 +288,7 @@ const buildFallbackAnalysisPayload = ({ asset, scene }) => {
       confidence: 0.35,
       method: "metadata_fallback",
       visual_evidence_source: "metadata_fallback",
+      visual_observation_origin: "weak_fallback",
     };
     const evidence = evaluateVisualEvidence({ scene, window: baseWindow, asset });
     return {
@@ -325,6 +326,7 @@ const mergeAnalysisPayload = ({ asset, scene, payload = {} }) => {
           required_evidence_found: window.required_evidence_found || evidence.required_evidence_found,
           missing_required_visual_evidence: window.missing_required_visual_evidence || evidence.missing_required_visual_evidence,
           visual_evidence_source: window.visual_evidence_source || payload.analysis_provider || payload.provider || fallback.analysis_provider,
+          visual_observation_origin: window.visual_observation_origin || (String(window.visual_evidence_source || payload.analysis_provider || payload.provider || fallback.analysis_provider).toLowerCase().includes("fallback") ? "weak_fallback" : "real_vision"),
         };
       })
     : fallback.analysis_windows;
@@ -930,6 +932,7 @@ const generateAssets = async ({
       visual_intent: scene.visual_intent || "",
       queries,
       query_details: queryPlan.queryDetails || [],
+      retrieval_budget: queryPlan.retrievalBudget || {},
       negative_keywords: queryPlan.negativeKeywords,
       search_reason: queryPlan.searchReason,
       specific_intent_required: queryPlan.specificIntentRequired,
@@ -1073,6 +1076,12 @@ const generateAssets = async ({
   const mergedFallbackPlan = preserveUntouchedScenes
     ? mergeFallbackPlan({ existingFallbackPlan: previousFallbackPlan, nextFallbackPlan: fallbackPlan, sceneIndexes: selectedSceneIndexes })
     : mergeFallbackPlan({ nextFallbackPlan: fallbackPlan });
+  const retrievalBudgetSummary = mergedSceneQueries.map((entry) => ({
+    scene_index: Number(entry.scene_index || 0),
+    visual_intent: entry.visual_intent || "",
+    retrieval_budget: entry.retrieval_budget || {},
+    query_count: Array.isArray(entry.queries) ? entry.queries.length : 0,
+  }));
   const flattenedKeywords = unique(visualPlan.flatMap((scene) => scene.keywords || [])).slice(0, 30);
   const searchQueries = unique(mergedSceneQueries.flatMap((entry) => entry.queries || []));
   const approvalResult = approveAssetsForVisualPlan({
@@ -1106,6 +1115,7 @@ const generateAssets = async ({
         visual_keywords: flattenedKeywords,
         search_queries: searchQueries,
         scene_queries: mergedSceneQueries,
+        retrieval_budget: retrievalBudgetSummary,
         raw_items: mergedRawItems,
         approved_items: approvedItems,
         items: approvedItems,

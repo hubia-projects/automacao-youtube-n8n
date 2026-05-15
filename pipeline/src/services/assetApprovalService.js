@@ -91,6 +91,10 @@ const classifyVisualTruthStatus = ({
   const isFoodIntent = ["gastronomy", "market", "wine", "pastry", "restaurant", "cafe", "street_food"].includes(String(scene.visual_intent || ""));
 
   if (requiredCount > 0) {
+    if (weakVisualSource) {
+      if (!hasRequiredEvidence || genericVisual) return "uncertain";
+      return requiredMatchRatio >= 0.7 && !genericVisual ? "regional" : "uncertain";
+    }
     const minExactHits = isFoodIntent ? Math.min(2, requiredCount) : 1;
     if ((requiredFoundCount >= minExactHits || requiredMatchRatio >= 0.5) && !genericVisual && !weakVisualSource) return "exact";
     if (hasRequiredEvidence && !genericVisual) return "regional";
@@ -98,6 +102,7 @@ const classifyVisualTruthStatus = ({
     return "uncertain";
   }
 
+  if (weakVisualSource) return "uncertain";
   const allowedMatches = Number((evidence.matched_allowed_categories || []).length);
   if (allowedMatches > 0 && !genericVisual && !weakVisualSource) return "exact";
   if (allowedMatches > 0 && !genericVisual) return "regional";
@@ -192,7 +197,11 @@ const buildEditorialWindowContract = ({
     || asset.analysis_provider
     || "metadata_fallback"
   );
-  const weakVisualSource = WEAK_VISUAL_SOURCES.has(evidenceSource);
+  const observationOrigin = String(
+    window.visual_observation_origin
+    || (WEAK_VISUAL_SOURCES.has(evidenceSource) ? "weak_fallback" : "real_vision")
+  ).toLowerCase();
+  const weakVisualSource = observationOrigin === "weak_fallback" || WEAK_VISUAL_SOURCES.has(evidenceSource);
   const evidence = evaluateVisualEvidence({ scene, window, asset });
   const visualTruthStatus = classifyVisualTruthStatus({
     scene,
@@ -241,6 +250,7 @@ const buildEditorialWindowContract = ({
     scene_index: Number(asset.scene_index || 0),
     source_tier: inferSourceTier(asset),
     visual_evidence_source: evidenceSource,
+    visual_observation_origin: observationOrigin,
     visual_truth_status: visualTruthStatus,
     editorial_confidence: editorialConfidence,
     narrative_roles_supported: narrativeRolesSupported,
@@ -271,6 +281,7 @@ const buildEditorialWindowContract = ({
       detected_visual_categories: unique(window.detected_visual_categories || []),
       detected_objects: unique(window.detected_objects || []),
       quality: window.quality || {},
+      visual_observation_origin: observationOrigin,
     },
     editorial_inference: evidence.editorial_inference || {
       visual_intent_match: Boolean(evidence.visual_intent_match),
@@ -292,6 +303,7 @@ const buildEditorialWindowContract = ({
       tags: unique(window.tags || []),
       location: window.location || { city: "", country: "", confidence: 0 },
       landmarks: window.landmarks || [],
+      visual_observation_origin: observationOrigin,
     },
   };
 };

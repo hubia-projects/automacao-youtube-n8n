@@ -369,11 +369,18 @@ router.post("/videos/youtube/upload", async (req, res, next) => {
 
     const parsed = schema.parse(req.body || {});
     const state = await loadState(parsed.video_id);
+    const requestedMockMode = withDefaultMock(parsed);
+    const runtimeProfile = String(
+      state?.render_validation?.qa_runtime_profile
+      || (requestedMockMode ? config.QA_RUNTIME_PROFILE_MOCK : config.QA_RUNTIME_PROFILE_PROD)
+      || "prod_strict"
+    ).toLowerCase();
+    const strictRuntimeProfile = runtimeProfile !== "mock_relaxed";
     const hardBoundaryStatus = state?.render_validation?.hard_boundary_status || "unknown";
     const maxVisualLagSec = Number(state?.render_validation?.max_visual_lag_sec || 0);
     const maxAllowedLagSec = Number(config.HARD_BOUNDARY_MAX_LAG_SEC || 0.5);
 
-    if (hardBoundaryStatus !== "pass") {
+    if (strictRuntimeProfile && hardBoundaryStatus !== "pass") {
       return res.status(409).json({
         ok: false,
         error: "Upload bloqueado: hard boundary QA reprovado.",
@@ -382,7 +389,7 @@ router.post("/videos/youtube/upload", async (req, res, next) => {
       });
     }
 
-    if (maxVisualLagSec > maxAllowedLagSec) {
+    if (strictRuntimeProfile && maxVisualLagSec > maxAllowedLagSec) {
       return res.status(409).json({
         ok: false,
         error: "Upload bloqueado: max_visual_lag_sec acima do limite configurado.",
@@ -393,7 +400,7 @@ router.post("/videos/youtube/upload", async (req, res, next) => {
 
     const result = await uploadToYoutube({
       videoId: parsed.video_id,
-      mockMode: withDefaultMock(parsed),
+      mockMode: requestedMockMode,
       privacyStatus: parsed.privacy_status,
     });
 

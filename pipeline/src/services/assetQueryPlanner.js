@@ -177,6 +177,10 @@ const getCountrySearchTerms = (scene = {}, topic = "") => {
 const containsGastronomyTerm = (value = "") => GASTRONOMY_TERMS.some((term) => normalizeLabel(value).includes(term));
 
 const isFoodIntent = (visualIntent = "") => ["gastronomy", "market", "wine", "pastry", "restaurant", "cafe", "street_food"].includes(visualIntent);
+const RETRIEVAL_BUDGET_DEFAULTS = {
+  food: { maxQueries: 18, maxDownloads: 6 },
+  nonFood: { maxQueries: 12, maxDownloads: 6 },
+};
 
 const inferRelatedIntents = ({ scene = {}, topic = "" }) => {
   const combined = [scene.title, scene.narration_excerpt, ...(scene.keywords || []), topic]
@@ -242,6 +246,60 @@ const pushQuery = ({ entries, seen, query, reason, scene }) => {
   entries.push({ query: normalizedQuery, reason });
 };
 
+const inferRoleTargets = ({ scene = {}, repairHints = {} }) =>
+  unique([
+    ...(repairHints.target_narrative_roles || []),
+    scene.probable_shot_role || "",
+    scene.narrative_function ? `${scene.narrative_function}_role` : "",
+  ]).filter(Boolean);
+
+const resolveRetrievalBudget = ({ scene = {}, intent = "", roleTargets = [], forceExactRequired = false }) => {
+  const isFood = isFoodIntent(intent);
+  const defaults = isFood ? RETRIEVAL_BUDGET_DEFAULTS.food : RETRIEVAL_BUDGET_DEFAULTS.nonFood;
+  const role = String(scene.role || "body").toLowerCase();
+  const roleBonus = role === "intro" || role === "outro" || scene.hard_boundary ? 2 : 0;
+  const roleTargetBonus = roleTargets.some((roleItem) => ["hook_exact", "proof_exact", "closing_payoff", "opening_establishing"].includes(roleItem)) ? 2 : 0;
+  const exactBonus = forceExactRequired ? 2 : 0;
+  const maxQueries = Math.max(
+    6,
+    Math.min(24, Number(defaults.maxQueries + roleBonus + roleTargetBonus + exactBonus))
+  );
+  return {
+    max_queries: maxQueries,
+    max_downloads: Number(defaults.maxDownloads),
+    roles_targeted: roleTargets,
+  };
+};
+
+const getReasonPriority = (reason = "") => {
+  const normalizedReason = String(reason || "");
+  if (/hard_boundary|repair_bias/.test(normalizedReason)) return 10;
+  if (/city_preset/.test(normalizedReason)) return 9;
+  if (/visual_intent_.*\+ city_/.test(normalizedReason)) return 8;
+  if (/visual_intent_.*\+ country_/.test(normalizedReason)) return 7;
+  if (/fallback_specific|emergency/.test(normalizedReason)) return 6;
+  return 5;
+};
+
+const applyRetrievalBudget = ({ entries = [], retrievalBudget = {} }) => {
+  const maxQueries = Math.max(1, Number(retrievalBudget.max_queries || RETRIEVAL_BUDGET_DEFAULTS.nonFood.maxQueries));
+  const ranked = [...entries]
+    .map((entry, index) => ({
+      ...entry,
+      _priority: getReasonPriority(entry.reason),
+      _index: index,
+    }))
+    .sort((left, right) => right._priority - left._priority || left._index - right._index)
+    .slice(0, maxQueries)
+    .sort((left, right) => left._index - right._index)
+    .map(({ _priority, _index, ...entry }) => entry);
+  return {
+    entries: ranked,
+    trimmed: ranked.length < entries.length,
+    maxQueries,
+  };
+};
+
 const buildSceneQueryPlan = ({ scene = {}, topic = "", repairHints = {} }) => {
   const entries = [];
   const seen = new Set();
@@ -257,6 +315,13 @@ const buildSceneQueryPlan = ({ scene = {}, topic = "", repairHints = {} }) => {
     ...(scene.forbidden_locations || []),
     ...(repairHints.extra_negative_keywords || []),
   ]);
+  const targetNarrativeRoles = inferRoleTargets({ scene, repairHints });
+  const retrievalBudget = resolveRetrievalBudget({
+    scene,
+    intent,
+    roleTargets: targetNarrativeRoles,
+    forceExactRequired: Boolean(repairHints.force_exact_required),
+  });
 
   const cityPreset = CITY_QUERY_PRESETS[expectedLocation] || [];
   cityPreset.forEach((query, index) => {
@@ -287,8 +352,11 @@ const buildSceneQueryPlan = ({ scene = {}, topic = "", repairHints = {} }) => {
   }
 
   if (isFoodIntent(intent)) {
+    const prioritizedCityTerms = prioritizedTermEntries.slice(0, 8);
+    const prioritizedCountryTerms = prioritizedTermEntries.slice(0, 6);
+    const prioritizedFallbackTerms = prioritizedTermEntries.slice(0, 4);
     cityTerms.forEach((cityTerm) => {
-      prioritizedTermEntries.forEach(({ term, reasonToken }) => {
+      prioritizedCityTerms.forEach(({ term, reasonToken }) => {
         pushQuery({
           entries,
           seen,
@@ -300,7 +368,7 @@ const buildSceneQueryPlan = ({ scene = {}, topic = "", repairHints = {} }) => {
     });
 
     countryTerms.forEach((countryTerm) => {
-      prioritizedTermEntries.forEach(({ term, reasonToken }) => {
+      prioritizedCountryTerms.forEach(({ term, reasonToken }) => {
         pushQuery({
           entries,
           seen,
@@ -311,7 +379,7 @@ const buildSceneQueryPlan = ({ scene = {}, topic = "", repairHints = {} }) => {
       });
     });
 
-    prioritizedTermEntries.forEach(({ term, reasonToken }) => {
+    prioritizedFallbackTerms.forEach(({ term, reasonToken }) => {
       pushQuery({
         entries,
         seen,
@@ -364,7 +432,6 @@ const buildSceneQueryPlan = ({ scene = {}, topic = "", repairHints = {} }) => {
   }
 
   const repairBiasQueries = [];
-  const targetNarrativeRoles = unique(repairHints.target_narrative_roles || []);
   if (targetNarrativeRoles.includes("proof_exact") && expectedLocation) {
     repairBiasQueries.push(`${expectedLocation} real close up authentic scene`);
   }
@@ -381,13 +448,53 @@ const buildSceneQueryPlan = ({ scene = {}, topic = "", repairHints = {} }) => {
     });
   });
 
+  if (!entries.length) {
+    const emergencyTokens = unique([
+      expectedLocation,
+      normalizeLabel(scene.block_label || ""),
+      ...buildSceneKeywordTerms({ scene }).slice(0, 2),
+      isFoodIntent(intent) ? "food market" : "authentic local scene",
+    ]).filter(Boolean);
+    const emergencyQuery = emergencyTokens.slice(0, 4).join(" ").trim();
+    if (emergencyQuery) {
+      pushQuery({
+        entries,
+        seen,
+        query: emergencyQuery,
+        reason: `emergency_fallback_${buildReasonToken(intent || "generic_travel")}`,
+        scene: isFoodIntent(intent) ? scene : { ...scene, generic_asset_allowed: true },
+      });
+    }
+  }
+
+  const budgeted = applyRetrievalBudget({ entries, retrievalBudget });
+  let finalEntries = budgeted.entries;
+
+  if (isFoodIntent(intent) && countryTerms.includes("portugal")) {
+    const mandatoryCountryFallback = "portugal portuguese food";
+    const hasMandatory = finalEntries.some((entry) => entry.query === mandatoryCountryFallback);
+    if (!hasMandatory && isValidQueryForScene({ query: mandatoryCountryFallback, scene })) {
+      finalEntries = [...finalEntries, {
+        query: mandatoryCountryFallback,
+        reason: `visual_intent_${intent} + country_portugal + required_portuguese_food`,
+      }];
+      if (finalEntries.length > Number(retrievalBudget.max_queries || 0)) {
+        finalEntries = [...finalEntries.slice(0, -1).slice(0, Math.max(0, Number(retrievalBudget.max_queries || 1) - 1)), finalEntries[finalEntries.length - 1]];
+      }
+    }
+  }
+
   return {
-    queries: entries.map((entry) => entry.query),
-    queryDetails: entries,
+    queries: finalEntries.map((entry) => entry.query),
+    queryDetails: finalEntries,
     negativeKeywords,
     preferredProviders: unique(repairHints.preferred_providers || []),
     targetNarrativeRoles,
     forceExactRequired: Boolean(repairHints.force_exact_required),
+    retrievalBudget: {
+      ...retrievalBudget,
+      trimmed: budgeted.trimmed,
+    },
     hardBoundaryScene: isHardBoundaryScene,
     searchReason: isFoodIntent(intent)
       ? `visual_intent_${intent} + required_visual_evidence`

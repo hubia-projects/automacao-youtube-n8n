@@ -1588,6 +1588,8 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
   const paths = await ensureVideoStructure(videoId);
   const draftVersion = getDraftVersion(state);
   const allowPlaceholderAssets = shouldAllowPlaceholderAssets({ mockMode });
+  const runtimeDegradationEnabled = Boolean(config.RUNTIME_DEGRADE_ON_MISSING_ASSETS !== false);
+  const allowRuntimeFallback = allowPlaceholderAssets || runtimeDegradationEnabled;
 
   if (!state.audio_path || !(await fs.pathExists(state.audio_path))) {
     throw new Error("Áudio não encontrado para renderização.");
@@ -1595,13 +1597,13 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
 
   const renderPath = paths.renderPath;
   const fallbackImagePath = path.join(paths.base, "assets", "raw", "render-fallback.png");
-  if (allowPlaceholderAssets) {
+  if (allowRuntimeFallback) {
     await createFallbackImage(fallbackImagePath, draftVersion);
   }
 
   const audioInfo = await probeMedia(state.audio_path).catch(() => ({ duration: 0 }));
   const audioDuration = Math.max(10, Number(audioInfo.duration || state.duration_seconds || 95));
-  const fallbackAsset = allowPlaceholderAssets
+  const fallbackAsset = allowRuntimeFallback
     ? {
         scene_index: 0,
         provider: "render_fallback",
@@ -1613,6 +1615,7 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
           label: "Full HD",
         },
         duration_estimate: 6,
+        is_fallback: true,
       }
     : null;
 
@@ -1630,12 +1633,13 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     audioDuration,
     draftVersion,
     fallbackAsset,
-    allowPlaceholderFallback: allowPlaceholderAssets,
+    allowPlaceholderFallback: allowRuntimeFallback,
   });
 
   const clipPlan = timelineResult.clipPlan || timelineResult.clips || [];
+  const usesPlaceholderInPlan = clipPlan.some((clip) => isPlaceholderAsset(clip.asset));
 
-  if (!allowPlaceholderAssets && clipPlan.some((clip) => isPlaceholderAsset(clip.asset))) {
+  if (!allowRuntimeFallback && usesPlaceholderInPlan) {
     throw new Error("Render blocked: placeholder asset detected in clip plan.");
   }
 
@@ -1673,7 +1677,7 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
         assetDurationSeconds: clip.asset_duration_seconds,
       });
     } catch {
-      if (!allowPlaceholderAssets) {
+      if (!allowRuntimeFallback) {
         throw new Error(`Render blocked: segment fallback disabled for scene ${clip.scene_index}.`);
       }
 
@@ -1743,7 +1747,7 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     } catch {
       renderStrategy = "single_fallback";
       transition = "none";
-      if (!allowPlaceholderAssets) {
+      if (!allowRuntimeFallback) {
         throw new Error("Render blocked: final composition fallback disabled in production.");
       }
       await renderUltimateFallback({
@@ -1810,6 +1814,8 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
         low_confidence_clip_count: semanticScores.filter((score) => score < 0).length,
         sync_policy: timelineResult.syncPolicy || {},
         hard_boundary_policy: timelineResult.hardBoundaryPolicy || {},
+        runtime_degraded: usesPlaceholderInPlan,
+        runtime_degradation_enabled: allowRuntimeFallback,
         narrative_blocks: timelineResult.narrativeBlocks || [],
         timeline_sync_metrics: timelineResult.timelineSyncMetrics || {},
         hard_boundary_status: timelineResult.timelineSyncMetrics?.hard_boundary_status || "unknown",
@@ -1860,6 +1866,7 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
           detected_objects: clip.detected_objects,
           visual_intent_match: clip.visual_intent_match,
           visual_truth_status: clip.visual_truth_status || "regional",
+          visual_observation_origin: clip.visual_observation_origin || "real_vision",
           narrative_role_selected: clip.narrative_role_selected || "",
           critical_slot: Boolean(clip.critical_slot),
           editorial_slot_ok: clip.editorial_slot_ok !== false,

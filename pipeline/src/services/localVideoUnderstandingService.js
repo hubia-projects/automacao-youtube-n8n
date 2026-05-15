@@ -48,6 +48,7 @@ const enrichWindowsWithEvidence = ({ windows = [], sceneContext = {}, assetMetad
       confidence: weakFallback ? Math.min(rawConfidence, 0.28) : rawConfidence,
       weak_fallback: weakFallback,
       visual_evidence_source: weakFallback ? "weak_fallback" : visualEvidenceSource,
+      visual_observation_origin: weakFallback ? "weak_fallback" : "real_vision",
     };
   });
 
@@ -62,14 +63,11 @@ const buildFallbackWindows = ({ duration = 0, windowSeconds = 8, maxWindows = 20
       start_seconds: round3(start),
       end_seconds: round3(Math.max(start + 1, end)),
       summary: "visual evidence unavailable - weak fallback",
-      tags: unique([
-        ...(assetMetadata.provider_tags || []),
-        ...(assetMetadata.analysis_tags || []),
-        ...(sceneContext.keywords || []),
-      ]).slice(0, 10),
+      tags: [],
       confidence: 0.22,
       method: "weak_fallback",
       visual_evidence_source: "weak_fallback",
+      visual_observation_origin: "weak_fallback",
       location: { city: "", country: "", confidence: 0 },
       landmarks: [],
       location_type: sceneContext.subtheme || "general",

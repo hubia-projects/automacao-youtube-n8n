@@ -29,6 +29,9 @@ const SCORE_WEIGHTS = {
   assetReusePenalty: 4.0,
   windowReusePenalty: 5.0,
   signatureReusePenalty: 3.5,
+  blockSignaturePenalty: 4.5,
+  blockProviderPenalty: 3.0,
+  blockLandmarkPenalty: 3.5,
   blockMismatchPenalty: 8.0,
   genericAssetPenalty: 7.0,
   metadataFallbackPenalty: 4.5,
@@ -212,6 +215,20 @@ const buildReuseSnapshot = ({ usage, candidate }) => {
 const computeReusePenalties = ({ block, candidate, usage, clipIndex }) => {
   const snapshot = buildReuseSnapshot({ usage, candidate });
   const sameAssetLastGap = usage.lastClipByAssetId?.get(candidate.asset_id);
+  const blockKey = block.block_id || "";
+  const provider = String(candidate.source || candidate.asset?.provider || "unknown").toLowerCase();
+  const landmarkKey = normalizeLabel(
+    `${(candidate.landmarks || [])[0]?.name || (candidate.landmarks || [])[0] || ""}|${(candidate.landmarks || [])[0]?.city || candidate.location?.city || ""}`
+  );
+  const blockSignatureCount = blockKey
+    ? Number(usage.usedBlockVisualSignatures?.get(`${blockKey}:${snapshot.signature}`) || 0)
+    : 0;
+  const blockProviderCount = blockKey
+    ? Number(usage.usedBlockProviders?.get(`${blockKey}:${provider}`) || 0)
+    : 0;
+  const blockLandmarkCount = blockKey && landmarkKey
+    ? Number(usage.usedBlockLandmarks?.get(`${blockKey}:${landmarkKey}`) || 0)
+    : 0;
 
   const sourceReusePenalty = clamp(snapshot.sourceUrlCount > 0 ? snapshot.sourceUrlCount / 2 : 0, 0, 1);
   const assetReusePenalty = clamp(snapshot.assetCount > 0 ? snapshot.assetCount / 2 : 0, 0, 1);
@@ -219,13 +236,31 @@ const computeReusePenalties = ({ block, candidate, usage, clipIndex }) => {
   const signatureReusePenalty = clamp(snapshot.signatureCount > 0 ? Math.min(1, snapshot.signatureCount / 2) : 0, 0, 1);
   const minGapPenalty = sameAssetLastGap && clipIndex - sameAssetLastGap < 2 ? 1 : 0;
   const blockOverusePenalty = block.block_id && (usage.usedBlockAssetIds?.get(`${block.block_id}:${candidate.asset_id}`) || 0) > 0.5 ? 0.5 : 0;
+  const blockSignaturePenalty = clamp(blockSignatureCount > 0 ? Math.min(1, blockSignatureCount / 1.5) : 0, 0, 1);
+  const blockProviderPenalty = clamp(blockProviderCount >= 2 ? Math.min(1, (blockProviderCount - 1) / 2) : 0, 0, 1);
+  const blockLandmarkPenalty = clamp(blockLandmarkCount > 0 ? Math.min(1, blockLandmarkCount / 1.5) : 0, 0, 1);
 
   return {
     sourceReusePenalty,
     assetReusePenalty: clamp(assetReusePenalty + blockOverusePenalty + minGapPenalty, 0, 1),
     windowReusePenalty,
     signatureReusePenalty,
-    total: clamp((sourceReusePenalty + assetReusePenalty + windowReusePenalty + signatureReusePenalty) / 4, 0, 1),
+    blockSignaturePenalty,
+    blockProviderPenalty,
+    blockLandmarkPenalty,
+    total: clamp(
+      (
+        sourceReusePenalty
+        + assetReusePenalty
+        + windowReusePenalty
+        + signatureReusePenalty
+        + blockSignaturePenalty
+        + blockProviderPenalty
+        + blockLandmarkPenalty
+      ) / 7,
+      0,
+      1
+    ),
     signature: snapshot.signature,
   };
 };
@@ -423,6 +458,9 @@ const rankCandidates = async ({
       reuse.assetReusePenalty * SCORE_WEIGHTS.assetReusePenalty -
       reuse.windowReusePenalty * SCORE_WEIGHTS.windowReusePenalty -
       reuse.signatureReusePenalty * SCORE_WEIGHTS.signatureReusePenalty -
+      reuse.blockSignaturePenalty * SCORE_WEIGHTS.blockSignaturePenalty -
+      reuse.blockProviderPenalty * SCORE_WEIGHTS.blockProviderPenalty -
+      reuse.blockLandmarkPenalty * SCORE_WEIGHTS.blockLandmarkPenalty -
       blockMismatchPenalty * SCORE_WEIGHTS.blockMismatchPenalty -
       genericAssetPenalty * SCORE_WEIGHTS.genericAssetPenalty -
       metadataFallbackPenalty * SCORE_WEIGHTS.metadataFallbackPenalty -
@@ -470,6 +508,9 @@ const rankCandidates = async ({
         assetReusePenalty: round3(reuse.assetReusePenalty),
         windowReusePenalty: round3(reuse.windowReusePenalty),
         signatureReusePenalty: round3(reuse.signatureReusePenalty),
+        blockSignaturePenalty: round3(reuse.blockSignaturePenalty),
+        blockProviderPenalty: round3(reuse.blockProviderPenalty),
+        blockLandmarkPenalty: round3(reuse.blockLandmarkPenalty),
         blockMismatchPenalty: round3(blockMismatchPenalty),
         genericAssetPenalty: round3(genericAssetPenalty),
         metadataFallbackPenalty: round3(metadataFallbackPenalty),
@@ -514,6 +555,9 @@ const registerClipUsage = ({ usage, block, candidate, clipIndex }) => {
   usage.usedProviders = usage.usedProviders || new Map();
   usage.usedBlockAssetIds = usage.usedBlockAssetIds || new Map();
   usage.usedVisualSignatures = usage.usedVisualSignatures || new Map();
+  usage.usedBlockVisualSignatures = usage.usedBlockVisualSignatures || new Map();
+  usage.usedBlockProviders = usage.usedBlockProviders || new Map();
+  usage.usedBlockLandmarks = usage.usedBlockLandmarks || new Map();
   usage.lastClipByAssetId = usage.lastClipByAssetId || new Map();
 
   if (sourceUrl) usage.usedSourceUrls.set(sourceUrl, (usage.usedSourceUrls.get(sourceUrl) || 0) + 1);
@@ -525,6 +569,16 @@ const registerClipUsage = ({ usage, block, candidate, clipIndex }) => {
   if (block.block_id) {
     const blockKey = `${block.block_id}:${candidate.asset_id}`;
     usage.usedBlockAssetIds.set(blockKey, (usage.usedBlockAssetIds.get(blockKey) || 0) + 1);
+    const signatureKey = `${block.block_id}:${signature}`;
+    usage.usedBlockVisualSignatures.set(signatureKey, (usage.usedBlockVisualSignatures.get(signatureKey) || 0) + 1);
+    const providerKey = `${block.block_id}:${String(provider).toLowerCase()}`;
+    usage.usedBlockProviders.set(providerKey, (usage.usedBlockProviders.get(providerKey) || 0) + 1);
+    const landmark = (candidate.landmarks || [])[0];
+    const landmarkKey = normalizeLabel(`${landmark?.name || landmark || ""}|${landmark?.city || candidate.location?.city || ""}`);
+    if (landmarkKey) {
+      const blockLandmarkKey = `${block.block_id}:${landmarkKey}`;
+      usage.usedBlockLandmarks.set(blockLandmarkKey, (usage.usedBlockLandmarks.get(blockLandmarkKey) || 0) + 1);
+    }
   }
   usage.lastClipByAssetId.set(candidate.asset_id, clipIndex);
 };

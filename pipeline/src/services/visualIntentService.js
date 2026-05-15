@@ -1,6 +1,14 @@
 const { config } = require("../config/env");
 
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
+const WEAK_VISUAL_EVIDENCE_SOURCES = new Set([
+  "metadata_fallback",
+  "weak_fallback",
+  "local_video_understanding_fallback",
+  "local_video_understanding_stub",
+  "disabled",
+  "script_missing",
+]);
 
 const normalizeLabel = (value = "") =>
   String(value || "")
@@ -270,6 +278,11 @@ const buildEvidenceLayers = ({ scene = {}, window = {}, asset = {} } = {}) => {
     visualFeatures: window.visual_features || {},
   });
 
+  const visualEvidenceSource = window.visual_evidence_source || window.method || asset.analysis_provider || "metadata_fallback";
+  const weakObservation = window.visual_observation_origin
+    ? String(window.visual_observation_origin).toLowerCase() === "weak_fallback"
+    : WEAK_VISUAL_EVIDENCE_SOURCES.has(String(visualEvidenceSource || "").toLowerCase());
+
   return {
     search_hypothesis: {
       query: asset.query || "",
@@ -291,7 +304,8 @@ const buildEvidenceLayers = ({ scene = {}, window = {}, asset = {} } = {}) => {
       landmarks: unique((window.landmarks || []).map((item) => item?.name || item).filter(Boolean)),
       visual_features: window.visual_features || {},
       quality: window.quality || {},
-      visual_evidence_source: window.visual_evidence_source || window.method || asset.analysis_provider || "metadata_fallback",
+      visual_evidence_source: visualEvidenceSource,
+      visual_observation_origin: weakObservation ? "weak_fallback" : "real_vision",
       structured_observation: structuredObservation,
     },
   };

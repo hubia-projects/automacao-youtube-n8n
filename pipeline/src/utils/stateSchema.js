@@ -26,6 +26,7 @@ const makeInitialState = ({ videoId, topic = "", angle = "", selectedIdea = null
     assets_json: {
       visual_keywords: [],
       search_queries: [],
+      retrieval_budget: [],
       raw_items: [],
       approved_items: [],
       approved_windows: [],
@@ -102,6 +103,7 @@ const makeInitialState = ({ videoId, topic = "", angle = "", selectedIdea = null
       },
       editorial_metrics: {},
       qa_profile: "strict",
+      qa_runtime_profile: "prod_strict",
       editorial_failure_codes: [],
       publish_blocked: false,
       publish_blocked_codes: [],

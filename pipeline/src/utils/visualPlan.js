@@ -346,19 +346,39 @@ const splitScriptIntoSections = ({ topic = "", scriptText = "", outlineSections 
   return [createSection({ title: "", body: sentences.join(" "), topic, index: 0, totalSections: 1 })];
 };
 
-const chunkSectionBody = (body = "", targetWords = 18) => {
+const shouldBreakForBeatCue = (sentence = "") =>
+  /(numero\s+\d+|agora|depois|em seguida|por fim|no final|fechando|encerrando|closing|hook)/i.test(sentence);
+
+const getBeatTargetWords = ({ sectionType = "body", chunkIndex = 0, sentenceCount = 1 }) => {
+  if (sectionType === "intro") {
+    if (chunkIndex === 0) return 14;
+    return 22;
+  }
+  if (sectionType === "outro") {
+    if (chunkIndex >= Math.max(0, sentenceCount - 2)) return 14;
+    return 20;
+  }
+  if (chunkIndex === 0) return 22;
+  return 17;
+};
+
+const chunkSectionBody = ({ body = "", sectionType = "body" } = {}) => {
   const sentences = sentenceSplit(body);
   if (!sentences.length) return [];
   const chunks = [];
   let current = [];
   let currentWords = 0;
+  let chunkIndex = 0;
 
   sentences.forEach((sentence) => {
     const count = wordCount(sentence);
-    if (current.length && currentWords + count > targetWords) {
+    const targetWords = getBeatTargetWords({ sectionType, chunkIndex, sentenceCount: sentences.length });
+    const forcedBreak = current.length >= 1 && shouldBreakForBeatCue(sentence);
+    if (current.length && (currentWords + count > targetWords || forcedBreak)) {
       chunks.push(current.join(" ").trim());
       current = [sentence];
       currentWords = count;
+      chunkIndex += 1;
       return;
     }
     current.push(sentence);
@@ -386,7 +406,7 @@ const buildVisualPlan = ({ topic = "", scriptText = "", outlineSections = [], vi
 
   sections.forEach((section) => {
     const shots = matchShotsForSection(section.title, visualSuggestions);
-    const chunks = chunkSectionBody(section.body, 18);
+    const chunks = chunkSectionBody({ body: section.body, sectionType: section.section_type });
 
     chunks.forEach((chunk, chunkIndex) => {
       const chunkWords = wordCount(chunk);

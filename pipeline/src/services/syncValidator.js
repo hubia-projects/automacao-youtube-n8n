@@ -29,6 +29,10 @@ const EDITORIAL_QA_PROFILES = {
     blockOnCritical: true,
   },
 };
+const QA_RUNTIME_PROFILES = {
+  prod_strict: "prod_strict",
+  mock_relaxed: "mock_relaxed",
+};
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
 const sha256File = async (filePath = "") => {
@@ -539,6 +543,7 @@ const evaluateVisualIntentCoverage = ({ state = {}, timeline = {} }) => {
 const collectTimelineIssues = ({ timeline, technical, visual, diversityScore }) => {
   const issues = [...(technical.issues || [])];
   const clips = timeline?.clips || [];
+  const runtimeDegraded = Boolean(timeline?.runtime_degraded);
   const fallbackClipCount = clips.filter((clip) => clip.clip_script_source === "scene_fallback").length;
   const metadataFallbackClipCount = clips.filter((clip) => clip.asset_analysis_provider === "metadata_fallback").length;
 
@@ -569,6 +574,13 @@ const collectTimelineIssues = ({ timeline, technical, visual, diversityScore }) 
       severity: "high",
       count: metadataFallbackClipCount,
       ratio: round3(metadataFallbackClipCount / Math.max(1, clips.length)),
+    });
+  }
+  if (runtimeDegraded) {
+    issues.push({
+      type: "runtime_degradation_used",
+      severity: "high",
+      message: "Runtime fallback/degradation foi usado para manter o render executando.",
     });
   }
   return issues;
@@ -987,6 +999,19 @@ const getEditorialQaProfile = () => {
   return EDITORIAL_QA_PROFILES[profileKey] || EDITORIAL_QA_PROFILES.strict;
 };
 
+const resolveQaRuntimeProfile = ({ mockMode = false } = {}) => {
+  const normalize = (value = "", fallback = QA_RUNTIME_PROFILES.prod_strict) => {
+    const profile = String(value || "").toLowerCase();
+    if (profile === QA_RUNTIME_PROFILES.mock_relaxed) return QA_RUNTIME_PROFILES.mock_relaxed;
+    if (profile === QA_RUNTIME_PROFILES.prod_strict) return QA_RUNTIME_PROFILES.prod_strict;
+    return fallback;
+  };
+  if (mockMode) {
+    return normalize(config.QA_RUNTIME_PROFILE_MOCK, QA_RUNTIME_PROFILES.mock_relaxed);
+  }
+  return normalize(config.QA_RUNTIME_PROFILE_PROD, QA_RUNTIME_PROFILES.prod_strict);
+};
+
 const buildProviderReliabilitySnapshot = ({ clips = [] }) => {
   const byProvider = new Map();
   clips.forEach((clip) => {
@@ -1019,6 +1044,7 @@ const buildEditorialFailureCodes = ({
   if (issues.some((issue) => issue.type === "generic_asset_overuse")) codes.push("GENERIC_OVERUSE");
   if (issues.some((issue) => issue.type === "wrong_visual_category")) codes.push("WRONG_VISUAL_CATEGORY");
   if (issues.some((issue) => issue.type === "theme_visual_mismatch")) codes.push("THEME_VISUAL_MISMATCH");
+  if (issues.some((issue) => issue.type === "runtime_degradation_used")) codes.push("RUNTIME_DEGRADATION_USED");
   if (issues.some((issue) => issue.type === "no_proof_for_promise")) {
     codes.push("NO_PROOF_FOR_PROMISE");
   }
@@ -1107,6 +1133,8 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     ? state.assets_json.scene_editorial_readiness
     : [];
   const qaProfile = getEditorialQaProfile();
+  const qaRuntimeProfile = resolveQaRuntimeProfile({ mockMode });
+  const strictRuntimeProfile = qaRuntimeProfile === QA_RUNTIME_PROFILES.prod_strict;
   const failedClipCount = clipAuditRows.filter((row) => row.visual_truth_status === 'fail').length;
   const gate = evaluateClipAuditGate({ clipAuditRows });
   const uncertainRatio = gate.uncertainRatio;
@@ -1152,7 +1180,7 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     Number(diversityScore || 0) * 0.2 -
     coveragePenalty
   )));
-  const needsRegeneration = Boolean(
+  const needsRegenerationStrict = Boolean(
     issues.some((issue) => issue.severity === "critical" || (qaProfile.blockOnHigh && issue.severity === "high"))
     || visual.should_regenerate
     || hardBoundaryStatus === "fail"
@@ -1170,8 +1198,8 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     sceneEditorialReadiness,
   });
   const providerReliability = buildProviderReliabilitySnapshot({ clips: clipAuditRows });
-  const isPublishable =
-    !needsRegeneration
+  const isPublishableStrict =
+    !needsRegenerationStrict
     && qualityScore >= 0.72
     && hardBoundaryStatus === "pass"
     && visualFrameBoundaryStatus === "pass"
@@ -1179,6 +1207,13 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     && gate.uncertainCriticalCount === 0
     && approvedPoolAudit.timeline_uses_approved_pool_only
     && editorialFailureCodes.length === 0;
+  const hasCriticalTechnicalFailure = (technical.issues || []).some((issue) => issue.severity === "critical");
+  const needsRegeneration = strictRuntimeProfile
+    ? needsRegenerationStrict
+    : Boolean(!renderPath || hasCriticalTechnicalFailure);
+  const isPublishable = strictRuntimeProfile
+    ? isPublishableStrict
+    : Boolean(!needsRegeneration && (technical.technical_score || 0) > 0);
 
   const validationResult = {
     video_id: videoId,
@@ -1198,9 +1233,12 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     technical_score: round3(technical.technical_score || 0),
     visual_intent_distribution: visualIntentCoverage.visual_intent_distribution,
     qa_profile: String(config.EDITORIAL_QA_PROFILE || "strict").toLowerCase(),
+    qa_runtime_profile: qaRuntimeProfile,
     editorial_failure_codes: editorialFailureCodes,
-    publish_blocked: !isPublishable,
-    publish_blocked_codes: isPublishable ? [] : editorialFailureCodes,
+    publish_blocked: strictRuntimeProfile ? !isPublishable : false,
+    publish_blocked_codes: strictRuntimeProfile
+      ? (isPublishable ? [] : editorialFailureCodes)
+      : [],
     editorial_metrics: {
       ...editorialTelemetry,
       timeline_uses_approved_pool_only: approvedPoolAudit.timeline_uses_approved_pool_only,
