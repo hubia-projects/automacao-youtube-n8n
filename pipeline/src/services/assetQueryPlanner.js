@@ -31,13 +31,25 @@ const GASTRONOMY_TERMS = [
   "bacalhau",
 ];
 
+const FOOD_GENERIC_NEGATIVE_KEYWORDS = [
+  "skyline",
+  "aerial",
+  "drone",
+  "bridge",
+  "river",
+  "coast",
+  "cityscape",
+  "landmark",
+  "monument",
+  "tram",
+  "viewpoint",
+];
 const GENERIC_TRAVEL_PATTERN = /(skyline|aerial|drone|travel|city street|cityscape|aerial view|bridge|river|coast)/i;
 
-
 const CITY_QUERY_PRESETS = {
-  lisboa: ["lisbon portugal tram","lisbon alfama street","lisbon belem tower","lisbon miradouro","lisbon portugal city view","lisbon azulejo street"],
-  porto: ["porto portugal ribeira","porto douro river","porto dom luis bridge","porto wine cellar","porto historic center","porto cathedral portugal"],
-  faro: ["faro portugal old town","faro marina","ria formosa portugal","faro algarve old town","faro portugal beach islands","algarve lagoon boats"],
+  lisboa: ["lisbon portugal tram", "lisbon alfama street", "lisbon belem tower", "lisbon miradouro", "lisbon portugal city view", "lisbon azulejo street"],
+  porto: ["porto portugal ribeira", "porto douro river", "porto dom luis bridge", "porto wine cellar", "porto historic center", "porto cathedral portugal"],
+  faro: ["faro portugal old town", "faro marina", "ria formosa portugal", "faro algarve old town", "faro portugal beach islands", "algarve lagoon boats"],
 };
 
 const INTENT_QUERY_LIBRARY = {
@@ -183,9 +195,7 @@ const inferRelatedIntents = ({ scene = {}, topic = "" }) => {
     .filter(Boolean)
     .join(" ");
 
-  return unique(
-    INTENT_INFERENCE_PATTERNS.filter((entry) => entry.pattern.test(combined)).map((entry) => entry.intent)
-  );
+  return unique(INTENT_INFERENCE_PATTERNS.filter((entry) => entry.pattern.test(combined)).map((entry) => entry.intent));
 };
 
 const buildSceneKeywordTerms = ({ scene = {} }) =>
@@ -195,35 +205,47 @@ const buildSceneKeywordTerms = ({ scene = {} }) =>
       .filter((keyword) => keyword && keyword.split(/\s+/).length <= 5)
   );
 
-const buildPrioritizedTermEntries = ({ scene = {}, topic = "", intent = "generic_travel" }) => {
-  const relatedIntents = unique([intent, ...inferRelatedIntents({ scene, topic })]);
-  const termEntries = [];
-  const seenTerms = new Set();
+const pushTermEntry = ({ entries, seen, term, reasonToken }) => {
+  const normalizedTerm = normalizeLabel(term);
+  if (!normalizedTerm || seen.has(normalizedTerm)) return;
+  seen.add(normalizedTerm);
+  entries.push({ term: normalizedTerm, reasonToken });
+};
 
-  const pushTermEntry = (term, reasonToken) => {
-    const normalizedTerm = normalizeLabel(term);
-    if (!normalizedTerm || seenTerms.has(normalizedTerm)) return;
-    seenTerms.add(normalizedTerm);
-    termEntries.push({ term: normalizedTerm, reasonToken });
-  };
+const buildTermEntries = ({ scene = {}, topic = "", intent = "generic_travel" }) => {
+  const relatedIntents = unique([intent, ...inferRelatedIntents({ scene, topic })]);
+  const exactEntries = [];
+  const equivalentEntries = [];
+  const seenExact = new Set();
+  const seenEquivalent = new Set();
 
   buildSceneKeywordTerms({ scene }).forEach((term) => {
-    pushTermEntry(term, `scene_keyword_${buildReasonToken(term)}`);
+    pushTermEntry({ entries: exactEntries, seen: seenExact, term, reasonToken: `scene_keyword_${buildReasonToken(term)}` });
   });
 
   relatedIntents.forEach((relatedIntent) => {
     (INTENT_QUERY_LIBRARY[relatedIntent] || []).forEach((term) => {
-      pushTermEntry(term, `required_${buildReasonToken(term)}${relatedIntent !== intent ? `_via_${buildReasonToken(relatedIntent)}` : ""}`);
+      pushTermEntry({
+        entries: exactEntries,
+        seen: seenExact,
+        term,
+        reasonToken: `required_${buildReasonToken(term)}${relatedIntent !== intent ? `_via_${buildReasonToken(relatedIntent)}` : ""}`,
+      });
     });
   });
 
   relatedIntents.forEach((relatedIntent) => {
     (INTENT_EQUIVALENT_QUERY_LIBRARY[relatedIntent] || []).forEach((term) => {
-      pushTermEntry(term, `equivalent_${buildReasonToken(term)}${relatedIntent !== intent ? `_via_${buildReasonToken(relatedIntent)}` : ""}`);
+      pushTermEntry({
+        entries: equivalentEntries,
+        seen: seenEquivalent,
+        term,
+        reasonToken: `equivalent_${buildReasonToken(term)}${relatedIntent !== intent ? `_via_${buildReasonToken(relatedIntent)}` : ""}`,
+      });
     });
   });
 
-  return termEntries;
+  return { exactEntries, equivalentEntries };
 };
 
 const isValidQueryForScene = ({ query = "", scene = {} }) => {
@@ -242,6 +264,98 @@ const pushQuery = ({ entries, seen, query, reason, scene }) => {
   entries.push({ query: normalizedQuery, reason });
 };
 
+const shouldUseCityPresets = ({ scene = {}, intent = "generic_travel" }) =>
+  !isFoodIntent(intent) || Boolean(scene.generic_asset_allowed) || ["intro", "outro"].includes(String(scene.role || "body").toLowerCase());
+
+const buildFoodQueries = ({ entries, seen, cityTerms, countryTerms, exactEntries, equivalentEntries, intent, scene }) => {
+  cityTerms.forEach((cityTerm) => {
+    exactEntries.forEach(({ term, reasonToken }) => {
+      pushQuery({
+        entries,
+        seen,
+        query: `${cityTerm} ${term}`,
+        reason: `exact_city_${buildReasonToken(cityTerm)}_${reasonToken}`,
+        scene,
+      });
+    });
+  });
+
+  countryTerms.forEach((countryTerm) => {
+    exactEntries.forEach(({ term, reasonToken }) => {
+      pushQuery({
+        entries,
+        seen,
+        query: `${countryTerm} ${term}`,
+        reason: `regional_country_${buildReasonToken(countryTerm)}_${reasonToken}`,
+        scene,
+      });
+    });
+  });
+
+  exactEntries.forEach(({ term, reasonToken }) => {
+    pushQuery({
+      entries,
+      seen,
+      query: term,
+      reason: `fallback_exact_${intent}_${reasonToken}`,
+      scene,
+    });
+  });
+
+  countryTerms.forEach((countryTerm) => {
+    equivalentEntries.forEach(({ term, reasonToken }) => {
+      pushQuery({
+        entries,
+        seen,
+        query: `${countryTerm} ${term}`,
+        reason: `regional_equivalent_${buildReasonToken(countryTerm)}_${reasonToken}`,
+        scene,
+      });
+    });
+  });
+
+  equivalentEntries.forEach(({ term, reasonToken }) => {
+    pushQuery({
+      entries,
+      seen,
+      query: term,
+      reason: `fallback_equivalent_${intent}_${reasonToken}`,
+      scene,
+    });
+  });
+};
+
+const buildGeneralQueries = ({ entries, seen, cityTerms, countryTerms, scene, intent }) => {
+  const generalTerms = unique([
+    scene.subtheme || "travel",
+    ...buildSceneKeywordTerms({ scene }).slice(0, 4),
+  ]);
+
+  cityTerms.forEach((cityTerm) => {
+    generalTerms.forEach((term) => {
+      pushQuery({
+        entries,
+        seen,
+        query: `${cityTerm} ${term}`,
+        reason: `visual_intent_${intent} + city_${buildReasonToken(cityTerm)} + subtheme_${buildReasonToken(term)}`,
+        scene,
+      });
+    });
+  });
+
+  countryTerms.forEach((countryTerm) => {
+    generalTerms.forEach((term) => {
+      pushQuery({
+        entries,
+        seen,
+        query: `${countryTerm} ${term}`,
+        reason: `visual_intent_${intent} + country_${buildReasonToken(countryTerm)} + subtheme_${buildReasonToken(term)}`,
+        scene,
+      });
+    });
+  });
+};
+
 const buildSceneQueryPlan = ({ scene = {}, topic = "" }) => {
   const entries = [];
   const seen = new Set();
@@ -251,19 +365,12 @@ const buildSceneQueryPlan = ({ scene = {}, topic = "" }) => {
   const role = String(scene.role || "body").toLowerCase();
   const isHardBoundaryScene = Boolean(scene.hard_boundary && (scene.transition_type === "hard" || scene.chapter_card_required));
   const expectedLocation = normalizeLabel(scene.expected_location || scene.location?.city || scene.block_label || "");
-  const prioritizedTermEntries = buildPrioritizedTermEntries({ scene, topic, intent });
-  const negativeKeywords = unique([...(scene.negative_keywords || []), ...(scene.forbidden_locations || [])]);
-
-  const cityPreset = CITY_QUERY_PRESETS[expectedLocation] || [];
-  cityPreset.forEach((query, index) => {
-    pushQuery({
-      entries,
-      seen,
-      query,
-      reason: `city_preset_${expectedLocation}_${index + 1}`,
-      scene,
-    });
-  });
+  const { exactEntries, equivalentEntries } = buildTermEntries({ scene, topic, intent });
+  const negativeKeywords = unique([
+    ...(scene.negative_keywords || []),
+    ...(scene.forbidden_locations || []),
+    ...(isFoodIntent(intent) ? FOOD_GENERIC_NEGATIVE_KEYWORDS : []),
+  ]);
 
   if (isHardBoundaryScene && expectedLocation) {
     pushQuery({
@@ -271,90 +378,46 @@ const buildSceneQueryPlan = ({ scene = {}, topic = "" }) => {
       seen,
       query: `${expectedLocation} city intro establishing shot`,
       reason: `hard_boundary_block_intro_asset_${buildReasonToken(expectedLocation)}`,
-      scene,
-    });
-    pushQuery({
-      entries,
-      seen,
-      query: `${expectedLocation} chapter transition card`,
-      reason: `hard_boundary_chapter_card_clip_${buildReasonToken(expectedLocation)}`,
       scene: { ...scene, generic_asset_allowed: true },
     });
   }
 
   if (isFoodIntent(intent)) {
-    cityTerms.forEach((cityTerm) => {
-      prioritizedTermEntries.forEach(({ term, reasonToken }) => {
-        pushQuery({
-          entries,
-          seen,
-          query: `${cityTerm} ${term}`,
-          reason: `visual_intent_${intent} + city_${buildReasonToken(cityTerm)} + ${reasonToken}`,
-          scene,
-        });
-      });
-    });
+    buildFoodQueries({ entries, seen, cityTerms, countryTerms, exactEntries, equivalentEntries, intent, scene });
 
-    countryTerms.forEach((countryTerm) => {
-      prioritizedTermEntries.forEach(({ term, reasonToken }) => {
-        pushQuery({
-          entries,
-          seen,
-          query: `${countryTerm} ${term}`,
-          reason: `visual_intent_${intent} + country_${buildReasonToken(countryTerm)} + ${reasonToken}`,
-          scene,
-        });
-      });
-    });
-
-    prioritizedTermEntries.forEach(({ term, reasonToken }) => {
+    if (isHardBoundaryScene && expectedLocation) {
       pushQuery({
         entries,
         seen,
-        query: term,
-        reason: `visual_intent_${intent} + fallback_specific_${reasonToken}`,
-        scene,
+        query: `${expectedLocation} chapter transition card`,
+        reason: `hard_boundary_chapter_card_clip_${buildReasonToken(expectedLocation)}`,
+        scene: { ...scene, generic_asset_allowed: true },
       });
-    });
+    }
 
-    if (role === "intro" || role === "outro") {
+    if (["intro", "outro"].includes(role)) {
       cityTerms.forEach((cityTerm) => {
         pushQuery({
           entries,
           seen,
           query: `${cityTerm} food city overview`,
-          reason: `visual_intent_${intent} + establishing_${buildReasonToken(cityTerm)}`,
+          reason: `editorial_bridge_${buildReasonToken(cityTerm)}_${intent}`,
           scene: { ...scene, generic_asset_allowed: true },
         });
       });
     }
   } else {
-    const generalTerms = unique([
-      scene.subtheme || "travel",
-      ...buildSceneKeywordTerms({ scene }).slice(0, 4),
-    ]);
+    buildGeneralQueries({ entries, seen, cityTerms, countryTerms, scene, intent });
+  }
 
-    cityTerms.forEach((cityTerm) => {
-      generalTerms.forEach((term) => {
-        pushQuery({
-          entries,
-          seen,
-          query: `${cityTerm} ${term}`,
-          reason: `visual_intent_${intent} + city_${buildReasonToken(cityTerm)} + subtheme_${buildReasonToken(term)}`,
-          scene,
-        });
-      });
-    });
-
-    countryTerms.forEach((countryTerm) => {
-      generalTerms.forEach((term) => {
-        pushQuery({
-          entries,
-          seen,
-          query: `${countryTerm} ${term}`,
-          reason: `visual_intent_${intent} + country_${buildReasonToken(countryTerm)} + subtheme_${buildReasonToken(term)}`,
-          scene,
-        });
+  if (shouldUseCityPresets({ scene, intent })) {
+    (CITY_QUERY_PRESETS[expectedLocation] || []).forEach((query, index) => {
+      pushQuery({
+        entries,
+        seen,
+        query,
+        reason: `city_preset_${expectedLocation}_${index + 1}`,
+        scene,
       });
     });
   }
@@ -365,7 +428,7 @@ const buildSceneQueryPlan = ({ scene = {}, topic = "" }) => {
     negativeKeywords,
     hardBoundaryScene: isHardBoundaryScene,
     searchReason: isFoodIntent(intent)
-      ? `visual_intent_${intent} + required_visual_evidence`
+      ? `visual_intent_${intent} + exact_then_regional_then_equivalent`
       : `visual_intent_${intent} + entity_keywords`,
     specificIntentRequired: isFoodIntent(intent) && !scene.generic_asset_allowed,
   };
