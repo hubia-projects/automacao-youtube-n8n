@@ -23,8 +23,17 @@ const chooseScenesForAssetRefresh = ({
   const visualPlan = Array.isArray(state?.visual_plan) ? state.visual_plan : [];
   const timelineClips = Array.isArray(state?.render_timeline?.clips) ? state.render_timeline.clips : [];
   const qaSceneIndexes = state?.render_validation?.scene_indexes_to_refresh || state?.render_validation?.regeneration_plan?.scene_indexes_to_refresh;
+  const editorialSceneIndexesFromQa = unique(
+    (state?.render_validation?.critical_slot_audit || [])
+      .filter((entry) => entry.status === "fail")
+      .map((entry) => Number(entry.scene_index || 0))
+      .filter((sceneIndex) => sceneIndex > 0)
+  );
   if (Array.isArray(qaSceneIndexes) && qaSceneIndexes.length) {
-    return unique(qaSceneIndexes.map((sceneIndex) => Number(sceneIndex || 0)).filter((sceneIndex) => sceneIndex > 0)).slice(0, maxSceneCount);
+    return unique([
+      ...qaSceneIndexes.map((sceneIndex) => Number(sceneIndex || 0)).filter((sceneIndex) => sceneIndex > 0),
+      ...editorialSceneIndexesFromQa,
+    ]).slice(0, maxSceneCount);
   }
 
   const sceneIndexes = new Set(visualPlan.map((scene) => Number(scene.scene_index || 0)).filter((sceneIndex) => sceneIndex > 0));
@@ -40,10 +49,19 @@ const chooseScenesForAssetRefresh = ({
       assetKeys: new Set(),
       windowKeys: new Set(),
       clipCount: 0,
+      editorialFlags: 0,
     };
 
     metrics.scores.push(Number((clip.timeline_score ?? clip.composite_score ?? clip.semantic_match_score) || 0));
     metrics.clipCount += 1;
+    if (
+      clip.editorial_slot_ok === false
+      || clip.visual_truth_status === "uncertain"
+      || clip.visual_truth_status === "wrong"
+      || (clip.critical_slot === true && clip.visual_truth_status !== "exact" && clip.visual_truth_status !== "regional")
+    ) {
+      metrics.editorialFlags += 1;
+    }
     if (clip.local_path) metrics.assetKeys.add(String(clip.local_path));
     if (clip.asset_window_summary || clip.asset_window_start_seconds || clip.asset_window_end_seconds) {
       metrics.windowKeys.add(
@@ -67,13 +85,19 @@ const chooseScenesForAssetRefresh = ({
         assetKeys: new Set(),
         windowKeys: new Set(),
         clipCount: 0,
+        editorialFlags: 0,
       };
       const averageScore = metrics.scores.length ? average(metrics.scores) : 0;
       const assetDiversity = metrics.assetKeys.size;
       const windowDiversity = metrics.windowKeys.size;
       const lowConfidence = metrics.scores.length ? averageScore < lowConfidenceThreshold : true;
       const heavyReuse = metrics.clipCount > 1 && (assetDiversity <= 1 || windowDiversity <= 1);
-      const rankingScore = averageScore - (heavyReuse ? 0.6 : 0) - (metrics.clipCount === 0 ? 0.8 : 0);
+      const editorialFailure = metrics.editorialFlags > 0;
+      const rankingScore =
+        averageScore
+        - (heavyReuse ? 0.6 : 0)
+        - (metrics.clipCount === 0 ? 0.8 : 0)
+        - (editorialFailure ? 0.95 : 0);
 
       return {
         scene_index: sceneIndex,
@@ -85,6 +109,7 @@ const chooseScenesForAssetRefresh = ({
         clipCount: metrics.clipCount,
         lowConfidence,
         heavyReuse,
+        editorialFailure,
         rankingScore,
       };
     })
@@ -94,7 +119,7 @@ const chooseScenesForAssetRefresh = ({
     return [];
   }
 
-  const flaggedCandidates = candidates.filter((candidate) => candidate.lowConfidence || candidate.heavyReuse);
+  const flaggedCandidates = candidates.filter((candidate) => candidate.lowConfidence || candidate.heavyReuse || candidate.editorialFailure);
   const desiredCount = Math.min(
     Math.max(1, candidates.length),
     Math.max(1, Math.min(maxSceneCount, flaggedCandidates.length ? Math.max(minSceneCount, flaggedCandidates.length) : minSceneCount))

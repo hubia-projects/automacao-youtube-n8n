@@ -7,6 +7,7 @@ const {
   normalizeLabel,
 } = require("./narrativeBlockPlanner");
 const { evaluateVisualEvidence } = require("./visualIntentService");
+const { SOURCE_TIER_PRIORITY } = require("../config/editorialPolicy");
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
@@ -161,6 +162,17 @@ const computeDarkFramePenalty = (candidate = {}) => {
   return brightness < 0.28 ? clamp((0.28 - brightness) / 0.28, 0, 1) : 0;
 };
 
+const computeEditorialContractPenalty = ({ candidate = {}, isBoundaryFirstSlot = false, slotRole = "" }) => {
+  const approved = candidate.editorial_approved === true || candidate.approved === true;
+  if (!approved) return 1;
+
+  if (isBoundaryFirstSlot && candidate.critical_slot_allowed === false) return 1;
+  if (slotRole === "opening_establishing" && candidate.opening_allowed === false) return 1;
+  if (slotRole === "closing_payoff" && candidate.closing_allowed === false) return 1;
+
+  return 0;
+};
+
 const computeGenericAssetPenalty = ({ block, candidate }) => {
   const text = normalizeLabel(`${candidate.description || ""} ${candidate.semantic_text || ""} ${(candidate.tags || []).join(" ")}`);
   if (candidate.neutral) return 0.5;
@@ -233,6 +245,7 @@ const computeHardBoundaryBlockReason = ({
   previousMacroTopic,
   hardBoundaryPolicy = {},
   isBoundaryFirstSlot = false,
+  slotRole = "",
 }) => {
   if (!block.hard_boundary || !isBoundaryFirstSlot) return "";
 
@@ -265,6 +278,30 @@ const computeHardBoundaryIntroBonus = ({ block, candidate, isBoundaryFirstSlot =
   return 0;
 };
 
+const computeSourceTierScore = ({ candidate = {}, criticalSlot = false, providerReliability = {} }) => {
+  const tier = String(candidate.source_tier || "free").toLowerCase();
+  const tierIndex = SOURCE_TIER_PRIORITY.indexOf(tier);
+  const tierWeight = tierIndex === -1 ? 0 : (SOURCE_TIER_PRIORITY.length - tierIndex) / SOURCE_TIER_PRIORITY.length;
+  const provider = String(candidate.source || candidate.asset?.provider || "unknown").toLowerCase();
+  const reliability = clamp(Number(providerReliability[provider] || 0.5), 0, 1);
+
+  let score = tierWeight * 0.7 + reliability * 0.3;
+  if (criticalSlot && (tier === "premium" || tier === "curated")) score += 0.15;
+  if (criticalSlot && tier === "generated") score -= 0.35;
+  return clamp(score, 0, 1);
+};
+
+const computeSourceTierPenalty = ({ candidate = {}, criticalSlot = false }) => {
+  if (!criticalSlot) return 0;
+  const tier = String(candidate.source_tier || "free").toLowerCase();
+  const status = String(candidate.visual_truth_status || "uncertain").toLowerCase();
+  const confidence = Number(candidate.editorial_confidence || candidate.confidence || 0);
+  if (tier === "premium" || tier === "curated") return 0;
+  if (tier === "free" && (status === "exact" || (status === "regional" && confidence >= 0.8))) return 0.15;
+  if (tier === "free") return 0.55;
+  return 0.8;
+};
+
 const buildRejectedReasons = (components = {}) => {
   const reasons = [];
   if (components.blockMismatchPenalty >= 1) reasons.push("wrong_block");
@@ -288,6 +325,9 @@ const rankCandidates = async ({
   clipIndex = 1,
   hardBoundaryPolicy = {},
   isBoundaryFirstSlot = false,
+  slotRole = "",
+  criticalSlot = false,
+  providerReliability = {},
 }) => {
   const ranked = [];
   const semanticScores = await computeSemanticScores({ narrationText, candidates, videoId });
@@ -349,6 +389,8 @@ const rankCandidates = async ({
       isBoundaryFirstSlot,
     });
     const hardBoundaryIntroBonus = computeHardBoundaryIntroBonus({ block, candidate, isBoundaryFirstSlot });
+    const sourceTierScore = computeSourceTierScore({ candidate, criticalSlot, providerReliability });
+    const sourceTierPenalty = computeSourceTierPenalty({ candidate, criticalSlot });
     const hardBlocked = Boolean(hardBoundaryBlockReason);
     const genericAssetPenalty = hardRejection.reason === "generic_visual_for_specific_intent"
       ? 1
@@ -356,6 +398,11 @@ const rankCandidates = async ({
     const forbiddenCategoryPenalty = clamp(Number(evidence.forbidden_category_penalty || 0), 0, 1);
     const metadataFallbackPenalty = weakMetadataEvidence && specificIntentRequiresStrongEvidence ? 1 : weakMetadataEvidence ? 0.35 : 0;
     const darkFramePenalty = computeDarkFramePenalty(candidate);
+    const editorialContractPenalty = computeEditorialContractPenalty({
+      candidate,
+      isBoundaryFirstSlot,
+      slotRole,
+    });
 
     const rawScore =
       semantic.score * SCORE_WEIGHTS.semanticScore +
@@ -368,8 +415,9 @@ const rankCandidates = async ({
       evidenceSourceScore * SCORE_WEIGHTS.evidenceSourceScore +
       resolutionScore * SCORE_WEIGHTS.resolutionScore +
       motionScore * SCORE_WEIGHTS.motionScore +
-      confidenceScore * SCORE_WEIGHTS.confidenceScore -
-      hardBoundaryIntroBonus +
+      confidenceScore * SCORE_WEIGHTS.confidenceScore +
+      sourceTierScore * 2.2 +
+      hardBoundaryIntroBonus -
       forbiddenCategoryPenalty * SCORE_WEIGHTS.forbiddenCategoryPenalty -
       reuse.sourceReusePenalty * SCORE_WEIGHTS.sourceReusePenalty -
       reuse.assetReusePenalty * SCORE_WEIGHTS.assetReusePenalty -
@@ -378,7 +426,9 @@ const rankCandidates = async ({
       blockMismatchPenalty * SCORE_WEIGHTS.blockMismatchPenalty -
       genericAssetPenalty * SCORE_WEIGHTS.genericAssetPenalty -
       metadataFallbackPenalty * SCORE_WEIGHTS.metadataFallbackPenalty -
-      darkFramePenalty * SCORE_WEIGHTS.darkFramePenalty;
+      darkFramePenalty * SCORE_WEIGHTS.darkFramePenalty -
+      sourceTierPenalty * 7 -
+      editorialContractPenalty * 12;
 
     const reasons = buildRejectedReasons({
       semanticScore: semantic.score,
@@ -424,7 +474,10 @@ const rankCandidates = async ({
         genericAssetPenalty: round3(genericAssetPenalty),
         metadataFallbackPenalty: round3(metadataFallbackPenalty),
         darkFramePenalty: round3(darkFramePenalty),
+        editorialContractPenalty: round3(editorialContractPenalty),
         hardBoundaryIntroBonus: round3(hardBoundaryIntroBonus),
+        sourceTierScore: round3(sourceTierScore),
+        sourceTierPenalty: round3(sourceTierPenalty),
         reusePenalty: round3(reuse.total),
         detectedVisualCategories: evidence.detected_visual_categories,
         missingRequiredVisualEvidence: evidence.missing_required_visual_evidence,
@@ -491,6 +544,8 @@ module.exports = {
     computeBlockMismatchPenalty,
     computeHardBoundaryBlockReason,
     computeHardBoundaryIntroBonus,
+    computeSourceTierScore,
+    computeSourceTierPenalty,
     computeGenericAssetPenalty,
     computeGastronomySpecificityScore,
     computeDarkFramePenalty,

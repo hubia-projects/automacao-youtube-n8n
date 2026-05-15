@@ -1,0 +1,856 @@
+{
+  "video_id": "security_test_1778805463673",
+  "clip_audit": [
+    {
+      "clip_index": 1,
+      "expected_block": "Introducao",
+      "expected_location": "Introducao",
+      "frame_timestamps": [
+        2.171
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\clip-1-2_171.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "Lisbon",
+      "vision_confidence": 0.8,
+      "visual_truth_status": "fail",
+      "visual_truth_reason": "vision detected mismatched location",
+      "source_url": "",
+      "query_used": "portugal portugal food travel",
+      "provider": "pexels",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": true,
+      "narrative_role_selected": "hook_exact",
+      "scene_index": 1,
+      "editorial_slot_ok": false,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\security_test_1778805463673\\assets\\raw\\scene-01-01-pexels.mp4:w01"
+    },
+    {
+      "clip_index": 2,
+      "expected_block": "Introducao",
+      "expected_location": "Introducao",
+      "frame_timestamps": [
+        6.514
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\clip-2-6_514.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "landscape",
+      "vision_confidence": 0.5,
+      "visual_truth_status": "fail",
+      "visual_truth_reason": "vision detected mismatched location",
+      "source_url": "",
+      "query_used": "portugal portugal wine tasting",
+      "provider": "pexels",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": false,
+      "narrative_role_selected": "proof_exact",
+      "scene_index": 1,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\security_test_1778805463673\\assets\\raw\\scene-05-01-pexels.mp4:w01"
+    },
+    {
+      "clip_index": 3,
+      "expected_block": "Introducao",
+      "expected_location": "Introducao",
+      "frame_timestamps": [
+        10.857
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\clip-3-10_857.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "unknown",
+      "vision_confidence": 0.6,
+      "visual_truth_status": "fail",
+      "visual_truth_reason": "vision detected mismatched location",
+      "source_url": "",
+      "query_used": "portugal portugal food travel",
+      "provider": "pexels",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": false,
+      "narrative_role_selected": "opening_establishing",
+      "scene_index": 1,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\security_test_1778805463673\\assets\\raw\\scene-01-02-pexels.mp4:w01"
+    },
+    {
+      "clip_index": 4,
+      "expected_block": "Lisboa",
+      "expected_location": "Lisboa",
+      "frame_timestamps": [
+        15.2
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\clip-4-15_2.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "Lisbon",
+      "vision_confidence": 0.8,
+      "visual_truth_status": "pass",
+      "visual_truth_reason": "vision confirmed expected location",
+      "source_url": "",
+      "query_used": "portugal portugal food travel",
+      "provider": "pexels",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": true,
+      "narrative_role_selected": "proof_exact",
+      "scene_index": 2,
+      "editorial_slot_ok": false,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\security_test_1778805463673\\assets\\raw\\scene-01-01-pexels.mp4:w01"
+    },
+    {
+      "clip_index": 5,
+      "expected_block": "Lisboa",
+      "expected_location": "Lisboa",
+      "frame_timestamps": [
+        19.542
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\clip-5-19_542.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "beverage",
+      "vision_confidence": 0.7,
+      "visual_truth_status": "fail",
+      "visual_truth_reason": "vision detected mismatched location",
+      "source_url": "",
+      "query_used": "portugal portugal wine tasting",
+      "provider": "pexels",
+      "out_of_domain_asset": true,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": false,
+      "narrative_role_selected": "context_regional",
+      "scene_index": 2,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\security_test_1778805463673\\assets\\raw\\scene-05-02-pexels.mp4:w01"
+    },
+    {
+      "clip_index": 6,
+      "expected_block": "Lisboa",
+      "expected_location": "Lisboa",
+      "frame_timestamps": [
+        23.885
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\clip-6-23_885.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "landscape",
+      "vision_confidence": 0,
+      "visual_truth_status": "fail",
+      "visual_truth_reason": "vision detected mismatched location",
+      "source_url": "",
+      "query_used": "portugal portugal wine tasting",
+      "provider": "pexels",
+      "out_of_domain_asset": true,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": false,
+      "narrative_role_selected": "bridge_neutral_short",
+      "scene_index": 2,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\security_test_1778805463673\\assets\\raw\\scene-05-03-pexels.mp4:w01"
+    },
+    {
+      "clip_index": 7,
+      "expected_block": "Porto",
+      "expected_location": "Porto",
+      "frame_timestamps": [
+        28.227
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\clip-7-28_227.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "Lisbon",
+      "vision_confidence": 0.8,
+      "visual_truth_status": "fail",
+      "visual_truth_reason": "vision detected mismatched location",
+      "source_url": "",
+      "query_used": "portugal portugal food travel",
+      "provider": "pexels",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": true,
+      "narrative_role_selected": "proof_exact",
+      "scene_index": 3,
+      "editorial_slot_ok": false,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\security_test_1778805463673\\assets\\raw\\scene-01-01-pexels.mp4:w01"
+    },
+    {
+      "clip_index": 8,
+      "expected_block": "Porto",
+      "expected_location": "Porto",
+      "frame_timestamps": [
+        32.57
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\clip-8-32_57.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "landscape",
+      "vision_confidence": 0.8,
+      "visual_truth_status": "fail",
+      "visual_truth_reason": "vision detected mismatched location",
+      "source_url": "",
+      "query_used": "portugal portugal wine tasting",
+      "provider": "pexels",
+      "out_of_domain_asset": true,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": false,
+      "narrative_role_selected": "context_regional",
+      "scene_index": 3,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\security_test_1778805463673\\assets\\raw\\scene-05-04-pexels.mp4:w01"
+    },
+    {
+      "clip_index": 9,
+      "expected_block": "Porto",
+      "expected_location": "Porto",
+      "frame_timestamps": [
+        36.913
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\clip-9-36_913.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "vineyard",
+      "vision_confidence": 0,
+      "visual_truth_status": "fail",
+      "visual_truth_reason": "vision detected mismatched location",
+      "source_url": "",
+      "query_used": "portugal portugal wine tasting",
+      "provider": "pexels",
+      "out_of_domain_asset": true,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": false,
+      "narrative_role_selected": "bridge_neutral_short",
+      "scene_index": 3,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\security_test_1778805463673\\assets\\raw\\scene-05-05-pexels.mp4:w01"
+    },
+    {
+      "clip_index": 10,
+      "expected_block": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "expected_location": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "frame_timestamps": [
+        41.255
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\clip-10-41_255.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "Porto",
+      "vision_confidence": 0.9,
+      "visual_truth_status": "fail",
+      "visual_truth_reason": "vision detected mismatched location",
+      "source_url": "",
+      "query_used": "portugal food montage",
+      "provider": "pexels",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": true,
+      "narrative_role_selected": "proof_exact",
+      "scene_index": 4,
+      "editorial_slot_ok": false,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\security_test_1778805463673\\assets\\raw\\scene-06-02-pexels.mp4:w01"
+    },
+    {
+      "clip_index": 11,
+      "expected_block": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "expected_location": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "frame_timestamps": [
+        45.599
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\clip-11-45_599.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "Lisbon",
+      "vision_confidence": 0.8,
+      "visual_truth_status": "fail",
+      "visual_truth_reason": "vision detected mismatched location",
+      "source_url": "",
+      "query_used": "portugal food montage",
+      "provider": "pexels",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": false,
+      "narrative_role_selected": "context_regional",
+      "scene_index": 4,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\security_test_1778805463673\\assets\\raw\\scene-06-03-pexels.mp4:w01"
+    },
+    {
+      "clip_index": 12,
+      "expected_block": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "expected_location": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "frame_timestamps": [
+        49.941
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\clip-12-49_941.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "Porto",
+      "vision_confidence": 0.8,
+      "visual_truth_status": "fail",
+      "visual_truth_reason": "vision detected mismatched location",
+      "source_url": "",
+      "query_used": "portugal food montage",
+      "provider": "pexels",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": false,
+      "narrative_role_selected": "bridge_neutral_short",
+      "scene_index": 4,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\security_test_1778805463673\\assets\\raw\\scene-06-04-pexels.mp4:w01"
+    },
+    {
+      "clip_index": 13,
+      "expected_block": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "expected_location": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "frame_timestamps": [
+        54.284
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\clip-13-54_284.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "Porto",
+      "vision_confidence": 0.8,
+      "visual_truth_status": "fail",
+      "visual_truth_reason": "vision detected mismatched location",
+      "source_url": "",
+      "query_used": "portugal food montage",
+      "provider": "pexels",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": true,
+      "narrative_role_selected": "proof_exact",
+      "scene_index": 5,
+      "editorial_slot_ok": false,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\security_test_1778805463673\\assets\\raw\\scene-06-05-pexels.mp4:w01"
+    },
+    {
+      "clip_index": 14,
+      "expected_block": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "expected_location": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "frame_timestamps": [
+        58.627
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\clip-14-58_627.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "landscape",
+      "vision_confidence": 0.6,
+      "visual_truth_status": "fail",
+      "visual_truth_reason": "vision detected mismatched location",
+      "source_url": "",
+      "query_used": "portugal portugal wine tasting",
+      "provider": "pexels",
+      "out_of_domain_asset": true,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": false,
+      "narrative_role_selected": "context_regional",
+      "scene_index": 5,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\security_test_1778805463673\\assets\\raw\\scene-05-01-pexels.mp4:w02"
+    },
+    {
+      "clip_index": 15,
+      "expected_block": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "expected_location": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "frame_timestamps": [
+        62.969
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\clip-15-62_969.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "Douro",
+      "vision_confidence": 0.85,
+      "visual_truth_status": "fail",
+      "visual_truth_reason": "vision detected mismatched location",
+      "source_url": "",
+      "query_used": "portugal portugal wine tasting",
+      "provider": "pexels",
+      "out_of_domain_asset": true,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": false,
+      "narrative_role_selected": "bridge_neutral_short",
+      "scene_index": 5,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\security_test_1778805463673\\assets\\raw\\scene-05-02-pexels.mp4:w02"
+    },
+    {
+      "clip_index": 16,
+      "expected_block": "Fechamento",
+      "expected_location": "Fechamento",
+      "frame_timestamps": [
+        67.311
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\clip-16-67_311.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "Porto",
+      "vision_confidence": 0.8,
+      "visual_truth_status": "fail",
+      "visual_truth_reason": "vision detected mismatched location",
+      "source_url": "",
+      "query_used": "portugal portugal food travel",
+      "provider": "pexels",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": true,
+      "narrative_role_selected": "proof_exact",
+      "scene_index": 6,
+      "editorial_slot_ok": false,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\security_test_1778805463673\\assets\\raw\\scene-01-05-pexels.mp4:w01"
+    },
+    {
+      "clip_index": 17,
+      "expected_block": "Fechamento",
+      "expected_location": "Fechamento",
+      "frame_timestamps": [
+        71.654
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\clip-17-71_654.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "Porto",
+      "vision_confidence": 0.9,
+      "visual_truth_status": "fail",
+      "visual_truth_reason": "vision detected mismatched location",
+      "source_url": "",
+      "query_used": "portugal portugal food travel",
+      "provider": "pexels",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": false,
+      "narrative_role_selected": "detail_cutaway",
+      "scene_index": 6,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\security_test_1778805463673\\assets\\raw\\scene-01-02-pexels.mp4:w02"
+    },
+    {
+      "clip_index": 18,
+      "expected_block": "Fechamento",
+      "expected_location": "Fechamento",
+      "frame_timestamps": [
+        75.997
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\clip-18-75_997.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "river",
+      "vision_confidence": 0,
+      "visual_truth_status": "fail",
+      "visual_truth_reason": "vision detected mismatched location",
+      "source_url": "",
+      "query_used": "portugal portugal wine tasting",
+      "provider": "pexels",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": true,
+      "narrative_role_selected": "closing_payoff",
+      "scene_index": 6,
+      "editorial_slot_ok": false,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\security_test_1778805463673\\assets\\raw\\scene-05-03-pexels.mp4:w02"
+    }
+  ],
+  "boundary_audit": [
+    {
+      "boundary_id": "hb_002_lisboa",
+      "expected_location": "Lisboa",
+      "frame_timestamp": 13.128,
+      "vision_detected_location": "Lisbon",
+      "vision_confidence": 0.8,
+      "metadata_location": "",
+      "visual_truth_status": "pass",
+      "frame_path": "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\boundary-hb_002_lisboa-13_128.jpg"
+    },
+    {
+      "boundary_id": "hb_002_lisboa",
+      "expected_location": "Lisboa",
+      "frame_timestamp": 13.528,
+      "vision_detected_location": "Lisbon",
+      "vision_confidence": 0.8,
+      "metadata_location": "",
+      "visual_truth_status": "pass",
+      "frame_path": "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\boundary-hb_002_lisboa-13_528.jpg"
+    },
+    {
+      "boundary_id": "hb_002_lisboa",
+      "expected_location": "Lisboa",
+      "frame_timestamp": 14.028,
+      "vision_detected_location": "Lisbon",
+      "vision_confidence": 0.8,
+      "metadata_location": "",
+      "visual_truth_status": "pass",
+      "frame_path": "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\boundary-hb_002_lisboa-14_028.jpg"
+    },
+    {
+      "boundary_id": "hb_003_porto",
+      "expected_location": "Porto",
+      "frame_timestamp": 26.156,
+      "vision_detected_location": "Lisbon",
+      "vision_confidence": 0.8,
+      "metadata_location": "",
+      "visual_truth_status": "fail",
+      "frame_path": "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\boundary-hb_003_porto-26_156.jpg"
+    },
+    {
+      "boundary_id": "hb_003_porto",
+      "expected_location": "Porto",
+      "frame_timestamp": 26.556,
+      "vision_detected_location": "Lisbon",
+      "vision_confidence": 0.8,
+      "metadata_location": "",
+      "visual_truth_status": "fail",
+      "frame_path": "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\boundary-hb_003_porto-26_556.jpg"
+    },
+    {
+      "boundary_id": "hb_003_porto",
+      "expected_location": "Porto",
+      "frame_timestamp": 27.056,
+      "vision_detected_location": "Lisbon",
+      "vision_confidence": 0.9,
+      "metadata_location": "",
+      "visual_truth_status": "fail",
+      "frame_path": "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\boundary-hb_003_porto-27_056.jpg"
+    },
+    {
+      "boundary_id": "hb_004_portugal-gastronomico-lisboa-porto-mercados-e-vinhos",
+      "expected_location": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "frame_timestamp": 39.184,
+      "vision_detected_location": "Porto",
+      "vision_confidence": 0.85,
+      "metadata_location": "",
+      "visual_truth_status": "fail",
+      "frame_path": "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\boundary-hb_004_portugal-gastronomico-lisboa-porto-mercados-e-vinhos-39_184.jpg"
+    },
+    {
+      "boundary_id": "hb_004_portugal-gastronomico-lisboa-porto-mercados-e-vinhos",
+      "expected_location": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "frame_timestamp": 39.584,
+      "vision_detected_location": "Porto",
+      "vision_confidence": 0.9,
+      "metadata_location": "",
+      "visual_truth_status": "fail",
+      "frame_path": "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\boundary-hb_004_portugal-gastronomico-lisboa-porto-mercados-e-vinhos-39_584.jpg"
+    },
+    {
+      "boundary_id": "hb_004_portugal-gastronomico-lisboa-porto-mercados-e-vinhos",
+      "expected_location": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "frame_timestamp": 40.084,
+      "vision_detected_location": "Porto",
+      "vision_confidence": 0.9,
+      "metadata_location": "",
+      "visual_truth_status": "fail",
+      "frame_path": "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\boundary-hb_004_portugal-gastronomico-lisboa-porto-mercados-e-vinhos-40_084.jpg"
+    },
+    {
+      "boundary_id": "hb_006_fechamento",
+      "expected_location": "Fechamento",
+      "frame_timestamp": 65.24,
+      "vision_detected_location": "Porto",
+      "vision_confidence": 0.8,
+      "metadata_location": "",
+      "visual_truth_status": "fail",
+      "frame_path": "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\boundary-hb_006_fechamento-65_24.jpg"
+    },
+    {
+      "boundary_id": "hb_006_fechamento",
+      "expected_location": "Fechamento",
+      "frame_timestamp": 65.64,
+      "vision_detected_location": "Porto",
+      "vision_confidence": 0.85,
+      "metadata_location": "",
+      "visual_truth_status": "fail",
+      "frame_path": "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\boundary-hb_006_fechamento-65_64.jpg"
+    },
+    {
+      "boundary_id": "hb_006_fechamento",
+      "expected_location": "Fechamento",
+      "frame_timestamp": 66.14,
+      "vision_detected_location": "Porto",
+      "vision_confidence": 0.85,
+      "metadata_location": "",
+      "visual_truth_status": "fail",
+      "frame_path": "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\boundary-hb_006_fechamento-66_14.jpg"
+    }
+  ],
+  "overlay_audit": [
+    {
+      "text": "1. Introducao",
+      "timestamp": 0.5,
+      "state_overlay_exists": true,
+      "frame_overlay_detected": false,
+      "frame_path": "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\overlay-block_title-0_5.jpg",
+      "status": "fail"
+    },
+    {
+      "text": "2. Lisboa",
+      "timestamp": 13.528,
+      "state_overlay_exists": true,
+      "frame_overlay_detected": false,
+      "frame_path": "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\overlay-chapter_card_clip-13_528.jpg",
+      "status": "fail"
+    },
+    {
+      "text": "3. Porto",
+      "timestamp": 26.556,
+      "state_overlay_exists": true,
+      "frame_overlay_detected": false,
+      "frame_path": "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\overlay-chapter_card_clip-26_556.jpg",
+      "status": "fail"
+    },
+    {
+      "text": "4. Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "timestamp": 39.584,
+      "state_overlay_exists": true,
+      "frame_overlay_detected": false,
+      "frame_path": "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\overlay-chapter_card_clip-39_584.jpg",
+      "status": "fail"
+    },
+    {
+      "text": "5. Fechamento",
+      "timestamp": 65.64,
+      "state_overlay_exists": true,
+      "frame_overlay_detected": false,
+      "frame_path": "pipeline\\test_reports\\security_test_1778805463673-visual-evidence\\overlay-chapter_card_clip-65_64.jpg",
+      "status": "fail"
+    }
+  ],
+  "editorial_metrics": {
+    "exact_ratio": 0,
+    "regional_ratio": 1,
+    "generic_ratio": 0,
+    "uncertain_ratio": 0,
+    "uncertain_critical_ratio": 0,
+    "critical_slots_covered": 0,
+    "critical_slots_total": 6,
+    "scene_editorial_readiness": [
+      {
+        "scene_index": 1,
+        "visual_intent": "gastronomy",
+        "editorial_niche": "gastronomy",
+        "total_approved_windows": 13,
+        "exact_windows": 0,
+        "regional_windows": 13,
+        "generic_windows": 0,
+        "uncertain_windows": 0,
+        "critical_slots_required": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening",
+          "intro",
+          "hook"
+        ],
+        "critical_slots_missing": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening",
+          "intro",
+          "hook"
+        ],
+        "critical_slots_covered": 0,
+        "critical_slots_total": 5,
+        "max_generic_windows_by_policy": 5,
+        "ready": false,
+        "blocking": true,
+        "blocking_reasons": [
+          "critical_slots_uncovered"
+        ]
+      },
+      {
+        "scene_index": 2,
+        "visual_intent": "gastronomy",
+        "editorial_niche": "gastronomy",
+        "total_approved_windows": 0,
+        "exact_windows": 0,
+        "regional_windows": 0,
+        "generic_windows": 0,
+        "uncertain_windows": 0,
+        "critical_slots_required": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening"
+        ],
+        "critical_slots_missing": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening"
+        ],
+        "critical_slots_covered": 0,
+        "critical_slots_total": 3,
+        "max_generic_windows_by_policy": 1,
+        "ready": false,
+        "blocking": true,
+        "blocking_reasons": [
+          "missing_exact_for_required_proof",
+          "critical_slots_uncovered",
+          "no_proof_for_promise"
+        ]
+      },
+      {
+        "scene_index": 3,
+        "visual_intent": "gastronomy",
+        "editorial_niche": "gastronomy",
+        "total_approved_windows": 0,
+        "exact_windows": 0,
+        "regional_windows": 0,
+        "generic_windows": 0,
+        "uncertain_windows": 0,
+        "critical_slots_required": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening"
+        ],
+        "critical_slots_missing": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening"
+        ],
+        "critical_slots_covered": 0,
+        "critical_slots_total": 3,
+        "max_generic_windows_by_policy": 1,
+        "ready": false,
+        "blocking": true,
+        "blocking_reasons": [
+          "missing_exact_for_required_proof",
+          "critical_slots_uncovered",
+          "no_proof_for_promise"
+        ]
+      },
+      {
+        "scene_index": 4,
+        "visual_intent": "gastronomy",
+        "editorial_niche": "gastronomy",
+        "total_approved_windows": 0,
+        "exact_windows": 0,
+        "regional_windows": 0,
+        "generic_windows": 0,
+        "uncertain_windows": 0,
+        "critical_slots_required": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening"
+        ],
+        "critical_slots_missing": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening"
+        ],
+        "critical_slots_covered": 0,
+        "critical_slots_total": 3,
+        "max_generic_windows_by_policy": 1,
+        "ready": false,
+        "blocking": true,
+        "blocking_reasons": [
+          "missing_exact_for_required_proof",
+          "critical_slots_uncovered",
+          "no_proof_for_promise"
+        ]
+      },
+      {
+        "scene_index": 5,
+        "visual_intent": "gastronomy",
+        "editorial_niche": "gastronomy",
+        "total_approved_windows": 19,
+        "exact_windows": 0,
+        "regional_windows": 19,
+        "generic_windows": 0,
+        "uncertain_windows": 0,
+        "critical_slots_required": [
+          "first_clip_of_block"
+        ],
+        "critical_slots_missing": [
+          "first_clip_of_block"
+        ],
+        "critical_slots_covered": 0,
+        "critical_slots_total": 1,
+        "max_generic_windows_by_policy": 7,
+        "ready": false,
+        "blocking": true,
+        "blocking_reasons": [
+          "critical_slots_uncovered"
+        ]
+      },
+      {
+        "scene_index": 6,
+        "visual_intent": "gastronomy",
+        "editorial_niche": "gastronomy",
+        "total_approved_windows": 19,
+        "exact_windows": 0,
+        "regional_windows": 19,
+        "generic_windows": 0,
+        "uncertain_windows": 0,
+        "critical_slots_required": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening",
+          "closing"
+        ],
+        "critical_slots_missing": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening",
+          "closing"
+        ],
+        "critical_slots_covered": 0,
+        "critical_slots_total": 4,
+        "max_generic_windows_by_policy": 7,
+        "ready": false,
+        "blocking": true,
+        "blocking_reasons": [
+          "critical_slots_uncovered"
+        ]
+      }
+    ],
+    "timeline_uses_approved_pool_only": true,
+    "approved_pool_audit": {
+      "timeline_uses_approved_pool_only": true,
+      "invalid_clip_count": 0,
+      "missing_approved_window_id_count": 0,
+      "invalid_rows": [],
+      "approved_pool_size": 51
+    }
+  },
+  "approved_pool_audit": {
+    "timeline_uses_approved_pool_only": true,
+    "invalid_clip_count": 0,
+    "missing_approved_window_id_count": 0,
+    "invalid_rows": [],
+    "approved_pool_size": 51
+  },
+  "provider_reliability": {
+    "unknown": 0.056
+  },
+  "resolution_audit": {
+    "ffprobe_width": 1920,
+    "ffprobe_height": 1080,
+    "state_output_resolution": ""
+  },
+  "final_decision": {
+    "is_publishable": false,
+    "needs_manual_review": true,
+    "final_hard_boundary_status": "fail",
+    "editorial_failure_codes": [
+      "CRITICAL_SLOT_NOT_CONFIRMED",
+      "NO_PROOF_FOR_PROMISE"
+    ]
+  }
+}

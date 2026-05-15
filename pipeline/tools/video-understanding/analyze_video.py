@@ -39,7 +39,7 @@ def probe_duration(input_path: str) -> float:
 
 def build_windows(duration: float, window_seconds: int, max_windows: int, asset_metadata: Dict[str, Any], scene_context: Dict[str, Any]) -> List[Dict[str, Any]]:
     duration = max(float(window_seconds), float(duration or 0))
-    query = str(asset_metadata.get("semantic_text") or asset_metadata.get("query") or scene_context.get("narration_excerpt") or scene_context.get("title") or "travel footage")
+    query = "visual evidence unavailable - weak fallback"
     tags = []
     for source in [asset_metadata.get("provider_tags", []), scene_context.get("keywords", [])]:
         if isinstance(source, list):
@@ -58,8 +58,9 @@ def build_windows(duration: float, window_seconds: int, max_windows: int, asset_
                 "end_seconds": round(max(cursor + 1, end), 3),
                 "summary": query,
                 "tags": tags[:10],
-                "confidence": 0.4,
-                "method": "local_video_understanding_stub",
+                "confidence": 0.22,
+                "method": "weak_fallback",
+                "visual_evidence_source": "weak_fallback",
                 "location": {"city": "", "country": "", "confidence": 0.0},
                 "landmarks": [],
                 "location_type": scene_context.get("subtheme") or "general",
@@ -88,7 +89,7 @@ def main() -> int:
     windows = build_windows(duration, args.window_seconds, args.max_windows, asset_metadata, scene_context)
 
     payload = {
-        "analysis_provider": "local_video_understanding",
+        "analysis_provider": "weak_fallback",
         "analysis_window_seconds": args.window_seconds,
         "analysis_summary": windows[0]["summary"] if windows else "travel footage",
         "analysis_tags": list(dict.fromkeys([tag for window in windows for tag in window.get("tags", [])]))[:16],

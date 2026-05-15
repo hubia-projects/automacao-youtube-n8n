@@ -242,7 +242,7 @@ const pushQuery = ({ entries, seen, query, reason, scene }) => {
   entries.push({ query: normalizedQuery, reason });
 };
 
-const buildSceneQueryPlan = ({ scene = {}, topic = "" }) => {
+const buildSceneQueryPlan = ({ scene = {}, topic = "", repairHints = {} }) => {
   const entries = [];
   const seen = new Set();
   const cityTerms = getCitySearchTerms(scene);
@@ -252,7 +252,11 @@ const buildSceneQueryPlan = ({ scene = {}, topic = "" }) => {
   const isHardBoundaryScene = Boolean(scene.hard_boundary && (scene.transition_type === "hard" || scene.chapter_card_required));
   const expectedLocation = normalizeLabel(scene.expected_location || scene.location?.city || scene.block_label || "");
   const prioritizedTermEntries = buildPrioritizedTermEntries({ scene, topic, intent });
-  const negativeKeywords = unique([...(scene.negative_keywords || []), ...(scene.forbidden_locations || [])]);
+  const negativeKeywords = unique([
+    ...(scene.negative_keywords || []),
+    ...(scene.forbidden_locations || []),
+    ...(repairHints.extra_negative_keywords || []),
+  ]);
 
   const cityPreset = CITY_QUERY_PRESETS[expectedLocation] || [];
   cityPreset.forEach((query, index) => {
@@ -359,10 +363,31 @@ const buildSceneQueryPlan = ({ scene = {}, topic = "" }) => {
     });
   }
 
+  const repairBiasQueries = [];
+  const targetNarrativeRoles = unique(repairHints.target_narrative_roles || []);
+  if (targetNarrativeRoles.includes("proof_exact") && expectedLocation) {
+    repairBiasQueries.push(`${expectedLocation} real close up authentic scene`);
+  }
+  if (targetNarrativeRoles.includes("hook_exact") && expectedLocation) {
+    repairBiasQueries.push(`${expectedLocation} iconic exact location cinematic`);
+  }
+  repairBiasQueries.forEach((query, index) => {
+    pushQuery({
+      entries,
+      seen,
+      query,
+      reason: `repair_bias_${index + 1}`,
+      scene,
+    });
+  });
+
   return {
     queries: entries.map((entry) => entry.query),
     queryDetails: entries,
     negativeKeywords,
+    preferredProviders: unique(repairHints.preferred_providers || []),
+    targetNarrativeRoles,
+    forceExactRequired: Boolean(repairHints.force_exact_required),
     hardBoundaryScene: isHardBoundaryScene,
     searchReason: isFoodIntent(intent)
       ? `visual_intent_${intent} + required_visual_evidence`

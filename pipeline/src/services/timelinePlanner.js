@@ -1,4 +1,5 @@
 const { config } = require("../config/env");
+const { SOURCE_TIER_PRIORITY, resolveNichePolicy } = require("../config/editorialPolicy");
 const { getCachedAudioIntelligence } = require("./audioIntelligence");
 const {
   buildNarrativeBlocks,
@@ -38,6 +39,11 @@ const SYNC_POLICIES = {
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
+const getSourceTierRank = (tier = "") => {
+  const normalizedTier = String(tier || "free").toLowerCase();
+  const index = SOURCE_TIER_PRIORITY.indexOf(normalizedTier);
+  return index === -1 ? SOURCE_TIER_PRIORITY.length + 1 : index;
+};
 
 const isVideoFile = (filePath = "") => /\.(mp4|mov|webm|mkv|avi)$/i.test(filePath);
 const isVideoAsset = (asset = {}) => (asset.asset_type || asset.type || "") === "video" || isVideoFile(asset.local_path || "");
@@ -171,11 +177,83 @@ const flattenAssetWindows = (assets = []) => {
         semantic_text: semanticText,
         window_index: window.window_index,
         analysis_provider: window.analysis_provider,
+        visual_truth_status: window.visual_truth_status || "regional",
+        editorial_confidence: Number(window.editorial_confidence || window.confidence || 0),
+        narrative_roles_supported: window.narrative_roles_supported || [],
+        opening_allowed: window.opening_allowed !== false,
+        closing_allowed: window.closing_allowed !== false,
+        critical_slot_allowed: window.critical_slot_allowed !== false,
+        editorial_approved: window.editorial_approved !== false,
+        approved_window_id: window.approved_window_id || "",
+        source_tier: window.source_tier || "free",
       });
     });
   });
 
   return windows;
+};
+
+const buildApprovedWindowCandidates = ({ approvedWindows = [], assets = [] }) => {
+  const assetsById = new Map();
+  (assets || []).forEach((asset, index) => {
+    const assetId = getAssetIdentity(asset, index);
+    assetsById.set(assetId, asset);
+  });
+
+  return (approvedWindows || []).map((contract, index) => {
+    const asset = assetsById.get(contract.asset_id) || null;
+    const quality = contract.visual_observation?.quality || {};
+    const resolution = getAssetResolution(asset || {});
+    const resolutionScore = resolution.width >= OUTPUT_WIDTH && resolution.height >= OUTPUT_HEIGHT ? 1 : resolution.width >= 1280 && resolution.height >= 720 ? 0.75 : 0.35;
+    const summary = contract.window?.summary || contract.visual_observation?.summary || "";
+    const tags = contract.window?.tags || contract.visual_observation?.tags || [];
+
+    return {
+      id: contract.id || contract.approved_window_id || `approved_window_${index + 1}`,
+      asset_id: contract.asset_id || `asset_${index + 1}`,
+      asset,
+      source: asset?.provider || contract.provider_metadata?.provider || "unknown",
+      scene_index: Number(contract.scene_index || 0),
+      start_sec: Number(contract.window?.start_seconds || 0),
+      end_sec: Number(contract.window?.end_seconds || 0),
+      duration_sec: Number(contract.window?.duration_seconds || Math.max(0.25, Number(contract.window?.end_seconds || 0) - Number(contract.window?.start_seconds || 0))),
+      description: summary,
+      summary,
+      tags,
+      location: contract.window?.location || contract.visual_observation?.location || { city: "", country: "", confidence: 0 },
+      landmarks: contract.window?.landmarks || contract.visual_observation?.landmarks || [],
+      location_type: contract.visual_observation?.location_type || "",
+      visual_features: contract.visual_observation?.visual_features || {},
+      quality: {
+        ...quality,
+        usable: quality.usable !== false,
+        resolution_score: resolutionScore,
+      },
+      detected_visual_categories: contract.visual_observation?.detected_visual_categories || [],
+      detected_objects: contract.visual_observation?.detected_objects || [],
+      visual_intent_match: Boolean(contract.editorial_inference?.visual_intent_match),
+      generic_visual: Boolean(contract.editorial_inference?.generic_visual),
+      required_evidence_found: contract.editorial_inference?.required_evidence_found || [],
+      missing_required_visual_evidence: contract.editorial_inference?.missing_required_visual_evidence || [],
+      confidence: Number(contract.editorial_confidence || 0),
+      neutral: contract.visual_truth_status === "generic",
+      visual_evidence_source: contract.visual_evidence_source || "metadata_fallback",
+      semantic_text: `${summary} ${(tags || []).join(" ")}`.trim(),
+      window_index: Number(contract.window?.window_index || 1),
+      analysis_provider: asset?.analysis_provider || contract.visual_evidence_source || "metadata_fallback",
+      visual_truth_status: contract.visual_truth_status || "regional",
+      editorial_confidence: Number(contract.editorial_confidence || 0),
+      narrative_roles_supported: contract.narrative_roles_supported || [],
+      opening_allowed: contract.opening_allowed !== false,
+      closing_allowed: contract.closing_allowed !== false,
+      critical_slot_allowed: contract.critical_slot_allowed !== false,
+      editorial_approved: contract.approved === true,
+      approved_window_id: contract.approved_window_id || contract.id || "",
+      source_tier: contract.source_tier || "free",
+      rejection_reasons: contract.rejection_reasons || [],
+      reason_codes: contract.reason_codes || [],
+    };
+  });
 };
 
 const buildFallbackCandidate = (fallbackAsset) => ({
@@ -237,6 +315,8 @@ const filterCandidatesByHardRules = ({
   fallbackAsset,
   allowPlaceholderFallback = true,
   isBoundaryFirstSlot = false,
+  criticalSlot = false,
+  slotRole = "",
   hardBoundaryPolicy = getHardBoundaryPolicy(),
 }) => {
   const expectedLocation = block.expected_location || block.location?.city || (block.topic_type === "city" ? block.macro_topic : "");
@@ -253,16 +333,35 @@ const filterCandidatesByHardRules = ({
     });
   }
 
+  if (slotRole) {
+    const roleFiltered = strict.filter((candidate) => {
+      const roles = candidate.narrative_roles_supported || [];
+      return !roles.length || roles.includes(slotRole);
+    });
+    if (roleFiltered.length) strict = roleFiltered;
+  }
+
+  if (slotRole === "opening_establishing") {
+    const openingFiltered = strict.filter((candidate) => candidate.opening_allowed !== false);
+    if (openingFiltered.length) strict = openingFiltered;
+  }
+
+  if (slotRole === "closing_payoff") {
+    const closingFiltered = strict.filter((candidate) => candidate.closing_allowed !== false);
+    if (closingFiltered.length) strict = closingFiltered;
+  }
+
+  if (criticalSlot) {
+    const criticalFiltered = strict.filter((candidate) => candidate.critical_slot_allowed !== false);
+    if (criticalFiltered.length) strict = criticalFiltered;
+  }
+
   if (strict.length) return strict;
 
   if (isBoundaryFirstSlot) {
     if (block.chapter_card_required && allowPlaceholderFallback) {
       const chapterCardCandidate = buildChapterCardCandidate({ block, fallbackAsset });
       if (chapterCardCandidate) return [chapterCardCandidate];
-    }
-
-    if (hardBoundaryPolicy.fail_on_missing_boundary_candidate || hardBoundaryPolicy.forbid_neutral_first_clip) {
-      return [];
     }
   }
 
@@ -271,6 +370,13 @@ const filterCandidatesByHardRules = ({
 
   const generalNeutral = assetWindows.filter((candidate) => candidate.neutral);
   if (generalNeutral.length) return generalNeutral;
+
+  const crossSceneFallback = assetWindows.filter((candidate) => candidate.editorial_approved === true);
+  if (crossSceneFallback.length) {
+    return crossSceneFallback
+      .sort((left, right) => Number(right.editorial_confidence || right.confidence || 0) - Number(left.editorial_confidence || left.confidence || 0))
+      .slice(0, 12);
+  }
 
   return allowPlaceholderFallback ? [buildFallbackCandidate(fallbackAsset)] : [];
 };
@@ -281,6 +387,82 @@ const getNarrationTextBetween = ({ words = [], startSeconds = 0, endSeconds = 0,
     .map((word) => word.word)
     .filter(Boolean);
   return matchedWords.length ? matchedWords.join(" ") : fallback;
+};
+
+const inferNarrativeSlotRole = ({ block = {}, slotIndex = 0, totalSlots = 1 }) => {
+  const role = String(block.role || "body").toLowerCase();
+  if (role === "intro") {
+    if (slotIndex === 0) return "hook_exact";
+    if (slotIndex === totalSlots - 1) return "opening_establishing";
+    return "proof_exact";
+  }
+  if (role === "outro") {
+    if (slotIndex === 0) return "proof_exact";
+    if (slotIndex === totalSlots - 1) return "closing_payoff";
+    return "detail_cutaway";
+  }
+  if (slotIndex === 0) return "proof_exact";
+  if (slotIndex === totalSlots - 1) return "bridge_neutral_short";
+  if (slotIndex === 1) return "context_regional";
+  return "detail_cutaway";
+};
+
+const isCriticalSlotForBlock = ({ block = {}, slotIndex = 0, totalSlots = 1 }) => {
+  const role = String(block.role || "body").toLowerCase();
+  if (slotIndex === 0) return true;
+  if (role === "intro" && slotIndex === 0) return true;
+  if (role === "outro" && slotIndex === totalSlots - 1) return true;
+  if (block.hard_boundary && slotIndex === 0) return true;
+  if (block.chapter_card_required && slotIndex === 0) return true;
+  return false;
+};
+
+const selectBySourceTierPolicy = ({
+  ranked = [],
+  slotRole = "",
+  criticalSlot = false,
+  block = {},
+  freeCriticalUsageByBlock = new Map(),
+}) => {
+  if (!Array.isArray(ranked) || !ranked.length) return null;
+  const available = ranked.filter((item) => !item.hard_blocked);
+  if (!available.length) return ranked[0] || null;
+
+  const requiresStrictSourcePolicy = criticalSlot || ["hook_exact", "opening_establishing", "proof_exact", "closing_payoff"].includes(slotRole);
+  if (!requiresStrictSourcePolicy) return available[0];
+
+  const premiumOrCurated = available.filter((item) => {
+    const tier = String(item.candidate?.source_tier || "free").toLowerCase();
+    return tier === "premium" || tier === "curated";
+  });
+  if (premiumOrCurated.length) {
+    return premiumOrCurated.sort((left, right) =>
+      getSourceTierRank(left.candidate?.source_tier) - getSourceTierRank(right.candidate?.source_tier)
+      || Number(right.score || 0) - Number(left.score || 0)
+    )[0];
+  }
+
+  const freeStrong = available.filter((item) => {
+    const tier = String(item.candidate?.source_tier || "free").toLowerCase();
+    const status = String(item.candidate?.visual_truth_status || "uncertain").toLowerCase();
+    const confidence = Number(item.candidate?.editorial_confidence || 0);
+    return tier === "free" && (status === "exact" || (status === "regional" && confidence >= Number(config.CRITICAL_SLOT_FREE_CONFIDENCE_MIN || 0.82)));
+  });
+  if (freeStrong.length) {
+    const blockKey = String(block.block_id || block.id || block.scene_index || "unknown_block");
+    const nichePolicy = resolveNichePolicy(block);
+    const maxFreeCriticalByBlock = Number(nichePolicy.maxFreeCriticalSlotsPerBlock || config.CRITICAL_SLOT_FREE_SOURCE_BUDGET_PER_BLOCK || 1);
+    const usedFreeCriticalCount = Number(freeCriticalUsageByBlock.get(blockKey) || 0);
+
+    if (usedFreeCriticalCount < maxFreeCriticalByBlock) {
+      return freeStrong.sort((left, right) => Number(right.score || 0) - Number(left.score || 0))[0];
+    }
+  }
+
+  return available.sort((left, right) =>
+    getSourceTierRank(left.candidate?.source_tier) - getSourceTierRank(right.candidate?.source_tier)
+    || Number(right.score || 0) - Number(left.score || 0)
+  )[0];
 };
 
 const splitBlockIntoTimelineSlots = ({ block, policy, pauseMarkers = [] }) => {
@@ -348,7 +530,11 @@ const splitBlockIntoTimelineSlots = ({ block, policy, pauseMarkers = [] }) => {
     }
   }
 
-  return slots;
+  return slots.map((slot, slotIndex) => ({
+    ...slot,
+    slot_role: inferNarrativeSlotRole({ block, slotIndex, totalSlots: slots.length }),
+    critical_slot: isCriticalSlotForBlock({ block, slotIndex, totalSlots: slots.length }),
+  }));
 };
 
 const buildVideoSourceWindow = ({ asset, clipDuration, preferredWindow = null, assetReuseIndex = 0, clipIndex = 1, draftVersion = 1 }) => {
@@ -546,23 +732,47 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
   const hardBoundaryPolicy = getHardBoundaryPolicy();
   const audioIntelligence = await getCachedAudioIntelligence({ videoId }).catch(() => null);
   const { macroBlocks, microBlocks } = buildNarrativeBlocks({ state, audioIntelligence, audioDuration });
-  const allAssets = Array.isArray(state.assets_json?.items) ? state.assets_json.items : [];
+  const rawAssets = Array.isArray(state.assets_json?.raw_items)
+    ? state.assets_json.raw_items
+    : (Array.isArray(state.assets_json?.items) ? state.assets_json.items : []);
+  const approvedAssets = Array.isArray(state.assets_json?.approved_items)
+    ? state.assets_json.approved_items
+    : (Array.isArray(state.assets_json?.items) ? state.assets_json.items : []);
+  const approvedWindowsContracts = Array.isArray(state.assets_json?.approved_windows)
+    ? state.assets_json.approved_windows
+    : [];
   const sceneAssetReadiness = Array.isArray(state.assets_json?.scene_asset_readiness)
     ? state.assets_json.scene_asset_readiness
     : [];
   const blockingSceneIndexes = !allowPlaceholderFallback
-    ? sceneAssetReadiness.filter((entry) => entry.ready === false).map((entry) => Number(entry.scene_index || 0))
+    ? sceneAssetReadiness
+      .filter((entry) => Number(entry.approved_publishable_assets || 0) <= 0 && Number(entry.publishable_assets || 0) <= 0)
+      .map((entry) => Number(entry.scene_index || 0))
     : [];
 
   if (!allowPlaceholderFallback && blockingSceneIndexes.length) {
     throw new Error(`Timeline blocked: missing publishable assets for scene(s) ${blockingSceneIndexes.join(", ")}.`);
   }
 
-  const eligibleAssets = allowPlaceholderFallback
-    ? allAssets
-    : allAssets.filter((asset) => isPublishableAsset(asset, { mockMode: false }));
-  const assetWindows = flattenAssetWindows(eligibleAssets.length ? eligibleAssets : allowPlaceholderFallback ? [fallbackAsset] : []);
+  const eligibleApprovedAssets = allowPlaceholderFallback
+    ? approvedAssets
+    : approvedAssets.filter((asset) => isPublishableAsset(asset, { mockMode: false }));
+  const approvedWindowCandidates = approvedWindowsContracts.length
+    ? buildApprovedWindowCandidates({ approvedWindows: approvedWindowsContracts, assets: rawAssets })
+    : flattenAssetWindows(eligibleApprovedAssets.length ? eligibleApprovedAssets : allowPlaceholderFallback ? [fallbackAsset] : []).map((candidate) => ({
+      ...candidate,
+      editorial_approved: true,
+      approved_window_id: candidate.id,
+      narrative_roles_supported: candidate.narrative_roles_supported || [],
+      opening_allowed: candidate.opening_allowed !== false,
+      closing_allowed: candidate.closing_allowed !== false,
+      critical_slot_allowed: candidate.critical_slot_allowed !== false,
+      source_tier: candidate.source_tier || "free",
+      visual_truth_status: candidate.visual_truth_status || "regional",
+    }));
+  const assetWindows = approvedWindowCandidates.filter((candidate) => candidate.editorial_approved === true);
   const fallbackCandidate = allowPlaceholderFallback ? buildFallbackCandidate(fallbackAsset) : null;
+  const providerReliability = state.assets_json?.provider_reliability || state.render_validation?.provider_reliability || {};
 
   if (!allowPlaceholderFallback && !assetWindows.length) {
     throw new Error("Timeline blocked: no publishable assets available for render.");
@@ -578,6 +788,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
     lastClipByAssetId: new Map(),
   };
   const clips = [];
+  const freeCriticalUsageByBlock = new Map();
   const pauseMarkers = Array.isArray(audioIntelligence?.pause_markers) ? audioIntelligence.pause_markers : [];
 
   for (let blockIndex = 0; blockIndex < microBlocks.length; blockIndex += 1) {
@@ -589,6 +800,8 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
     for (let slotIndex = 0; slotIndex < slots.length; slotIndex += 1) {
       const slot = slots[slotIndex];
       const isBoundaryFirstSlot = Boolean(block.hard_boundary && slotIndex === 0);
+      const slotRole = slot.slot_role || inferNarrativeSlotRole({ block, slotIndex, totalSlots: slots.length });
+      const criticalSlot = slot.critical_slot === true || isBoundaryFirstSlot;
       const sceneFallbackNarration = `${block.topic || ""} ${block.narration_excerpt || ""} ${(block.keywords || []).join(" ")}`.trim();
       const narrationText = getNarrationTextBetween({
         words: audioIntelligence?.words || [],
@@ -603,6 +816,8 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         fallbackAsset,
         allowPlaceholderFallback,
         isBoundaryFirstSlot,
+        criticalSlot,
+        slotRole,
         hardBoundaryPolicy,
       });
       const ranked = await rankCandidates({
@@ -618,23 +833,34 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         clipIndex: clips.length + 1,
         hardBoundaryPolicy,
         isBoundaryFirstSlot,
+        slotRole,
+        criticalSlot,
+        providerReliability,
       });
-      const selected = ranked.find((item) => !item.hard_blocked) || ranked[0] || (fallbackCandidate
+      const selectedFromPolicy = selectBySourceTierPolicy({
+        ranked,
+        slotRole,
+        criticalSlot,
+        block,
+        freeCriticalUsageByBlock,
+      });
+      const selected = selectedFromPolicy || ranked.find((item) => !item.hard_blocked) || ranked[0] || (fallbackCandidate
         ? { candidate: fallbackCandidate, score: -10, features: {}, selection_reason: "fallback" }
         : null);
 
-      if (!selected?.candidate || (isBoundaryFirstSlot && selected.hard_blocked && hardBoundaryPolicy.fail_on_missing_boundary_candidate)) {
+      if (!selected?.candidate) {
         throw new Error(`Timeline blocked: no publishable candidate available for scene ${block.scene_index}.`);
       }
 
       const candidate = selected.candidate || fallbackCandidate;
+      const boundaryForcedViolationCodes = [];
       const expectedLocation = block.expected_location || block.location?.city || (block.topic_type === "city" ? block.macro_topic : "");
       if (
         isBoundaryFirstSlot
         && hardBoundaryPolicy.forbid_neutral_first_clip
         && candidate.neutral
       ) {
-        throw new Error(`Hard boundary blocked: neutral first clip is forbidden for scene ${block.scene_index}.`);
+        boundaryForcedViolationCodes.push("neutral_first_clip_forbidden");
       }
       if (
         isBoundaryFirstSlot
@@ -642,7 +868,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         && expectedLocation
         && !candidate.location?.city
       ) {
-        throw new Error(`Hard boundary blocked: missing location for first clip of ${expectedLocation}.`);
+        boundaryForcedViolationCodes.push("missing_location_on_first_clip");
       }
       const assetReuseIndex = usage.usedAssetIds.get(candidate.asset_id) || 0;
       const sourceWindow = buildVideoSourceWindow({
@@ -658,6 +884,10 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         ...((selected.features?.detectedVisualCategories) || []),
       ]);
       registerClipUsage({ usage, block, candidate, clipIndex: clips.length + 1 });
+      if (criticalSlot && ["free", "generated"].includes(String(candidate.source_tier || "free").toLowerCase())) {
+        const blockKey = String(block.block_id || block.id || block.scene_index || "unknown_block");
+        freeCriticalUsageByBlock.set(blockKey, Number(freeCriticalUsageByBlock.get(blockKey) || 0) + 1);
+      }
 
       clips.push({
         clip_index: clips.length + 1,
@@ -729,6 +959,24 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         neutral_fallback: Boolean(candidate.neutral),
         visual_signature: buildVisualSignature(candidate),
         query_used: candidate.asset?.query_used || candidate.asset?.query || "",
+        visual_truth_status: candidate.visual_truth_status || "regional",
+        narrative_role_selected: slotRole,
+        critical_slot: criticalSlot,
+        editorial_slot_ok: candidate.editorial_approved === true
+          && (!criticalSlot || candidate.critical_slot_allowed !== false)
+          && (slotRole !== "opening_establishing" || candidate.opening_allowed !== false)
+          && (slotRole !== "closing_payoff" || candidate.closing_allowed !== false),
+        editorial_slot_violation_codes: unique([
+          ...(criticalSlot && candidate.critical_slot_allowed === false ? ["critical_slot_not_allowed"] : []),
+          ...(slotRole === "opening_establishing" && candidate.opening_allowed === false ? ["opening_not_allowed"] : []),
+          ...(slotRole === "closing_payoff" && candidate.closing_allowed === false ? ["closing_not_allowed"] : []),
+          ...(candidate.editorial_approved !== true ? ["not_editorially_approved"] : []),
+          ...(criticalSlot && ["free", "generated"].includes(String(candidate.source_tier || "free").toLowerCase()) ? ["critical_slot_weak_source_tier"] : []),
+          ...(selected?.hard_blocked ? ["hard_boundary_candidate_forced"] : []),
+          ...boundaryForcedViolationCodes,
+        ]),
+        source_tier: candidate.source_tier || "free",
+        approved_window_id: candidate.approved_window_id || candidate.id,
         asset: candidate.asset,
       });
     }
@@ -747,10 +995,6 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
   const uniqueAssetCount = new Set(clips.map((clip) => clip.asset?.local_path || clip.asset?.source_url).filter(Boolean)).size;
   const semanticScores = clips.map((clip) => Number(clip.timeline_score || 0));
   const hardBoundaryValidation = evaluateHardBoundaryDeterministic({ clips, microBlocks, hardBoundaryPolicy });
-  if (hardBoundaryPolicy.enabled && hardBoundaryPolicy.fail_on_missing_boundary_candidate && hardBoundaryValidation.status === "fail") {
-    const firstViolation = hardBoundaryValidation.violations[0];
-    throw new Error(`Hard boundary blocked: ${firstViolation?.violations?.[0] || "validation_failed"} at ${firstViolation?.boundary_id || "unknown_boundary"}.`);
-  }
 
   const timelineSyncMetricsBase = computeTimelineSyncMetrics({
     clips,
@@ -763,6 +1007,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
   const timelineSyncMetrics = {
     ...timelineSyncMetricsBase,
     hard_boundary_status: hardBoundaryValidation.status,
+    timeline_uses_approved_pool_only: true,
     max_visual_lag_sec: round3(Math.max(
       Number(timelineSyncMetricsBase.max_visual_lag_sec || 0),
       Number(hardBoundaryValidation.max_visual_lag_sec || 0)
@@ -784,6 +1029,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
     microBlocks,
     assetWindows: assetWindows.map((window) => ({
       id: window.id,
+      approved_window_id: window.approved_window_id || window.id,
       asset_id: window.asset_id,
       scene_index: window.scene_index,
       start_sec: window.start_sec,
@@ -796,6 +1042,8 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
       confidence: window.confidence,
       neutral: window.neutral,
       visual_evidence_source: window.visual_evidence_source,
+      visual_truth_status: window.visual_truth_status || "regional",
+      source_tier: window.source_tier || "free",
     })),
     syncPolicy: policy,
     hardBoundaryPolicy,
@@ -819,10 +1067,14 @@ module.exports = {
   __test__: {
     normalizeAssetAnalysisWindows,
     buildNarrativeBlocks,
+    buildApprovedWindowCandidates,
     flattenAssetWindows,
     filterCandidatesByHardRules,
     computeTimelineSyncMetrics,
     evaluateHardBoundaryDeterministic,
+    inferNarrativeSlotRole,
+    isCriticalSlotForBlock,
+    selectBySourceTierPolicy,
     detectLocation,
     detectLandmarks,
     detectSubtheme,

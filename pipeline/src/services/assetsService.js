@@ -13,6 +13,7 @@ const { analyzeLocalVideo } = require("./localVideoUnderstandingService");
 const { buildSceneQueryPlan } = require("./assetQueryPlanner");
 const { scorePreDownloadCandidate } = require("./assetRejectionService");
 const { summarizeAssetReadiness, shouldAllowPlaceholderAssets } = require("./assetReadinessService");
+const { approveAssetsForVisualPlan } = require("./assetApprovalService");
 const { evaluateVisualEvidence } = require("./visualIntentService");
 const { logger } = require("../utils/logger");
 
@@ -194,6 +195,27 @@ const extractKeywords = (text = "", limit = 8) => {
     .sort((a, b) => b[1] - a[1])
     .slice(0, limit)
     .map(([word]) => word);
+};
+
+const normalizeToken = (value = "") =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
+const matchesNegativeKeyword = ({ candidate = {}, negativeKeywords = [] }) => {
+  if (!Array.isArray(negativeKeywords) || !negativeKeywords.length) return false;
+  const candidateText = normalizeToken([
+    candidate.query,
+    candidate.semantic_text,
+    candidate.provider_title,
+    ...(candidate.provider_tags || []),
+  ].filter(Boolean).join(" "));
+  return negativeKeywords.some((keyword) => {
+    const token = normalizeToken(keyword);
+    return token && candidateText.includes(token);
+  });
 };
 
 const buildAnalysisWindowBlueprints = ({ assetDuration = 0 }) => {
@@ -464,7 +486,9 @@ const analyzeDownloadedAssetSemantics = async ({ asset, scene, paths }) => {
     sceneContext: scene,
   }).catch(() => null);
 
-  if (localPayload?.provider && !["disabled", "script_missing"].includes(localPayload.provider)) {
+  const localProvider = String(localPayload?.provider || "").toLowerCase();
+  const weakLocalProvider = localProvider.startsWith("weak_fallback") || ["disabled", "script_missing", "metadata_fallback"].includes(localProvider);
+  if (localPayload?.provider && !weakLocalProvider) {
     return {
       ...asset,
       ...mergeAnalysisPayload({
@@ -826,6 +850,7 @@ const generateAssets = async ({
   sceneIndexes = [],
   preserveExisting = false,
   refreshReason = "",
+  repairPlanByScene = [],
 }) => {
   const state = await loadState(videoId);
   const paths = await ensureVideoStructure(videoId);
@@ -856,14 +881,19 @@ const generateAssets = async ({
   const selectedSceneIndexes = selectedScenes.map((scene) => Number(scene.scene_index || 0));
   const selectiveRefresh = selectedSceneIndexes.length > 0 && selectedSceneIndexes.length < visualPlan.length;
   const preserveUntouchedScenes = Boolean(selectiveRefresh && preserveExisting);
-  const previousItems = Array.isArray(state.assets_json?.items) ? state.assets_json.items : [];
+  const previousRawItems = Array.isArray(state.assets_json?.raw_items)
+    ? state.assets_json.raw_items
+    : (Array.isArray(state.assets_json?.items) ? state.assets_json.items : []);
+  const previousApprovedItems = Array.isArray(state.assets_json?.approved_items)
+    ? state.assets_json.approved_items
+    : (Array.isArray(state.assets_json?.items) ? state.assets_json.items : []);
   const previousSceneQueries = Array.isArray(state.assets_json?.scene_queries) ? state.assets_json.scene_queries : [];
   const previousFallbackPlan = Array.isArray(state.assets_json?.fallback_plan) ? state.assets_json.fallback_plan : [];
 
   if (requestedSceneIndexSet.size && !selectedScenes.length) {
     return {
       video_id: videoId,
-      assets_count: previousItems.length,
+      assets_count: previousApprovedItems.length,
       missing_assets: Boolean(state.assets_json?.missing_assets),
       state_path: state.state_path,
       assets_json: state.assets_json,
@@ -876,17 +906,23 @@ const generateAssets = async ({
   const fallbackPlan = [];
   const sceneQueries = [];
   const searchCache = new Map();
+  const repairPlanMap = new Map(
+    (Array.isArray(repairPlanByScene) ? repairPlanByScene : [])
+      .map((entry) => [Number(entry.scene_index || 0), entry])
+      .filter(([sceneIndex]) => sceneIndex > 0)
+  );
   const perSceneTarget = Math.max(1, Math.min(MAX_ASSETS_PER_SCENE, Number(maxAssets || MAX_ASSETS_PER_SCENE)));
 
   for (const scene of selectedScenes) {
-    const queryPlan = buildSceneQueryPlan({ scene, topic: state.topic });
+    const repairHints = repairPlanMap.get(Number(scene.scene_index || 0)) || {};
+    const queryPlan = buildSceneQueryPlan({ scene, topic: state.topic, repairHints });
     const queries = queryPlan.queries;
     const downloadedItems = [];
     const seenUrls = new Set();
     const longVideoCandidates = [];
     const shortVideoCandidates = [];
     const imageCandidates = [];
-    const previouslyUsedSourceUrls = selectiveRefresh ? getSceneSourceUrlSet(previousItems, scene.scene_index) : new Set();
+    const previouslyUsedSourceUrls = selectiveRefresh ? getSceneSourceUrlSet(previousRawItems, scene.scene_index) : new Set();
     sceneQueries.push({
       scene_index: scene.scene_index,
       block_id: scene.block_id || "",
@@ -897,6 +933,7 @@ const generateAssets = async ({
       negative_keywords: queryPlan.negativeKeywords,
       search_reason: queryPlan.searchReason,
       specific_intent_required: queryPlan.specificIntentRequired,
+      repair_hints: repairHints,
     });
 
     logger.info(`assetsService: iniciando cena ${scene.scene_index}`, {
@@ -907,20 +944,29 @@ const generateAssets = async ({
       selective_refresh: selectiveRefresh,
     });
 
-    if (!mockMode) {
-      for (const queryDetail of queryPlan.queryDetails || []) {
-        const candidates = await cacheSearchResults({ query: queryDetail.query, cache: searchCache });
-        const scoredCandidates = [...candidates]
+      if (!mockMode) {
+        for (const queryDetail of queryPlan.queryDetails || []) {
+          const candidates = await cacheSearchResults({ query: queryDetail.query, cache: searchCache });
+          const candidatesAfterNegativeKeywords = candidates.filter((candidate) => !matchesNegativeKeyword({
+            candidate,
+            negativeKeywords: queryPlan.negativeKeywords || [],
+          }));
+          const scoredCandidates = [...candidatesAfterNegativeKeywords]
+            .map((candidate) => ({
+              ...candidate,
+              query_used: queryDetail.query,
+              search_reason: queryDetail.reason,
+              negative_keywords: queryPlan.negativeKeywords || [],
+              ...scorePreDownloadCandidate({ candidate: { ...candidate, query_used: queryDetail.query }, scene }),
+            }))
+            .filter((candidate) => !candidate.pre_download_rejected)
           .map((candidate) => ({
             ...candidate,
-            query_used: queryDetail.query,
-            search_reason: queryDetail.reason,
-            ...scorePreDownloadCandidate({ candidate: { ...candidate, query_used: queryDetail.query }, scene }),
-          }))
-          .filter((candidate) => !candidate.pre_download_rejected)
-          .map((candidate) => ({
-            ...candidate,
-            search_relevance_score: Number(candidate.pre_download_score || 0) * 1_000_000,
+            search_relevance_score: (
+              Number(candidate.pre_download_score || 0) * 1_000_000
+              + ((queryPlan.preferredProviders || []).includes(String(candidate.provider || "").toLowerCase()) ? 350_000 : 0)
+              + (queryPlan.forceExactRequired ? (candidate.intent_match ? 220_000 : -120_000) : 0)
+            ),
           }))
           .sort((left, right) => Number(right.search_relevance_score || 0) - Number(left.search_relevance_score || 0));
         const partitioned = partitionSceneCandidates(scoredCandidates);
@@ -1018,8 +1064,8 @@ const generateAssets = async ({
     items.push(...enrichedItems);
   }
 
-  const mergedItems = preserveUntouchedScenes
-    ? mergeSceneScopedEntries({ existingEntries: previousItems, nextEntries: items, sceneIndexes: selectedSceneIndexes })
+  const mergedRawItems = preserveUntouchedScenes
+    ? mergeSceneScopedEntries({ existingEntries: previousRawItems, nextEntries: items, sceneIndexes: selectedSceneIndexes })
     : sortSceneScopedEntries(items);
   const mergedSceneQueries = preserveUntouchedScenes
     ? mergeSceneScopedEntries({ existingEntries: previousSceneQueries, nextEntries: sceneQueries, sceneIndexes: selectedSceneIndexes })
@@ -1029,9 +1075,18 @@ const generateAssets = async ({
     : mergeFallbackPlan({ nextFallbackPlan: fallbackPlan });
   const flattenedKeywords = unique(visualPlan.flatMap((scene) => scene.keywords || [])).slice(0, 30);
   const searchQueries = unique(mergedSceneQueries.flatMap((entry) => entry.queries || []));
+  const approvalResult = approveAssetsForVisualPlan({
+    visualPlan,
+    assets: mergedRawItems,
+  });
+  const approvedItems = approvalResult.approved_items || [];
   const readinessSummary = summarizeAssetReadiness({
     visualPlan,
-    assets: mergedItems,
+    assets: mergedRawItems,
+    approvedItems,
+    approvedWindows: approvalResult.approved_windows || [],
+    sceneEditorialReadiness: approvalResult.scene_editorial_readiness || [],
+    editorialMetrics: approvalResult.editorial_metrics || {},
     mockMode,
   });
   const missingAssets = readinessSummary.missing_assets;
@@ -1051,11 +1106,19 @@ const generateAssets = async ({
         visual_keywords: flattenedKeywords,
         search_queries: searchQueries,
         scene_queries: mergedSceneQueries,
-        items: mergedItems,
+        raw_items: mergedRawItems,
+        approved_items: approvedItems,
+        items: approvedItems,
+        approved_windows: approvalResult.approved_windows || [],
+        rejected_windows: approvalResult.rejected_windows || [],
+        editorial_bins_by_scene: approvalResult.editorial_bins_by_scene || {},
+        editorial_metrics: approvalResult.editorial_metrics || {},
+        scene_editorial_readiness: approvalResult.scene_editorial_readiness || [],
         fallback_plan: mergedFallbackPlan,
         missing_assets: missingAssets,
         blocking_scene_indexes: readinessSummary.blocking_scene_indexes,
         scene_asset_readiness: readinessSummary.scene_asset_readiness,
+        last_repair_plan_by_scene: Array.from(repairPlanMap.values()),
         last_refresh_scene_indexes: refreshSceneIndexes,
         last_refresh_reason: refreshReason || (selectiveRefresh ? "scene_refresh" : "full_refresh"),
         last_refreshed_at: refreshedAt,
@@ -1070,18 +1133,18 @@ const generateAssets = async ({
     title: "Assets preparados",
     icon: "🖼️",
     lines: [
-      `${mergedItems.length} asset(s) válidos distribuídos em ${visualPlan.length} cena(s).`,
-      `${mergedItems.filter((item) => item.asset_type === "video").length} vídeo(s) e ${mergedItems.filter((item) => item.asset_type !== "video").length} imagem(ns) selecionados.`,
+      `${approvedItems.length} asset(s) aprovados distribuídos em ${visualPlan.length} cena(s).`,
+      `${approvedItems.filter((item) => item.asset_type === "video").length} vídeo(s) e ${approvedItems.filter((item) => item.asset_type !== "video").length} imagem(ns) aprovados.`,
       selectiveRefresh ? `Rebusca seletiva em ${refreshSceneIndexes.length} cena(s): ${refreshSceneIndexes.join(", ")}.` : null,
       missingAssets
         ? `Render bloqueado para ${readinessSummary.blocking_scene_indexes.length} cena(s) sem asset real: ${readinessSummary.blocking_scene_indexes.join(", ")}.`
-        : "Todas as cenas receberam assets externos em resolução HD ou maior.",
+        : "Pool editorial aprovado gerado com sucesso.",
     ],
   }).catch(() => null);
 
   return {
     video_id: videoId,
-    assets_count: mergedItems.length,
+    assets_count: approvedItems.length,
     missing_assets: missingAssets,
     state_path: nextState.state_path,
     assets_json: nextState.assets_json,

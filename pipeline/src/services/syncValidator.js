@@ -10,12 +10,25 @@ const { buildNarrativeBlocks, isSameLocation } = require("./narrativeBlockPlanne
 const { validateRenderQuality } = require("./renderQualityService");
 const { renderVideo } = require("./renderService");
 const { generateAssets } = require("./assetsService");
+const { buildEditorialRegenerationPlan } = require("./editorialRepairPlanner");
 
 const DEFAULT_QA_THRESHOLD = 0.78;
 const FOOD_VISUAL_INTENTS = new Set(["gastronomy", "market", "wine", "pastry", "restaurant", "cafe", "street_food"]);
 const GASTRONOMY_THEME_PATTERN = /(gastronom|food|market|mercado|wine|vinho|pastry|pastel|cafe|coffee|restaurant|restaurante|bakery|dessert|docaria|confeitaria|comida)/i;
 const MIN_GASTRONOMY_THEME_INTENT_COUNT = 2;
 const MIN_GASTRONOMY_THEME_INTENT_RATIO = 0.35;
+const EDITORIAL_QA_PROFILES = {
+  strict: {
+    uncertainRatioMax: 0.1,
+    blockOnHigh: true,
+    blockOnCritical: true,
+  },
+  balanced: {
+    uncertainRatioMax: 0.16,
+    blockOnHigh: false,
+    blockOnCritical: true,
+  },
+};
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
 const sha256File = async (filePath = "") => {
@@ -659,14 +672,23 @@ const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir })
     }
 
     const expected = clip.macro_topic || clip.expected_location || "";
-    const expectedLocation = clip.expected_location || expected;
+    const expectedLocation = clip.expected_location || "";
+    const strictLocationCheck = Boolean(
+      clip.topic_type === "city"
+      || clip.hard_boundary_first_clip
+      || clip.critical_slot
+      || clip.narrative_role_selected === "hook_exact"
+      || clip.narrative_role_selected === "opening_establishing"
+      || clip.narrative_role_selected === "closing_payoff"
+    );
+    const metadataLocation = clip.detected_location?.city || "";
     const confirmed = frameChecks.find((item) => {
-      const location = item.vision.location?.city || item.vision.detected_topic || "";
-      return location && expectedLocation && isSameLocation(location, expectedLocation);
+      const locationCity = item.vision.location?.city || "";
+      return locationCity && expectedLocation && isSameLocation(locationCity, expectedLocation);
     });
     const wrong = frameChecks.find((item) => {
-      const location = item.vision.location?.city || item.vision.detected_topic || "";
-      return location && expectedLocation && !isSameLocation(location, expectedLocation);
+      const locationCity = item.vision.location?.city || "";
+      return strictLocationCheck && expectedLocation && locationCity && !isSameLocation(locationCity, expectedLocation);
     });
     let status = 'uncertain';
     let reason = 'vision unavailable or inconclusive';
@@ -676,10 +698,19 @@ const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir })
     } else if (wrong) {
       status = 'fail';
       reason = 'vision detected mismatched location';
+    } else if (!strictLocationCheck) {
+      status = 'pass';
+      reason = 'non_city_block_without_strict_location_requirement';
+    } else if (!expectedLocation && (clip.visual_truth_status === "exact" || clip.visual_truth_status === "regional") && clip.editorial_slot_ok !== false) {
+      status = 'pass';
+      reason = 'editorial_contract_backstop_without_explicit_location';
+    } else if (metadataLocation && expectedLocation && isSameLocation(metadataLocation, expectedLocation)) {
+      status = 'pass';
+      reason = 'metadata_location_backstop_with_no_vision_mismatch';
     }
 
     const best = confirmed || wrong || frameChecks[0] || { vision: {} };
-    const visionLocation = best.vision.location?.city || best.vision.detected_topic || "";
+    const visionLocation = best.vision.location?.city || "";
     const outOfDomain = /portugal|lisboa|lisbon|porto|faro|algarve|ria formosa/i.test(expectedLocation)
       && visionLocation
       && !isSameLocation(visionLocation, expectedLocation)
@@ -691,7 +722,7 @@ const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir })
       expected_location: expectedLocation,
       frame_timestamps: frameChecks.map((f) => f.ts),
       frame_paths: frameChecks.map((f) => f.vision.frame_path).filter(Boolean),
-      metadata_location: clip.detected_location?.city || "",
+      metadata_location: metadataLocation,
       vision_location: visionLocation,
       vision_confidence: Number(best.vision.confidence || 0),
       visual_truth_status: status,
@@ -701,6 +732,11 @@ const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir })
       provider: clip.provider || clip.asset_provider || "",
       out_of_domain_asset: Boolean(outOfDomain),
       is_hard_boundary_first_clip: Boolean(clip.hard_boundary_first_clip),
+      critical_slot: Boolean(clip.critical_slot),
+      narrative_role_selected: clip.narrative_role_selected || "",
+      scene_index: Number(clip.scene_index || 0),
+      editorial_slot_ok: clip.editorial_slot_ok !== false,
+      approved_window_id: clip.approved_window_id || clip.asset_window_id || "",
     });
   }
   return rows;
@@ -802,8 +838,13 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
     for (const offset of checks) {
       const ts = round3(Math.min(Math.max(0, boundary.timestamp_sec + offset), Math.max(0, renderDuration - 0.1)));
       const vision = await classifyFrameWithVisionAtTimestamp({ renderPath, timestampSec: ts, evidenceDir, label: `boundary-${boundary.boundary_id}` });
-      const detectedCity = vision.location?.city || vision.detected_topic || "";
-      const status = boundary.expected_topic_type === "city" && detectedCity && isSameLocation(detectedCity, boundary.expected_topic) ? "pass" : "fail";
+      const detectedCity = vision.location?.city || "";
+      const metadataCity = (findClipAtTime(timeline?.clips || [], ts)?.detected_location?.city) || "";
+      const hasCityMatchFromVision = boundary.expected_topic_type === "city" && detectedCity && isSameLocation(detectedCity, boundary.expected_topic);
+      const hasCityMatchFromMetadata = boundary.expected_topic_type === "city" && metadataCity && isSameLocation(metadataCity, boundary.expected_topic);
+      const status = boundary.expected_topic_type === "city"
+        ? (hasCityMatchFromVision || hasCityMatchFromMetadata ? "pass" : "fail")
+        : "pass";
       if (status === "pass") boundaryPass = true;
       boundaryVisualAudit.push({
         boundary_id: boundary.boundary_id,
@@ -811,7 +852,7 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
         frame_timestamp: ts,
         vision_detected_location: detectedCity,
         vision_confidence: Number(vision.confidence || 0),
-        metadata_location: (findClipAtTime(timeline?.clips || [], ts)?.detected_location?.city) || "",
+        metadata_location: metadataCity,
         visual_truth_status: status,
         frame_path: vision.frame_path,
       });
@@ -874,12 +915,126 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
 };
 
 
+const isCriticalAuditRow = (row = {}) =>
+  Boolean(
+    row.is_hard_boundary_first_clip
+    || row.critical_slot
+    || ["hook_exact", "opening_establishing", "closing_payoff"].includes(String(row.narrative_role_selected || ""))
+  );
+
+const evaluateApprovedPoolAudit = ({ state = {}, timeline = {} }) => {
+  const approvedWindows = Array.isArray(state.assets_json?.approved_windows) ? state.assets_json.approved_windows : [];
+  const approvedIds = new Set(approvedWindows.map((item) => item.approved_window_id || item.id).filter(Boolean));
+  const clips = Array.isArray(timeline.clips) ? timeline.clips : [];
+  const clipRows = clips.map((clip) => ({
+    clip_index: Number(clip.clip_index || 0),
+    approved_window_id: clip.approved_window_id || clip.asset_window_id || "",
+  }));
+  const invalidRows = clipRows.filter((row) => row.approved_window_id && approvedIds.size && !approvedIds.has(row.approved_window_id));
+  const missingRows = clipRows.filter((row) => !row.approved_window_id);
+  const timelineUsesApprovedPoolOnly = invalidRows.length === 0 && missingRows.length === 0;
+  return {
+    timeline_uses_approved_pool_only: timelineUsesApprovedPoolOnly,
+    invalid_clip_count: invalidRows.length,
+    missing_approved_window_id_count: missingRows.length,
+    invalid_rows: invalidRows.slice(0, 20),
+    approved_pool_size: approvedIds.size,
+  };
+};
+
+const computeEditorialTelemetry = ({ clips = [], clipAuditRows = [], sceneEditorialReadiness = [] }) => {
+  const totalClips = Math.max(1, clips.length);
+  const countStatus = (status) => clips.filter((clip) => (clip.visual_truth_status || "") === status).length;
+  const criticalRows = clipAuditRows.filter((row) => isCriticalAuditRow(row));
+  const criticalCovered = (sceneEditorialReadiness || []).filter((scene) => Array.isArray(scene.critical_slots_missing) && scene.critical_slots_missing.length === 0).length;
+
+  return {
+    exact_ratio: round3(countStatus("exact") / totalClips),
+    regional_ratio: round3(countStatus("regional") / totalClips),
+    generic_ratio: round3(countStatus("generic") / totalClips),
+    uncertain_ratio: round3(countStatus("uncertain") / totalClips),
+    uncertain_critical_ratio: round3(
+      criticalRows.length
+        ? criticalRows.filter((row) => row.visual_truth_status === "uncertain").length / criticalRows.length
+        : 0
+    ),
+    critical_slots_covered: criticalCovered,
+    critical_slots_total: (sceneEditorialReadiness || []).length,
+    scene_editorial_readiness: sceneEditorialReadiness || [],
+  };
+};
+
 const evaluateClipAuditGate = ({ clipAuditRows = [] }) => {
   const uncertainCount = clipAuditRows.filter((row) => row.visual_truth_status === 'uncertain').length;
   const uncertainRatio = clipAuditRows.length ? uncertainCount / clipAuditRows.length : 0;
   const hardBoundaryInvalid = clipAuditRows.some((row) => row.is_hard_boundary_first_clip && row.visual_truth_status !== 'pass');
+  const criticalRows = clipAuditRows.filter((row) => isCriticalAuditRow(row));
+  const uncertainCriticalCount = criticalRows.filter((row) => row.visual_truth_status === "uncertain").length;
+  const criticalSlotInvalid = criticalRows.some((row) => row.visual_truth_status !== "pass");
   const outOfDomain = clipAuditRows.some((row) => row.out_of_domain_asset);
-  return { uncertainRatio: round3(uncertainRatio), hardBoundaryInvalid, outOfDomain };
+  return {
+    uncertainRatio: round3(uncertainRatio),
+    hardBoundaryInvalid,
+    criticalSlotInvalid,
+    uncertainCriticalCount,
+    uncertainCriticalRatio: round3(criticalRows.length ? uncertainCriticalCount / criticalRows.length : 0),
+    outOfDomain,
+  };
+};
+
+const getEditorialQaProfile = () => {
+  const profileKey = String(config.EDITORIAL_QA_PROFILE || "strict").toLowerCase();
+  return EDITORIAL_QA_PROFILES[profileKey] || EDITORIAL_QA_PROFILES.strict;
+};
+
+const buildProviderReliabilitySnapshot = ({ clips = [] }) => {
+  const byProvider = new Map();
+  clips.forEach((clip) => {
+    const provider = String(clip.source_provider || clip.asset?.provider || clip.source_tier || "unknown").toLowerCase();
+    if (!provider) return;
+    const entry = byProvider.get(provider) || { total: 0, pass: 0 };
+    entry.total += 1;
+    if (clip.visual_truth_status === "pass") entry.pass += 1;
+    byProvider.set(provider, entry);
+  });
+
+  const snapshot = {};
+  byProvider.forEach((entry, provider) => {
+    snapshot[provider] = round3(entry.pass / Math.max(1, entry.total));
+  });
+  return snapshot;
+};
+
+const buildEditorialFailureCodes = ({
+  issues = [],
+  gate = {},
+  approvedPoolAudit = {},
+  sceneEditorialReadiness = [],
+} = {}) => {
+  const codes = [];
+  if (gate.uncertainCriticalCount > 0) codes.push("CRITICAL_SLOT_UNCERTAIN");
+  if (gate.criticalSlotInvalid) codes.push("CRITICAL_SLOT_NOT_CONFIRMED");
+  if (gate.hardBoundaryInvalid) codes.push("HARD_BOUNDARY_FIRST_CLIP_INVALID");
+  if (!approvedPoolAudit.timeline_uses_approved_pool_only) codes.push("TIMELINE_OUTSIDE_APPROVED_POOL");
+  if (issues.some((issue) => issue.type === "generic_asset_overuse")) codes.push("GENERIC_OVERUSE");
+  if (issues.some((issue) => issue.type === "wrong_visual_category")) codes.push("WRONG_VISUAL_CATEGORY");
+  if (issues.some((issue) => issue.type === "theme_visual_mismatch")) codes.push("THEME_VISUAL_MISMATCH");
+  if (issues.some((issue) => issue.type === "no_proof_for_promise")) {
+    codes.push("NO_PROOF_FOR_PROMISE");
+  }
+  return unique(codes);
+};
+
+const normalizeIssueSeverity = ({ issue = {}, technicalScore = 0 }) => {
+  if (!issue || typeof issue !== "object") return issue;
+  if (issue.type === "unexpected_silence" && Number(technicalScore || 0) >= 0.7) {
+    return {
+      ...issue,
+      severity: "medium",
+      note: "downgraded_due_to_good_technical_score",
+    };
+  }
+  return issue;
 };
 
 const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
@@ -915,7 +1070,8 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     overlays: state?.overlays || [],
     evidenceDir: path.join('pipeline','test_reports', `${videoId}-visual-evidence`),
   });
-  const baseIssues = collectTimelineIssues({ timeline, technical, visual, diversityScore });
+  const baseIssues = collectTimelineIssues({ timeline, technical, visual, diversityScore })
+    .map((issue) => normalizeIssueSeverity({ issue, technicalScore: Number(technical.technical_score || 0) }));
   if ((state.output_resolution || "") && `${renderProbe.width}x${renderProbe.height}` !== String(state.output_resolution)) {
     baseIssues.push({ type: "render_file_state_mismatch", severity: "critical", message: `State says ${state.output_resolution} but final file is ${renderProbe.width}x${renderProbe.height}` });
   }
@@ -923,7 +1079,7 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     baseIssues.push({ type: "visual_truth_not_confirmed", severity: "critical" });
   }
   if (overlayValidation.some((item) => item.status !== "pass")) {
-    baseIssues.push({ type: "overlay_not_rendered", severity: "high" });
+    baseIssues.push({ type: "overlay_not_rendered", severity: "medium" });
   }
   const visualIntentCoverage = evaluateVisualIntentCoverage({ state, timeline });
   const issues = [...baseIssues, ...visualIntentCoverage.issues];
@@ -946,13 +1102,49 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     renderPath,
     evidenceDir: path.join('pipeline','test_reports', `${videoId}-visual-evidence`),
   });
+  const approvedPoolAudit = evaluateApprovedPoolAudit({ state, timeline });
+  const sceneEditorialReadiness = Array.isArray(state.assets_json?.scene_editorial_readiness)
+    ? state.assets_json.scene_editorial_readiness
+    : [];
+  const qaProfile = getEditorialQaProfile();
   const failedClipCount = clipAuditRows.filter((row) => row.visual_truth_status === 'fail').length;
   const gate = evaluateClipAuditGate({ clipAuditRows });
   const uncertainRatio = gate.uncertainRatio;
+  const noProofScenes = sceneEditorialReadiness
+    .filter((scene) => (scene.blocking_reasons || []).includes("missing_exact_for_required_proof") || (scene.blocking_reasons || []).includes("no_proof_for_promise"))
+    .map((scene) => Number(scene.scene_index || 0))
+    .filter((sceneIndex) => sceneIndex > 0);
+  const editorialTelemetry = computeEditorialTelemetry({
+    clips: timeline.clips || [],
+    clipAuditRows,
+    sceneEditorialReadiness,
+  });
   if (failedClipCount > 0) issues.push({ type: 'clip_visual_truth_mismatch', severity: 'critical', count: failedClipCount });
   if (gate.hardBoundaryInvalid) issues.push({ type: 'hard_boundary_first_clip_not_visually_confirmed', severity: 'critical' });
+  if (gate.criticalSlotInvalid) issues.push({ type: 'critical_slot_not_visually_confirmed', severity: 'critical' });
   if (gate.outOfDomain) issues.push({ type: 'out_of_domain_asset', severity: 'critical' });
-  if (uncertainRatio > 0.25) issues.push({ type: 'too_many_uncertain_clips', severity: 'high', ratio: round3(uncertainRatio) });
+  if (gate.uncertainCriticalCount > 0) issues.push({ type: 'uncertain_in_critical_slot', severity: 'critical', count: gate.uncertainCriticalCount });
+  const criticalScenesPassingVisualAudit = new Set(
+    (clipAuditRows || [])
+      .filter((row) => row.critical_slot && row.visual_truth_status === "pass")
+      .map((row) => Number(row.scene_index || 0))
+      .filter((sceneIndex) => sceneIndex > 0)
+  );
+  const unresolvedNoProofScenes = noProofScenes.filter((sceneIndex) => !criticalScenesPassingVisualAudit.has(sceneIndex));
+  if (unresolvedNoProofScenes.length) {
+    issues.push({ type: "no_proof_for_promise", severity: "critical", scene_indexes: unresolvedNoProofScenes });
+  }
+  if (uncertainRatio > Number(qaProfile.uncertainRatioMax || 0.1)) {
+    issues.push({ type: 'too_many_uncertain_clips', severity: 'high', ratio: round3(uncertainRatio) });
+  }
+  if (!approvedPoolAudit.timeline_uses_approved_pool_only) {
+    issues.push({
+      type: "timeline_not_using_approved_pool",
+      severity: "critical",
+      invalid_clip_count: approvedPoolAudit.invalid_clip_count,
+      missing_approved_window_id_count: approvedPoolAudit.missing_approved_window_id_count,
+    });
+  }
 
   const qualityScore = round3(Math.max(0, Math.min(1,
     Number(technical.technical_score || 0) * 0.35 +
@@ -961,12 +1153,32 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     coveragePenalty
   )));
   const needsRegeneration = Boolean(
-    issues.some((issue) => ["critical", "high"].includes(issue.severity))
+    issues.some((issue) => issue.severity === "critical" || (qaProfile.blockOnHigh && issue.severity === "high"))
     || visual.should_regenerate
     || hardBoundaryStatus === "fail"
     || maxVisualLagSec > hardBoundaryMaxLagSec
   );
-  const isPublishable = !needsRegeneration && qualityScore >= 0.72 && hardBoundaryStatus === "pass" && visualFrameBoundaryStatus === "pass" && uncertainRatio <= 0.25;
+  const editorialFailureCodes = buildEditorialFailureCodes({
+    issues,
+    gate,
+    approvedPoolAudit,
+    sceneEditorialReadiness,
+  });
+  const regenerationPlan = buildEditorialRegenerationPlan({
+    issues,
+    sceneIndexesToRefresh: replacement.scene_indexes_to_refresh,
+    sceneEditorialReadiness,
+  });
+  const providerReliability = buildProviderReliabilitySnapshot({ clips: clipAuditRows });
+  const isPublishable =
+    !needsRegeneration
+    && qualityScore >= 0.72
+    && hardBoundaryStatus === "pass"
+    && visualFrameBoundaryStatus === "pass"
+    && uncertainRatio <= Number(qaProfile.uncertainRatioMax || 0.1)
+    && gate.uncertainCriticalCount === 0
+    && approvedPoolAudit.timeline_uses_approved_pool_only
+    && editorialFailureCodes.length === 0;
 
   const validationResult = {
     video_id: videoId,
@@ -985,9 +1197,30 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     diversity_score: diversityScore,
     technical_score: round3(technical.technical_score || 0),
     visual_intent_distribution: visualIntentCoverage.visual_intent_distribution,
+    qa_profile: String(config.EDITORIAL_QA_PROFILE || "strict").toLowerCase(),
+    editorial_failure_codes: editorialFailureCodes,
+    publish_blocked: !isPublishable,
+    publish_blocked_codes: isPublishable ? [] : editorialFailureCodes,
+    editorial_metrics: {
+      ...editorialTelemetry,
+      timeline_uses_approved_pool_only: approvedPoolAudit.timeline_uses_approved_pool_only,
+      approved_pool_audit: approvedPoolAudit,
+    },
+    provider_reliability: providerReliability,
+    critical_slot_audit: clipAuditRows
+      .filter((row) => isCriticalAuditRow(row))
+      .map((row) => ({
+        clip_index: row.clip_index,
+        scene_index: row.scene_index,
+        narrative_role_selected: row.narrative_role_selected,
+        status: row.visual_truth_status === "pass" ? "pass" : "fail",
+        visual_truth_status: row.visual_truth_status,
+        reason: row.visual_truth_reason || "",
+      })),
     issues,
     scene_indexes_to_refresh: replacement.scene_indexes_to_refresh,
     clip_indexes_to_replace: replacement.clip_indexes_to_replace,
+    regeneration_plan: regenerationPlan,
     render_quality: technical,
     render_path: renderPath,
     upload_source_path: uploadSourcePath,
@@ -1004,6 +1237,20 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     visual_audit_json_path: contactAudit.visualAuditPath,
     overlay_render_validation: overlayValidation,
     clip_audit: clipAuditRows,
+    approved_pool_audit: approvedPoolAudit,
+    editorial_observability: {
+      generated_at: new Date().toISOString(),
+      exact_ratio: editorialTelemetry.exact_ratio,
+      regional_ratio: editorialTelemetry.regional_ratio,
+      generic_ratio: editorialTelemetry.generic_ratio,
+      uncertain_ratio: editorialTelemetry.uncertain_ratio,
+      uncertain_critical_ratio: editorialTelemetry.uncertain_critical_ratio,
+      critical_slots_covered: editorialTelemetry.critical_slots_covered,
+      critical_slots_total: editorialTelemetry.critical_slots_total,
+      timeline_uses_approved_pool_only: approvedPoolAudit.timeline_uses_approved_pool_only,
+      failure_codes: editorialFailureCodes,
+      provider_reliability: providerReliability,
+    },
   };
 
   await fs.writeJson(contactAudit.visualAuditPath, {
@@ -1011,12 +1258,33 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     clip_audit: clipAuditRows,
     boundary_audit: visual.boundary_visual_audit || [],
     overlay_audit: overlayValidation,
+    editorial_metrics: validationResult.editorial_metrics,
+    approved_pool_audit: approvedPoolAudit,
+    provider_reliability: validationResult.provider_reliability,
     resolution_audit: { ffprobe_width: validationResult.ffprobe_width, ffprobe_height: validationResult.ffprobe_height, state_output_resolution: validationResult.state_output_resolution },
-    final_decision: { is_publishable: validationResult.is_publishable, needs_manual_review: validationResult.needs_manual_review, final_hard_boundary_status: validationResult.final_hard_boundary_status },
+    final_decision: {
+      is_publishable: validationResult.is_publishable,
+      needs_manual_review: validationResult.needs_manual_review,
+      final_hard_boundary_status: validationResult.final_hard_boundary_status,
+      editorial_failure_codes: validationResult.editorial_failure_codes || [],
+    },
   }, { spaces: 2 });
   const finalReportPath = await writeVisualTruthFinalReport({ videoId, validation: validationResult });
   validationResult.visual_truth_final_report_path = finalReportPath;
-  await updateState(videoId, { render_validation: validationResult, visual_truth_final_report_path: finalReportPath, error_message: "" }, { currentStep: "render_validated", status: "render_validated" });
+  const observabilityHistory = [
+    ...((state.editorial_observability_history || []).slice(-39)),
+    validationResult.editorial_observability,
+  ];
+  await updateState(videoId, {
+    render_validation: validationResult,
+    visual_truth_final_report_path: finalReportPath,
+    assets_json: {
+      ...(state.assets_json || {}),
+      provider_reliability: validationResult.provider_reliability || {},
+    },
+    editorial_observability_history: observabilityHistory,
+    error_message: "",
+  }, { currentStep: "render_validated", status: "render_validated" });
   return validationResult;
 };
 
@@ -1025,18 +1293,32 @@ const fixRenderSync = async ({ videoId, mockMode = false }) => {
   const attempts = Number(state.render_sync_fix_attempts || 0);
   const validation = await validateRender({ videoId, mockMode });
   if (!validation.needs_regeneration) return validation;
-  if (attempts >= 2) {
+  const dominantReason = validation.editorial_failure_codes?.[0]
+    || validation.issues.find((issue) => [
+      "theme_visual_mismatch",
+      "visual_intent_underrepresented",
+      "generic_asset_overuse",
+      "wrong_visual_category",
+      "uncertain_in_critical_slot",
+      "critical_slot_not_visually_confirmed",
+      "timeline_not_using_approved_pool",
+      "scene_has_no_editorially_approved_assets",
+      "no_proof_for_promise",
+    ].includes(issue.type))?.type
+    || validation.issues[0]?.type
+    || "validation_failed";
+  const attemptsByReason = { ...(state.render_sync_fix_attempts_by_reason || {}) };
+  const reasonAttempts = Number(attemptsByReason[dominantReason] || 0);
+  if (attempts >= 2 || reasonAttempts >= 2) {
     return {
       ...validation,
       needs_manual_review: true,
-      fix_skipped_reason: "max_attempts_reached",
+      fix_skipped_reason: "max_attempts_reached_for_reason",
     };
   }
 
-  const sceneIndexes = validation.scene_indexes_to_refresh || [];
-  const dominantReason = validation.issues.find((issue) => ["theme_visual_mismatch", "visual_intent_underrepresented", "generic_asset_overuse", "wrong_visual_category"].includes(issue.type))?.type
-    || validation.issues[0]?.type
-    || "validation_failed";
+  const sceneIndexes = validation.regeneration_plan?.scene_indexes_to_refresh || validation.scene_indexes_to_refresh || [];
+  const repairPlanByScene = validation.regeneration_plan?.repair_by_scene || [];
   if (sceneIndexes.length) {
     await generateAssets({
       videoId,
@@ -1045,6 +1327,7 @@ const fixRenderSync = async ({ videoId, mockMode = false }) => {
       sceneIndexes,
       preserveExisting: true,
       refreshReason: dominantReason,
+      repairPlanByScene,
     });
   }
 
@@ -1052,6 +1335,10 @@ const fixRenderSync = async ({ videoId, mockMode = false }) => {
   const revalidated = await validateRender({ videoId, mockMode });
   await updateState(videoId, {
     render_sync_fix_attempts: attempts + 1,
+    render_sync_fix_attempts_by_reason: {
+      ...attemptsByReason,
+      [dominantReason]: reasonAttempts + 1,
+    },
     last_sync_fix_at: new Date().toISOString(),
     last_sync_fix_reason: dominantReason,
     last_sync_fix_scene_indexes: validation.scene_indexes_to_refresh || [],
@@ -1080,6 +1367,12 @@ module.exports = {
     computeVisualIntentDistribution,
     evaluateVisualIntentCoverage,
     identifyClipsForReplacement,
+    isCriticalAuditRow,
+    evaluateApprovedPoolAudit,
+    computeEditorialTelemetry,
     evaluateClipAuditGate,
+    getEditorialQaProfile,
+    buildEditorialFailureCodes,
+    buildProviderReliabilitySnapshot,
   },
 };

@@ -120,91 +120,98 @@ const state = {
 
 const fallbackAsset = buildAsset(0, 1);
 
-const planV1 = __test__.buildClipPlan({
-  state,
-  audioDuration: 88,
-  draftVersion: 1,
-  fallbackAsset,
-});
+const run = async () => {
+  const planV1 = await __test__.buildClipPlan({
+    state,
+    audioDuration: 88,
+    draftVersion: 1,
+    fallbackAsset,
+  });
 
-const planV2 = __test__.buildClipPlan({
-  state,
-  audioDuration: 88,
-  draftVersion: 2,
-  fallbackAsset,
-});
+  const planV2 = await __test__.buildClipPlan({
+    state,
+    audioDuration: 88,
+    draftVersion: 2,
+    fallbackAsset,
+  });
 
-assert(planV1.length >= 12, "planner deveria gerar cortes suficientes para um roteiro longo");
-assert(planV1.every((clip) => clip.clip_duration_seconds >= 3 && clip.clip_duration_seconds <= 10), "duracoes sairam da faixa valida");
-assert(planV1.every((clip) => clip.asset.asset_type === "video"), "planner deveria priorizar assets de video quando eles existem");
-assert(planV1.some((clip) => Number(clip.source_start_seconds || 0) > 0), "planner nao calculou offsets de corte nos videos");
-assert(new Set(planV1.map((clip) => Number(clip.source_start_seconds || 0))).size > 3, "offsets de corte ficaram pouco variados");
+  assert(planV1.length >= 12, "planner deveria gerar cortes suficientes para um roteiro longo");
+  assert(planV1.every((clip) => clip.clip_duration_seconds >= 3 && clip.clip_duration_seconds <= 10), "duracoes sairam da faixa valida");
+  assert(planV1.every((clip) => clip.asset.asset_type === "video"), "planner deveria priorizar assets de video quando eles existem");
+  assert(planV1.some((clip) => Number(clip.source_start_seconds || 0) > 0), "planner nao calculou offsets de corte nos videos");
+  assert(new Set(planV1.map((clip) => Number(clip.source_start_seconds || 0))).size > 3, "offsets de corte ficaram pouco variados");
 
-const countsByScene = planV1.reduce((acc, clip) => {
-  acc.set(clip.scene_index, (acc.get(clip.scene_index) || 0) + 1);
-  return acc;
-}, new Map());
+  const countsByScene = planV1.reduce((acc, clip) => {
+    acc.set(clip.scene_index, (acc.get(clip.scene_index) || 0) + 1);
+    return acc;
+  }, new Map());
 
-assert(countsByScene.get(3) >= 2, "Porto deveria receber mais de um corte num roteiro longo");
-assert(countsByScene.get(4) >= 2, "Sintra deveria receber mais de um corte num roteiro longo");
-assert(state.visual_plan.every((scene) => countsByScene.has(scene.scene_index)), "todas as cenas principais deveriam aparecer ao menos uma vez");
+  assert(countsByScene.get(3) >= 2, "Porto deveria receber mais de um corte num roteiro longo");
+  assert(countsByScene.get(4) >= 2, "Sintra deveria receber mais de um corte num roteiro longo");
+  assert(state.visual_plan.every((scene) => countsByScene.has(scene.scene_index)), "todas as cenas principais deveriam aparecer ao menos uma vez");
 
-const firstOccurrenceOrder = state.visual_plan.map((scene) => planV1.findIndex((clip) => clip.scene_index === scene.scene_index));
-assert(firstOccurrenceOrder.every((index, position, list) => position === 0 || index > list[position - 1]), "a primeira aparicao das cenas deveria preservar a ordem narrativa");
-const sceneOrder = planV1.map((clip) => clip.scene_index);
-assert(sceneOrder.every((sceneIndex, position, list) => position === 0 || sceneIndex >= list[position - 1]), "uma cena nao deveria reaparecer depois que o audio ja avancou para outra")
-const totalDurationByScene = planV1.reduce((acc, clip) => {
-  acc.set(clip.scene_index, Number(((acc.get(clip.scene_index) || 0) + Number(clip.clip_duration_seconds || 0)).toFixed(3)));
-  return acc;
-}, new Map());
-assert(planV1.some((clip) => clip.scene_role === "intro"), "o planner deveria criar uma abertura neutra quando o roteiro comeca generico");
-assert(planV1.some((clip) => clip.scene_role === "outro"), "o planner deveria criar um fechamento neutro quando o roteiro termina em comentario geral");
+  const firstOccurrenceOrder = state.visual_plan.map((scene) => planV1.findIndex((clip) => clip.scene_index === scene.scene_index));
+  assert(firstOccurrenceOrder.every((index, position, list) => position === 0 || index > list[position - 1]), "a primeira aparicao das cenas deveria preservar a ordem narrativa");
+  const sceneOrder = planV1.map((clip) => clip.scene_index);
+  assert(sceneOrder.every((sceneIndex, position, list) => position === 0 || sceneIndex >= list[position - 1]), "uma cena nao deveria reaparecer depois que o audio ja avancou para outra")
+  const totalDurationByScene = planV1.reduce((acc, clip) => {
+    acc.set(clip.scene_index, Number(((acc.get(clip.scene_index) || 0) + Number(clip.clip_duration_seconds || 0)).toFixed(3)));
+    return acc;
+  }, new Map());
+  assert(planV1.some((clip) => clip.scene_role === "intro"), "o planner deveria criar uma abertura neutra quando o roteiro comeca generico");
+  assert(planV1.some((clip) => clip.scene_role === "outro"), "o planner deveria criar um fechamento neutro quando o roteiro termina em comentario geral");
 
-const sceneTimingHints = __test__.buildSceneScriptTimingHints({
-  scenes: state.visual_plan,
-  scriptText: state.script_text,
-  audioDuration: 88,
-});
-const firstByScene = planV1.reduce((acc, clip) => {
-  if (!acc.has(clip.scene_index)) {
-    const currentElapsed = acc.get("__elapsed__") || 0;
-    acc.set(clip.scene_index, Number(currentElapsed.toFixed(3)));
+  const sceneTimingHints = __test__.buildSceneScriptTimingHints({
+    scenes: state.visual_plan,
+    scriptText: state.script_text,
+    audioDuration: 88,
+  });
+  const firstByScene = planV1.reduce((acc, clip) => {
+    if (!acc.has(clip.scene_index)) {
+      const currentElapsed = acc.get("__elapsed__") || 0;
+      acc.set(clip.scene_index, Number(currentElapsed.toFixed(3)));
+    }
+
+    acc.set("__elapsed__", (acc.get("__elapsed__") || 0) + Number(clip.clip_duration_seconds || 0) - 0.45);
+    return acc;
+  }, new Map());
+
+  for (const scene of state.visual_plan) {
+    const hint = sceneTimingHints.get(scene.scene_index);
+    const actualStart = firstByScene.get(scene.scene_index);
+    assert(typeof actualStart === "number", `cena ${scene.scene_index} nao apareceu na timeline`);
+    assert(actualStart >= Number(hint?.script_start_seconds || 0) - 2.5, `cena ${scene.scene_index} entrou cedo demais em relacao ao roteiro`);
+    assert(actualStart <= Number(hint?.script_end_seconds || 88) + 1, `cena ${scene.scene_index} entrou tarde demais em relacao ao roteiro`);
   }
 
-  acc.set("__elapsed__", (acc.get("__elapsed__") || 0) + Number(clip.clip_duration_seconds || 0) - 0.45);
-  return acc;
-}, new Map());
+  assert(planV1.every((clip) => clip.clip_script_excerpt), "cada corte deveria carregar o trecho de roteiro correspondente");
+  assert(planV1.every((clip) => typeof clip.semantic_match_score === "number"), "cada corte deveria expor um score de alinhamento semantico");
+  assert(planV1.some((clip) => clip.asset_window_summary), "cada corte deveria expor a janela semantica escolhida");
 
-for (const scene of state.visual_plan) {
-  const hint = sceneTimingHints.get(scene.scene_index);
-  const actualStart = firstByScene.get(scene.scene_index);
-  assert(typeof actualStart === "number", `cena ${scene.scene_index} nao apareceu na timeline`);
-  assert(actualStart >= Number(hint?.script_start_seconds || 0) - 2.5, `cena ${scene.scene_index} entrou cedo demais em relacao ao roteiro`);
-  assert(actualStart <= Number(hint?.script_end_seconds || 88) + 1, `cena ${scene.scene_index} entrou tarde demais em relacao ao roteiro`);
-}
+  const lisbonClip = planV1.find((clip) => clip.scene_index === 1 && clip.scene_role === "body");
+  assert(lisbonClip, "deveria existir ao menos um corte de lisboa");
+  assert(/lisbon|miradouro|rooftops|tram/.test(String(lisbonClip.asset_window_summary || "").toLowerCase()), "lisboa deveria escolher uma janela alinhada ao conteudo visual esperado");
+  assert(Number(lisbonClip.source_start_seconds || 0) >= Number(lisbonClip.asset_window_start_seconds || 0), "o corte de lisboa deveria iniciar dentro da janela escolhida");
+  assert(Number(lisbonClip.source_end_seconds || 0) <= Number(lisbonClip.asset_window_end_seconds || 0) + 0.01, "o corte de lisboa deveria terminar dentro da janela escolhida");
 
-assert(planV1.every((clip) => clip.clip_script_excerpt), "cada corte deveria carregar o trecho de roteiro correspondente");
-assert(planV1.every((clip) => typeof clip.semantic_match_score === "number"), "cada corte deveria expor um score de alinhamento semantico");
-assert(planV1.some((clip) => clip.asset_window_summary), "cada corte deveria expor a janela semantica escolhida");
+  const portoClip = planV1.find((clip) => clip.scene_index === 3 && clip.scene_role === "body");
+  assert(portoClip, "deveria existir ao menos um corte de porto");
+  assert(/porto|douro|bridge|waterfront/.test(String(portoClip.asset_window_summary || "").toLowerCase()), "porto deveria escolher uma janela ligada ao douro ou a ponte");
 
-const lisbonClip = planV1.find((clip) => clip.scene_index === 1 && clip.scene_role === "body");
-assert(lisbonClip, "deveria existir ao menos um corte de lisboa");
-assert(/lisbon|miradouro|rooftops|tram/.test(String(lisbonClip.asset_window_summary || "").toLowerCase()), "lisboa deveria escolher uma janela alinhada ao conteudo visual esperado");
-assert(Number(lisbonClip.source_start_seconds || 0) >= Number(lisbonClip.asset_window_start_seconds || 0), "o corte de lisboa deveria iniciar dentro da janela escolhida");
-assert(Number(lisbonClip.source_end_seconds || 0) <= Number(lisbonClip.asset_window_end_seconds || 0) + 0.01, "o corte de lisboa deveria terminar dentro da janela escolhida");
+  const signature = (plan) =>
+    plan
+      .map(
+        (clip) =>
+          `${clip.scene_index}:${path.basename(clip.asset.local_path)}:${clip.asset_window_start_seconds}:${Number(clip.source_start_seconds || 0).toFixed(2)}`
+      )
+      .join("|");
+  assert(signature(planV2) !== signature(planV1), "draft v2 deveria variar a selecao do asset, da janela ou do offset");
 
-const portoClip = planV1.find((clip) => clip.scene_index === 3 && clip.scene_role === "body");
-assert(portoClip, "deveria existir ao menos um corte de porto");
-assert(/porto|douro|bridge|waterfront/.test(String(portoClip.asset_window_summary || "").toLowerCase()), "porto deveria escolher uma janela ligada ao douro ou a ponte");
+  console.log("planner de timeline validado com sucesso");
+  console.log(JSON.stringify({ total_clips: planV1.length, porto_clips: countsByScene.get(3), sintra_clips: countsByScene.get(4) }, null, 2));
+};
 
-const signature = (plan) =>
-  plan
-    .map(
-      (clip) =>
-        `${clip.scene_index}:${path.basename(clip.asset.local_path)}:${clip.asset_window_start_seconds}:${Number(clip.source_start_seconds || 0).toFixed(2)}`
-    )
-    .join("|");
-assert(signature(planV2) !== signature(planV1), "draft v2 deveria variar a selecao do asset, da janela ou do offset");
-
-console.log("planner de timeline validado com sucesso");
-console.log(JSON.stringify({ total_clips: planV1.length, porto_clips: countsByScene.get(3), sintra_clips: countsByScene.get(4) }, null, 2));
+run().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

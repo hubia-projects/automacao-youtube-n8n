@@ -7,6 +7,14 @@ const { evaluateVisualEvidence } = require("./visualIntentService");
 
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
+const WEAK_SOURCES = new Set([
+  "metadata_fallback",
+  "local_video_understanding_fallback",
+  "local_video_understanding_stub",
+  "weak_fallback",
+  "script_missing",
+  "disabled",
+]);
 
 const runPython = (command, args, options = {}) =>
   new Promise((resolve, reject) => {
@@ -26,6 +34,9 @@ const isEnabled = () => Boolean(config.LOCAL_VIDEO_UNDERSTANDING_ENABLED);
 const enrichWindowsWithEvidence = ({ windows = [], sceneContext = {}, assetMetadata = {} }) =>
   windows.map((window) => {
     const evidence = evaluateVisualEvidence({ scene: sceneContext, window, asset: assetMetadata });
+    const visualEvidenceSource = window.visual_evidence_source || window.method || assetMetadata.analysis_provider || "local_video_understanding";
+    const weakFallback = WEAK_SOURCES.has(String(visualEvidenceSource).toLowerCase());
+    const rawConfidence = Number(window.confidence || 0.4);
     return {
       ...window,
       detected_visual_categories: window.detected_visual_categories || evidence.detected_visual_categories,
@@ -34,7 +45,9 @@ const enrichWindowsWithEvidence = ({ windows = [], sceneContext = {}, assetMetad
       generic_visual: typeof window.generic_visual === "boolean" ? window.generic_visual : evidence.generic_visual,
       required_evidence_found: window.required_evidence_found || evidence.required_evidence_found,
       missing_required_visual_evidence: window.missing_required_visual_evidence || evidence.missing_required_visual_evidence,
-      visual_evidence_source: window.visual_evidence_source || window.method || assetMetadata.analysis_provider || "local_video_understanding",
+      confidence: weakFallback ? Math.min(rawConfidence, 0.28) : rawConfidence,
+      weak_fallback: weakFallback,
+      visual_evidence_source: weakFallback ? "weak_fallback" : visualEvidenceSource,
     };
   });
 
@@ -48,15 +61,15 @@ const buildFallbackWindows = ({ duration = 0, windowSeconds = 8, maxWindows = 20
       window_index: windows.length + 1,
       start_seconds: round3(start),
       end_seconds: round3(Math.max(start + 1, end)),
-      summary: assetMetadata.semantic_text || assetMetadata.query || sceneContext.narration_excerpt || sceneContext.title || "travel footage",
+      summary: "visual evidence unavailable - weak fallback",
       tags: unique([
         ...(assetMetadata.provider_tags || []),
         ...(assetMetadata.analysis_tags || []),
         ...(sceneContext.keywords || []),
       ]).slice(0, 10),
-      confidence: 0.35,
-      method: "local_video_understanding_fallback",
-      visual_evidence_source: "local_video_understanding_fallback",
+      confidence: 0.22,
+      method: "weak_fallback",
+      visual_evidence_source: "weak_fallback",
       location: { city: "", country: "", confidence: 0 },
       landmarks: [],
       location_type: sceneContext.subtheme || "general",
@@ -87,10 +100,10 @@ const analyzeLocalVideo = async ({
   if (!isEnabled()) {
     return {
       enabled: false,
-      provider: "disabled",
+      provider: "weak_fallback_disabled",
       analysis_window_seconds: Number(windowSeconds || 8),
       analysis_windows: fallbackWindows,
-      analysis_summary: assetMetadata.semantic_text || assetMetadata.query || sceneContext.narration_excerpt || sceneContext.title || "travel footage",
+      analysis_summary: "visual evidence unavailable - weak fallback",
       analysis_tags: unique(fallbackWindows.flatMap((window) => window.tags || [])).slice(0, 12),
     };
   }
@@ -103,7 +116,7 @@ const analyzeLocalVideo = async ({
   if (!(await fs.pathExists(scriptPath))) {
     return {
       enabled: true,
-      provider: "script_missing",
+      provider: "weak_fallback_script_missing",
       analysis_window_seconds: Number(windowSeconds || 8),
       analysis_windows: fallbackWindows,
       analysis_summary: fallbackWindows[0]?.summary || "travel footage",
@@ -158,7 +171,7 @@ const analyzeLocalVideo = async ({
   } catch {
     return {
       enabled: true,
-      provider: "local_video_understanding_fallback",
+      provider: "weak_fallback_runtime_error",
       analysis_window_seconds: Number(windowSeconds || 8),
       analysis_windows: fallbackWindows,
       analysis_summary: fallbackWindows[0]?.summary || "travel footage",

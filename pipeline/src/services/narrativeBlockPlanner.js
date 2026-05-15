@@ -167,6 +167,8 @@ const detectLandmarks = (value = "", explicitLandmarks = []) => {
 const detectSubtheme = (value = "") => SUBTHEME_PATTERNS.find((item) => item.pattern.test(value)) || { subtheme: "general", label: "geral" };
 
 const inferSceneRole = ({ scene, index, totalScenes }) => {
+  if (scene.narrative_function === "hook" || scene.narrative_function === "setup") return "intro";
+  if (scene.narrative_function === "payoff" || scene.narrative_function === "closing") return "outro";
   const label = normalizeLabel(`${scene.title || ""} ${scene.narration_excerpt || ""}`);
   if (/abertura|intro|hook|visao geral|opening|overview/.test(label)) return "intro";
   if (/fechamento|encerramento|cta|sintese final|closing|outro|final/.test(label)) return "outro";
@@ -268,6 +270,15 @@ const buildVisualRequirements = ({ role, subtheme, location, keywords = [] }) =>
   return unique([...requirements, ...keywords.slice(0, 3)]).slice(0, 8);
 };
 
+const inferNarrativeFunction = ({ scene = {}, role = "body", index = 0, totalScenes = 1 }) => {
+  if (scene.narrative_function) return scene.narrative_function;
+  if (role === "intro") return index === 0 ? "hook" : "setup";
+  if (role === "outro") return index === totalScenes - 1 ? "closing" : "payoff";
+  if (index === 0) return "setup";
+  if (index === totalScenes - 1) return "bridge";
+  return "detail";
+};
+
 const buildBlockId = (label = "", index = 0) => {
   const slug = normalizeLabel(label).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || `block-${index + 1}`;
   return slug;
@@ -294,6 +305,7 @@ const buildNarrativeBlocks = ({ state = {}, audioIntelligence = null, audioDurat
 
   const microBlocks = scenes.map((scene, index) => {
     const role = scene.role || inferSceneRole({ scene, index, totalScenes: scenes.length });
+    const narrativeFunction = inferNarrativeFunction({ scene, role, index, totalScenes: scenes.length });
     const blockText = `${scene.title || ""} ${scene.narration_excerpt || ""} ${(scene.keywords || []).join(" ")}`;
     const location = detectLocation(blockText, scene.location);
     const landmarks = detectLandmarks(blockText, scene.landmarks);
@@ -337,6 +349,11 @@ const buildNarrativeBlocks = ({ state = {}, audioIntelligence = null, audioDurat
       landmarks,
       location,
       visual_requirements: buildVisualRequirements({ role, subtheme, location, keywords }),
+      narrative_function: narrativeFunction,
+      generic_tolerance: scene.generic_tolerance || (role === "intro" || role === "outro" ? "low" : "medium"),
+      requires_visual_proof: scene.requires_visual_proof === true || narrativeFunction === "hook" || narrativeFunction === "proof" || narrativeFunction === "closing",
+      slot_criticality: scene.slot_criticality || (role === "intro" || role === "outro" || index === 0 ? "high" : "medium"),
+      probable_shot_role: scene.probable_shot_role || (narrativeFunction === "closing" ? "closing_payoff" : narrativeFunction === "hook" ? "hook_exact" : "proof_exact"),
       visual_intent: visualIntent.visual_intent,
       visual_intent_source: visualIntent.visual_intent_source,
       required_visual_evidence: visualIntent.required_visual_evidence,
@@ -494,6 +511,11 @@ const enrichVisualPlan = ({ topic = "", visualPlan = [], audioIntelligence = nul
         negative_keywords: block.negative_keywords,
         overlay_title: block.overlay_title,
         visual_requirements: block.visual_requirements,
+        narrative_function: block.narrative_function,
+        generic_tolerance: block.generic_tolerance,
+        requires_visual_proof: block.requires_visual_proof,
+        slot_criticality: block.slot_criticality,
+        probable_shot_role: block.probable_shot_role,
         role: block.role,
         scene_order: block.scene_order,
         location: block.location,

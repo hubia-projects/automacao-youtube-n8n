@@ -223,11 +223,20 @@ const ensureRenderIsPublishableForUpload = (state = {}) => {
   const hardBoundaryStatus = renderValidation.hard_boundary_status || "unknown";
   const maxVisualLagSec = Number(renderValidation.max_visual_lag_sec || 0);
   const maxAllowedLagSec = Number(config.HARD_BOUNDARY_MAX_LAG_SEC || 0.5);
+  const editorialFailureCodes = Array.isArray(renderValidation.editorial_failure_codes)
+    ? renderValidation.editorial_failure_codes
+    : [];
+  const publishBlockedCodes = Array.isArray(renderValidation.publish_blocked_codes)
+    ? renderValidation.publish_blocked_codes
+    : [];
 
   if (!isPublishable || needsRegeneration || needsManualReview) {
     throw new Error(
       "Upload bloqueado: render reprovado no QA ou pendente de regeneracao/revisao manual."
     );
+  }
+  if (editorialFailureCodes.length || publishBlockedCodes.length || renderValidation.publish_blocked === true) {
+    throw new Error(`Upload bloqueado: falha editorial contratual (${[...new Set([...editorialFailureCodes, ...publishBlockedCodes])].join(", ")}).`);
   }
 
   if (hardBoundaryStatus !== "pass") {

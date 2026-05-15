@@ -187,6 +187,50 @@ const buildChunkTitle = ({ sectionTitle = "", chunk = "", chunkIndex = 0, totalC
   return sectionTitle;
 };
 
+const buildEditorialBeat = ({ sectionType = "body", chunk = "", chunkIndex = 0, totalChunks = 1 }) => {
+  const normalizedChunk = normalizeText(chunk).toLowerCase();
+  const firstChunk = chunkIndex === 0;
+  const lastChunk = chunkIndex === Math.max(0, totalChunks - 1);
+
+  if (sectionType === "intro") {
+    return {
+      narrative_function: firstChunk ? "hook" : "setup",
+      generic_tolerance: firstChunk ? "low" : "medium",
+      requires_visual_proof: firstChunk,
+      slot_criticality: firstChunk ? "critical" : "high",
+      probable_shot_role: firstChunk ? "hook_exact" : "opening_establishing",
+    };
+  }
+
+  if (sectionType === "outro") {
+    return {
+      narrative_function: lastChunk ? "closing" : "payoff",
+      generic_tolerance: "low",
+      requires_visual_proof: true,
+      slot_criticality: lastChunk ? "critical" : "high",
+      probable_shot_role: lastChunk ? "closing_payoff" : "proof_exact",
+    };
+  }
+
+  if (/(mercado|market|food|comida|restaurant|restaurante|vinho|wine|cafe|pastel|docaria)/.test(normalizedChunk)) {
+    return {
+      narrative_function: firstChunk ? "proof" : lastChunk ? "payoff" : "detail",
+      generic_tolerance: "low",
+      requires_visual_proof: true,
+      slot_criticality: firstChunk ? "high" : "medium",
+      probable_shot_role: firstChunk ? "proof_exact" : "detail_cutaway",
+    };
+  }
+
+  return {
+    narrative_function: firstChunk ? "setup" : lastChunk ? "bridge" : "detail",
+    generic_tolerance: firstChunk ? "medium" : "high",
+    requires_visual_proof: firstChunk,
+    slot_criticality: firstChunk ? "high" : "medium",
+    probable_shot_role: firstChunk ? "context_regional" : "detail_cutaway",
+  };
+};
+
 const guessSectionKeywords = (title = "") => {
   const normalized = normalizeText(title).toLowerCase();
   if (/intro|abertura|hook|contexto/.test(normalized)) return ["aerial view", "travel destination", "city skyline", "landscape"];
@@ -348,12 +392,23 @@ const buildVisualPlan = ({ topic = "", scriptText = "", outlineSections = [], vi
       const chunkWords = wordCount(chunk);
       const targetDuration = clamp(Number((chunkWords / 2.4).toFixed(2)), 4, 8);
       const title = buildChunkTitle({ sectionTitle: section.title, chunk, chunkIndex, totalChunks: chunks.length, sectionType: section.section_type });
+      const editorialBeat = buildEditorialBeat({
+        sectionType: section.section_type,
+        chunk,
+        chunkIndex,
+        totalChunks: chunks.length,
+      });
       scenes.push({
         scene_index: scenes.length + 1,
         title,
         narration_excerpt: chunk.slice(0, 220),
         keywords: buildSceneKeywords({ title, narrationExcerpt: chunk, topic, shots, entities: section.entities, sectionType: section.section_type }).slice(0, 5),
         target_duration_seconds: targetDuration,
+        narrative_function: editorialBeat.narrative_function,
+        generic_tolerance: editorialBeat.generic_tolerance,
+        requires_visual_proof: editorialBeat.requires_visual_proof,
+        slot_criticality: editorialBeat.slot_criticality,
+        probable_shot_role: editorialBeat.probable_shot_role,
       });
     });
   });

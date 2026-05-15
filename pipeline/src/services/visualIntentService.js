@@ -1,3 +1,5 @@
+const { config } = require("../config/env");
+
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
 
 const normalizeLabel = (value = "") =>
@@ -133,10 +135,80 @@ const INTENT_PATTERNS = [
 const GASTRONOMY_THEME_PATTERN = /(gastronom|food|meal|dish|restaurant|restaurante|cafe|coffee|bakery|pastry|market|mercado|wine|vinho|dessert|docaria|confeitaria|francesinha|bacalhau|seafood|people eating)/i;
 const ESTABLISHING_ALLOWED_ROLES = new Set(["intro", "outro"]);
 const SPECIFIC_GASTRONOMY_INTENTS = new Set(["market", "wine", "pastry", "cafe", "restaurant", "street_food", "local_food"]);
+const REQUIRED_EVIDENCE_ALIASES = {
+  plate: ["food", "local_food", "people_eating"],
+  "people eating": ["people_eating", "restaurant", "cafe", "street_food"],
+  "people buying food": ["market", "street_food", "food"],
+  dessert: ["pastry", "food"],
+  bakery: ["pastry", "cafe"],
+  coffee: ["cafe", "people_eating"],
+  table: ["restaurant", "people_eating"],
+  glass: ["wine", "cafe", "restaurant"],
+  cellar: ["wine"],
+  grapes: ["wine"],
+};
 
 const detectVisualCategories = ({ text = "", tags = [], objects = [] } = {}) => {
   const combined = [text, ...(tags || []), ...(objects || [])].filter(Boolean).join(" ");
   return CATEGORY_PATTERNS.filter((entry) => entry.pattern.test(combined)).map((entry) => entry.category);
+};
+
+const detectSceneType = (text = "") => {
+  if (/(restaurant|restaurante|table service|fine dining|kitchen|chef)/i.test(text)) return "restaurant";
+  if (/(market|mercado|food hall|stall|street market|feira)/i.test(text)) return "market";
+  if (/(cafe|coffee|espresso|barista)/i.test(text)) return "cafe";
+  if (/(coast|beach|praia|ocean|sea|marina)/i.test(text)) return "coast";
+  if (/(historic|old town|landmark|cathedral|palace|castle)/i.test(text)) return "historic";
+  if (/(street|avenue|pedestrian|tram)/i.test(text)) return "street";
+  return "unknown";
+};
+
+const detectFoodContext = ({ categories = [], text = "" }) => {
+  const categoryFoodHit = categories.some((category) => [
+    "food",
+    "local_food",
+    "market",
+    "wine",
+    "pastry",
+    "restaurant",
+    "cafe",
+    "street_food",
+    "people_eating",
+  ].includes(category));
+  const textFoodHit = /(food|meal|dish|plate|restaurant|cafe|market|wine|pastry|dessert|coffee|people eating)/i.test(text);
+  return categoryFoodHit || textFoodHit;
+};
+
+const detectHumanDensity = ({ hasPeople = false, text = "" }) => {
+  if (!hasPeople && !/(people|crowd|pedestrian|diners)/i.test(text)) return "low";
+  if (/(crowd|packed|busy market|full restaurant)/i.test(text)) return "high";
+  return "medium";
+};
+
+const detectEnvironment = (text = "") => {
+  if (/(indoor|inside|interior|restaurant interior|bar interior|market hall)/i.test(text)) return "indoor";
+  if (/(outdoor|street|beach|river|coast|square|plaza|park)/i.test(text)) return "outdoor";
+  return "unknown";
+};
+
+const detectTimeOfDay = (text = "") => {
+  if (/(night|noite|evening|sunset|dusk)/i.test(text)) return "night";
+  if (/(day|dia|sunny|morning|afternoon)/i.test(text)) return "day";
+  return "unknown";
+};
+
+const extractStructuredObservation = ({ summary = "", tags = [], objects = [], visualFeatures = {} } = {}) => {
+  const combined = [summary, ...(tags || []), ...(objects || [])].join(" ");
+  const categories = detectVisualCategories({ text: summary, tags, objects });
+  return {
+    objects: unique(objects || []),
+    categories: unique(categories),
+    scene_type: detectSceneType(combined),
+    food_context: detectFoodContext({ categories, text: combined }),
+    human_density: detectHumanDensity({ hasPeople: Boolean(visualFeatures?.has_people), text: combined }),
+    environment: detectEnvironment(combined),
+    time_of_day: detectTimeOfDay(combined),
+  };
 };
 
 const inferVisualIntent = ({ scene = {}, block = {}, topic = "" } = {}) => {
@@ -187,13 +259,56 @@ const inferVisualIntent = ({ scene = {}, block = {}, topic = "" } = {}) => {
   };
 };
 
-const evaluateVisualEvidence = ({ scene = {}, window = {}, asset = {} } = {}) => {
-  const tags = unique([...(window.tags || []), ...(asset.analysis_tags || []), ...(asset.provider_tags || [])]);
-  const detectedObjects = unique(window.detected_objects || []);
+const buildEvidenceLayers = ({ scene = {}, window = {}, asset = {} } = {}) => {
+  const observationTags = unique([...(window.tags || [])]);
+  const observationObjects = unique(window.detected_objects || []);
+  const observationSummary = `${window.summary || ""} ${window.description || ""}`.trim();
+  const structuredObservation = extractStructuredObservation({
+    summary: observationSummary,
+    tags: observationTags,
+    objects: observationObjects,
+    visualFeatures: window.visual_features || {},
+  });
+
+  return {
+    search_hypothesis: {
+      query: asset.query || "",
+      query_used: asset.query_used || asset.query || "",
+      search_reason: asset.search_reason || "",
+    },
+    provider_metadata: {
+      provider: asset.provider || "",
+      provider_title: asset.provider_title || "",
+      provider_tags: unique(asset.provider_tags || []),
+      semantic_text: asset.semantic_text || "",
+    },
+    visual_observation: {
+      summary: observationSummary,
+      tags: observationTags,
+      detected_objects: observationObjects,
+      detected_visual_categories: unique(window.detected_visual_categories || []),
+      location: window.location || { city: "", country: "", confidence: 0 },
+      landmarks: unique((window.landmarks || []).map((item) => item?.name || item).filter(Boolean)),
+      visual_features: window.visual_features || {},
+      quality: window.quality || {},
+      visual_evidence_source: window.visual_evidence_source || window.method || asset.analysis_provider || "metadata_fallback",
+      structured_observation: structuredObservation,
+    },
+  };
+};
+
+const evaluateVisualEvidenceV2Heuristic = ({ scene = {}, window = {}, asset = {} } = {}) => {
+  const evidenceLayers = buildEvidenceLayers({ scene, window, asset });
+  const tags = evidenceLayers.visual_observation.tags;
+  const detectedObjects = evidenceLayers.visual_observation.detected_objects;
+  const observationSummary = evidenceLayers.visual_observation.summary;
+
+  // IMPORTANT: somente observação visual real entra como evidência editorial forte.
+  // query/query_used/provider metadata não entram no texto de decisão visual.
   const detectedVisualCategories = unique([
-    ...(window.detected_visual_categories || []),
+    ...evidenceLayers.visual_observation.detected_visual_categories,
     ...detectVisualCategories({
-      text: `${window.summary || ""} ${window.description || ""} ${asset.semantic_text || ""} ${asset.query || ""}`,
+      text: observationSummary,
       tags,
       objects: detectedObjects,
     }),
@@ -205,7 +320,9 @@ const evaluateVisualEvidence = ({ scene = {}, window = {}, asset = {} } = {}) =>
   const requiredEvidenceFound = requiredEvidence.filter((entry) => {
     const normalized = normalizeLabel(entry).replace(/\s+/g, "_");
     const raw = normalizeLabel(entry);
+    const aliases = REQUIRED_EVIDENCE_ALIASES[raw] || [];
     return detectedVisualCategories.some((category) => normalizeLabel(category) === normalized || normalizeLabel(category) === raw)
+      || aliases.some((alias) => detectedVisualCategories.includes(alias))
       || tags.some((tag) => normalizeLabel(tag).includes(raw))
       || detectedObjects.some((objectName) => normalizeLabel(objectName).includes(raw));
   });
@@ -220,9 +337,8 @@ const evaluateVisualEvidence = ({ scene = {}, window = {}, asset = {} } = {}) =>
       ? matchedForbiddenCategories.length === 0
       : requiredEvidenceFound.length > 0 && matchedForbiddenCategories.length === 0;
 
-  return {
-    detected_visual_categories: detectedVisualCategories,
-    detected_objects: detectedObjects,
+  const editorialInference = {
+    visual_intent_match: visualIntentMatch,
     required_evidence_found: requiredEvidenceFound,
     missing_required_visual_evidence: missingRequiredEvidence,
     matched_allowed_categories: matchedAllowedCategories,
@@ -230,21 +346,76 @@ const evaluateVisualEvidence = ({ scene = {}, window = {}, asset = {} } = {}) =>
     required_evidence_score: requiredEvidence.length ? requiredEvidenceFound.length / requiredEvidence.length : matchedAllowedCategories.length ? 1 : 0,
     allowed_category_score: allowedCategories.length ? matchedAllowedCategories.length / allowedCategories.length : 0,
     forbidden_category_penalty: forbiddenCategories.length ? matchedForbiddenCategories.length / forbiddenCategories.length : 0,
-    visual_intent_match: visualIntentMatch,
     generic_visual: genericVisual,
   };
+
+  return {
+    search_hypothesis: evidenceLayers.search_hypothesis,
+    provider_metadata: evidenceLayers.provider_metadata,
+    visual_observation: {
+      ...evidenceLayers.visual_observation,
+      detected_visual_categories: detectedVisualCategories,
+      detected_objects: detectedObjects,
+    },
+    editorial_inference: editorialInference,
+    detected_visual_categories: detectedVisualCategories,
+    detected_objects: detectedObjects,
+    required_evidence_found: requiredEvidenceFound,
+    missing_required_visual_evidence: missingRequiredEvidence,
+    matched_allowed_categories: matchedAllowedCategories,
+    matched_forbidden_categories: matchedForbiddenCategories,
+    required_evidence_score: editorialInference.required_evidence_score,
+    allowed_category_score: editorialInference.allowed_category_score,
+    forbidden_category_penalty: editorialInference.forbidden_category_penalty,
+    visual_intent_match: editorialInference.visual_intent_match,
+    generic_visual: editorialInference.generic_visual,
+  };
+};
+
+const evaluateVisualEvidenceV3Multimodal = ({ scene = {}, window = {}, asset = {} } = {}) => {
+  // Placeholder para provider multimodal futuro.
+  // Mantém contrato idêntico e reaproveita extração estruturada atual.
+  const base = evaluateVisualEvidenceV2Heuristic({ scene, window, asset });
+  return {
+    ...base,
+    visual_observation: {
+      ...base.visual_observation,
+      provider_version: "v3_multimodal",
+    },
+  };
+};
+
+const VISUAL_EVIDENCE_PROVIDERS = {
+  v2_heuristic: evaluateVisualEvidenceV2Heuristic,
+  v3_multimodal: evaluateVisualEvidenceV3Multimodal,
+};
+
+const resolveVisualEvidenceProvider = (providerVersion = "") => {
+  const normalized = normalizeLabel(providerVersion || config.VISUAL_EVIDENCE_PROVIDER_VERSION || "v2_heuristic").replace(/[^a-z0-9_]/g, "");
+  return VISUAL_EVIDENCE_PROVIDERS[normalized] || VISUAL_EVIDENCE_PROVIDERS.v2_heuristic;
+};
+
+const evaluateVisualEvidence = ({ scene = {}, window = {}, asset = {}, providerVersion = "" } = {}) => {
+  const provider = resolveVisualEvidenceProvider(providerVersion);
+  return provider({ scene, window, asset });
 };
 
 module.exports = {
   CATEGORY_PATTERNS,
   INTENT_CONFIG,
+  buildEvidenceLayers,
   detectVisualCategories,
   evaluateVisualEvidence,
+  resolveVisualEvidenceProvider,
   inferVisualIntent,
   normalizeLabel,
   __test__: {
+    buildEvidenceLayers,
     detectVisualCategories,
     evaluateVisualEvidence,
+    evaluateVisualEvidenceV2Heuristic,
+    evaluateVisualEvidenceV3Multimodal,
+    resolveVisualEvidenceProvider,
     inferVisualIntent,
   },
 };
