@@ -1,4 +1,5 @@
 const { config } = require("../config/env");
+const { FOOD_VISUAL_INTENTS, getThemeRequiredCategoriesForIntent } = require("../config/editorialPolicy");
 
 const PLACEHOLDER_PROVIDERS = new Set(["local_fallback", "render_fallback"]);
 const PLACEHOLDER_SOURCE_URLS = new Set(["generated-local"]);
@@ -28,6 +29,13 @@ const isPublishableAsset = (asset = {}, options = {}) => {
   return Boolean(asset.local_path || asset.source_url);
 };
 
+const getWindowDetectedCategories = (window = {}) =>
+  [
+    ...(window.visual_observation?.detected_visual_categories || []),
+    ...(window.editorial_inference?.matched_allowed_categories || []),
+    ...(window.editorial_inference?.required_evidence_found || []),
+  ].map((value) => String(value || "").toLowerCase()).filter(Boolean);
+
 const buildSceneAssetReadiness = ({
   scene = {},
   assets = [],
@@ -47,6 +55,12 @@ const buildSceneAssetReadiness = ({
   const exactWindows = sceneApprovedWindows.filter((item) => item.visual_truth_status === "exact").length;
   const regionalWindows = sceneApprovedWindows.filter((item) => item.visual_truth_status === "regional").length;
   const genericWindows = sceneApprovedWindows.filter((item) => item.visual_truth_status === "generic").length;
+  const intent = String(scene.visual_intent || "").toLowerCase();
+  const requiredThemeCategories = getThemeRequiredCategoriesForIntent(intent);
+  const themeMatchedWindows = sceneApprovedWindows.filter((window) => {
+    const detectedCategories = getWindowDetectedCategories(window);
+    return requiredThemeCategories.some((category) => detectedCategories.includes(String(category || "").toLowerCase()));
+  }).length;
   const criticalSlotsMissing = Array.isArray(editorial.critical_slots_missing) ? editorial.critical_slots_missing : [];
   const requiresVisualProof = Boolean(
     (scene.required_visual_evidence || []).length
@@ -68,6 +82,9 @@ const buildSceneAssetReadiness = ({
   if (criticalSlotsMissing.length) {
     blockingReasons.push("critical_slots_uncovered");
   }
+  if (requiredThemeCategories.length && FOOD_VISUAL_INTENTS.has(intent) && themeMatchedWindows <= 0) {
+    blockingReasons.push("scene_missing_theme_visual_proof");
+  }
 
   return {
     scene_index: sceneIndex,
@@ -83,6 +100,8 @@ const buildSceneAssetReadiness = ({
     exact_windows: exactWindows,
     regional_windows: regionalWindows,
     generic_windows: genericWindows,
+    theme_required_categories: requiredThemeCategories,
+    theme_matched_windows: themeMatchedWindows,
     critical_slots_missing: criticalSlotsMissing,
     placeholder_assets: placeholderAssets.length,
     failure_reason: blockingReasons.join(","),

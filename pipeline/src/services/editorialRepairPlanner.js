@@ -7,6 +7,8 @@ const ISSUE_TO_FAILURE_CODE = {
   timeline_not_using_approved_pool: "TIMELINE_OUTSIDE_APPROVED_POOL",
   generic_asset_overuse: "GENERIC_OVERUSE",
   wrong_visual_category: "WRONG_VISUAL_CATEGORY",
+  scene_theme_coverage_missing: "THEME_COVERAGE_MISSING",
+  critical_scene_theme_coverage_missing: "THEME_COVERAGE_MISSING",
   runtime_degradation_used: "RUNTIME_DEGRADATION_USED",
   theme_visual_mismatch: "THEME_VISUAL_MISMATCH",
   no_proof_for_promise: "NO_PROOF_FOR_PROMISE",
@@ -31,6 +33,7 @@ const buildRepairActionFromCode = (failureCode = "") => {
       };
     case "GENERIC_OVERUSE":
     case "WRONG_VISUAL_CATEGORY":
+    case "THEME_COVERAGE_MISSING":
     case "RUNTIME_DEGRADATION_USED":
       return {
         target_narrative_roles: ["proof_exact", "detail_cutaway"],
@@ -79,6 +82,7 @@ const buildEditorialRegenerationPlan = ({
         if (reason === "missing_exact_for_required_proof" || reason === "no_proof_for_promise") return "NO_PROOF_FOR_PROMISE";
         if (reason === "generic_exposure_too_high") return "GENERIC_OVERUSE";
         if (reason === "critical_slots_uncovered") return "CRITICAL_SLOT_NOT_CONFIRMED";
+        if (reason === "missing_theme_visual_proof") return "THEME_COVERAGE_MISSING";
         return "";
       }).filter(Boolean),
     ]);

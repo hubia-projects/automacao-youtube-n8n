@@ -1,5 +1,10 @@
 const { config } = require("../config/env");
-const { SOURCE_TIER_PRIORITY, resolveNichePolicy } = require("../config/editorialPolicy");
+const {
+  FOOD_VISUAL_INTENTS,
+  SOURCE_TIER_PRIORITY,
+  getThemeRequiredCategoriesForIntent,
+  resolveNichePolicy,
+} = require("../config/editorialPolicy");
 const { getCachedAudioIntelligence } = require("./audioIntelligence");
 const {
   buildNarrativeBlocks,
@@ -43,6 +48,20 @@ const getSourceTierRank = (tier = "") => {
   const normalizedTier = String(tier || "free").toLowerCase();
   const index = SOURCE_TIER_PRIORITY.indexOf(normalizedTier);
   return index === -1 ? SOURCE_TIER_PRIORITY.length + 1 : index;
+};
+
+const getCandidateDetectedCategories = (candidate = {}) =>
+  unique([
+    ...(candidate.detected_visual_categories || []),
+    ...(candidate.required_evidence_found || []),
+  ].map((item) => String(item || "").toLowerCase()));
+
+const candidateHasThemeEvidence = ({ block = {}, candidate = {} } = {}) => {
+  const intent = String(block.visual_intent || "").toLowerCase();
+  const requiredCategories = getThemeRequiredCategoriesForIntent(intent);
+  if (!requiredCategories.length) return true;
+  const detectedCategories = getCandidateDetectedCategories(candidate);
+  return requiredCategories.some((category) => detectedCategories.includes(String(category || "").toLowerCase()));
 };
 
 const isVideoFile = (filePath = "") => /\.(mp4|mov|webm|mkv|avi)$/i.test(filePath);
@@ -325,6 +344,7 @@ const filterCandidatesByHardRules = ({
   hardBoundaryPolicy = getHardBoundaryPolicy(),
 }) => {
   const expectedLocation = block.expected_location || block.location?.city || (block.topic_type === "city" ? block.macro_topic : "");
+  const foodIntent = FOOD_VISUAL_INTENTS.has(String(block.visual_intent || "").toLowerCase());
   let strict = assetWindows.filter((candidate) => isCandidateAllowedByHardRules({ block, candidate, previousMacroTopic }));
 
   if (isBoundaryFirstSlot && hardBoundaryPolicy.forbid_neutral_first_clip) {
@@ -361,6 +381,14 @@ const filterCandidatesByHardRules = ({
     if (criticalFiltered.length) strict = criticalFiltered;
   }
 
+  if (foodIntent && strict.length) {
+    const requiresThemeProof = criticalSlot || ["hook_exact", "proof_exact", "closing_payoff"].includes(slotRole);
+    const themeMatches = strict.filter((candidate) => candidateHasThemeEvidence({ block, candidate }));
+    if (themeMatches.length && (requiresThemeProof || themeMatches.length < strict.length)) {
+      strict = themeMatches;
+    }
+  }
+
   if (strict.length) return strict;
 
   if (isBoundaryFirstSlot) {
@@ -376,7 +404,11 @@ const filterCandidatesByHardRules = ({
   const generalNeutral = assetWindows.filter((candidate) => candidate.neutral);
   if (generalNeutral.length) return generalNeutral;
 
-  const crossSceneFallback = assetWindows.filter((candidate) => candidate.editorial_approved === true);
+  let crossSceneFallback = assetWindows.filter((candidate) => candidate.editorial_approved === true);
+  if (foodIntent && crossSceneFallback.length) {
+    const themedCrossSceneFallback = crossSceneFallback.filter((candidate) => candidateHasThemeEvidence({ block, candidate }));
+    if (themedCrossSceneFallback.length) crossSceneFallback = themedCrossSceneFallback;
+  }
   if (crossSceneFallback.length) {
     return crossSceneFallback
       .sort((left, right) => Number(right.editorial_confidence || right.confidence || 0) - Number(left.editorial_confidence || left.confidence || 0))
@@ -925,6 +957,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
       }
 
       const candidate = selected.candidate || fallbackCandidate;
+      const themeEvidenceMatched = candidateHasThemeEvidence({ block, candidate });
       const boundaryForcedViolationCodes = [];
       const expectedLocation = block.expected_location || block.location?.city || (block.topic_type === "city" ? block.macro_topic : "");
       if (
@@ -1045,6 +1078,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
           ...(slotRole === "closing_payoff" && candidate.closing_allowed === false ? ["closing_not_allowed"] : []),
           ...(candidate.editorial_approved !== true ? ["not_editorially_approved"] : []),
           ...(criticalSlot && ["free", "generated"].includes(String(candidate.source_tier || "free").toLowerCase()) ? ["critical_slot_weak_source_tier"] : []),
+          ...(FOOD_VISUAL_INTENTS.has(String(block.visual_intent || "").toLowerCase()) && !themeEvidenceMatched ? ["theme_evidence_missing_for_intent"] : []),
           ...(selected?.hard_blocked ? ["hard_boundary_candidate_forced"] : []),
           ...(diversitySelection.forced ? ["diversity_quota_enforced"] : []),
           ...boundaryForcedViolationCodes,
@@ -1052,6 +1086,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         source_tier: candidate.source_tier || "free",
         approved_window_id: candidate.approved_window_id || candidate.id,
         visual_observation_origin: candidate.visual_observation_origin || "real_vision",
+        theme_evidence_present: themeEvidenceMatched,
         asset: candidate.asset,
       });
     }

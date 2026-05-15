@@ -1,4 +1,15 @@
 const SOURCE_TIER_PRIORITY = ["premium", "curated", "free", "generated"];
+const FOOD_VISUAL_INTENTS = new Set(["gastronomy", "market", "wine", "pastry", "restaurant", "cafe", "street_food"]);
+
+const THEME_REQUIRED_CATEGORIES_BY_INTENT = {
+  gastronomy: ["food", "local_food", "market", "restaurant", "cafe", "people_eating", "street_food", "pastry", "wine"],
+  market: ["market", "street_food", "food", "local_food", "people_eating"],
+  wine: ["wine"],
+  pastry: ["pastry", "food", "cafe"],
+  restaurant: ["restaurant", "food", "people_eating", "local_food"],
+  cafe: ["cafe", "pastry", "people_eating", "food"],
+  street_food: ["street_food", "market", "food", "people_eating"],
+};
 
 const NICHE_POLICY_BY_INTENT = {
   gastronomy: {
@@ -67,9 +78,14 @@ const DEFAULT_NICHE_POLICY = {
 const resolveNichePolicy = (scene = {}) =>
   NICHE_POLICY_BY_INTENT[scene.visual_intent] || DEFAULT_NICHE_POLICY;
 
+const getThemeRequiredCategoriesForIntent = (intent = "") =>
+  THEME_REQUIRED_CATEGORIES_BY_INTENT[String(intent || "").toLowerCase()] || [];
+
 module.exports = {
+  FOOD_VISUAL_INTENTS,
   SOURCE_TIER_PRIORITY,
+  THEME_REQUIRED_CATEGORIES_BY_INTENT,
+  getThemeRequiredCategoriesForIntent,
   resolveNichePolicy,
   DEFAULT_NICHE_POLICY,
 };
-

@@ -1,6 +1,10 @@
 const { evaluateVisualEvidence, normalizeLabel } = require("./visualIntentService");
 const { isSameLocation } = require("./narrativeBlockPlanner");
-const { resolveNichePolicy } = require("../config/editorialPolicy");
+const {
+  FOOD_VISUAL_INTENTS,
+  getThemeRequiredCategoriesForIntent,
+  resolveNichePolicy,
+} = require("../config/editorialPolicy");
 
 const VISUAL_TRUTH_STATUSES = ["exact", "regional", "generic", "wrong", "uncertain"];
 const EDITORIAL_BINS = [
@@ -308,6 +312,20 @@ const buildEditorialWindowContract = ({
   };
 };
 
+const getContractDetectedCategories = (contract = {}) =>
+  unique([
+    ...(contract.visual_observation?.detected_visual_categories || []),
+    ...(contract.editorial_inference?.matched_allowed_categories || []),
+    ...(contract.editorial_inference?.required_evidence_found || []),
+  ]);
+
+const sceneHasThemeEvidence = ({ scene = {}, contract = {} }) => {
+  const requiredThemeCategories = getThemeRequiredCategoriesForIntent(scene.visual_intent);
+  if (!requiredThemeCategories.length) return true;
+  const detectedCategories = getContractDetectedCategories(contract);
+  return detectedCategories.some((category) => requiredThemeCategories.includes(String(category || "").toLowerCase()));
+};
+
 const createEmptyBins = () => EDITORIAL_BINS.reduce((acc, bin) => ({ ...acc, [bin]: [] }), {});
 
 const getSceneByIndexMap = (visualPlan = []) =>
@@ -410,6 +428,8 @@ const approveAssetsForVisualPlan = ({ visualPlan = [], assets = [] }) => {
     const regionalCount = sceneApprovedWindows.filter((item) => item.visual_truth_status === "regional").length;
     const genericCount = sceneApprovedWindows.filter((item) => item.visual_truth_status === "generic").length;
     const uncertainCount = contracts.filter((item) => Number(item.scene_index || 0) === sceneIndex && item.visual_truth_status === "uncertain").length;
+    const requiredThemeCategories = getThemeRequiredCategoriesForIntent(scene.visual_intent);
+    const themeMatchedWindows = sceneApprovedWindows.filter((item) => sceneHasThemeEvidence({ scene, contract: item })).length;
     const blockingReasons = [];
     if ((exactCount + regionalCount) === 0 && Number((scene.required_visual_evidence || []).length) > 0) {
       blockingReasons.push("missing_exact_for_required_proof");
@@ -424,6 +444,9 @@ const approveAssetsForVisualPlan = ({ visualPlan = [], assets = [] }) => {
     if (Number(nichePolicy.minExactOrRegionalForProof || 0) > 0 && (exactCount + regionalCount) < Number(nichePolicy.minExactOrRegionalForProof || 0)) {
       blockingReasons.push("no_proof_for_promise");
     }
+    if (requiredThemeCategories.length && FOOD_VISUAL_INTENTS.has(String(scene.visual_intent || "").toLowerCase()) && themeMatchedWindows <= 0) {
+      blockingReasons.push("missing_theme_visual_proof");
+    }
 
     return {
       scene_index: sceneIndex,
@@ -434,6 +457,8 @@ const approveAssetsForVisualPlan = ({ visualPlan = [], assets = [] }) => {
       regional_windows: regionalCount,
       generic_windows: genericCount,
       uncertain_windows: uncertainCount,
+      theme_required_categories: requiredThemeCategories,
+      theme_matched_windows: themeMatchedWindows,
       critical_slots_required: coverage.critical_slots_required,
       critical_slots_missing: coverage.critical_slots_missing,
       critical_slots_covered: coverage.critical_slots_covered,
@@ -446,6 +471,10 @@ const approveAssetsForVisualPlan = ({ visualPlan = [], assets = [] }) => {
   });
 
   const missingCriticalCoverage = perSceneReadiness.filter((item) => item.critical_slots_missing.length > 0).length;
+  const scenesWithThemeCoverage = perSceneReadiness.filter((item) => {
+    if (!Array.isArray(item.theme_required_categories) || !item.theme_required_categories.length) return true;
+    return Number(item.theme_matched_windows || 0) > 0;
+  }).length;
   const falsePositiveRisk = rejectedWindows
     .filter((item) => item.reason_codes?.includes("forbidden_visual_category"))
     .reduce((acc, item) => {
@@ -464,6 +493,7 @@ const approveAssetsForVisualPlan = ({ visualPlan = [], assets = [] }) => {
     critical_slots_covered_scenes: perSceneReadiness.length - missingCriticalCoverage,
     critical_slots_total_scenes: perSceneReadiness.length,
     critical_slots_coverage_ratio: round3((perSceneReadiness.length - missingCriticalCoverage) / Math.max(1, perSceneReadiness.length)),
+    scene_theme_coverage_ratio: round3(scenesWithThemeCoverage / Math.max(1, perSceneReadiness.length)),
     timeline_uses_approved_pool_only: true,
     false_positive_risk_categories: falsePositiveRisk,
     generic_exposure_by_scene: perSceneReadiness.map((item) => ({

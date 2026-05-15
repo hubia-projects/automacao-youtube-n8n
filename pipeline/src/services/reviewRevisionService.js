@@ -140,6 +140,12 @@ const requestReviewRegeneration = async ({ videoId, note = "", mockMode = config
   const state = await loadState(videoId);
   const nextVersion = Math.max(1, Number(state.review?.draft_version || 1)) + 1;
   const refreshedSceneIndexes = chooseScenesForAssetRefresh({ state });
+  const qaRegenerationPlan = state?.render_validation?.regeneration_plan || {};
+  const repairPlanByScene = Array.isArray(qaRegenerationPlan.repair_by_scene) ? qaRegenerationPlan.repair_by_scene : [];
+  const dominantFailureCode = Array.isArray(state?.render_validation?.editorial_failure_codes) && state.render_validation.editorial_failure_codes.length
+    ? state.render_validation.editorial_failure_codes[0]
+    : "";
+  const refreshReason = dominantFailureCode ? `${REVIEW_REFRESH_REASON}:${dominantFailureCode}` : REVIEW_REFRESH_REASON;
   const refreshedScenesLabel = (state.visual_plan || [])
     .filter((scene) => refreshedSceneIndexes.includes(Number(scene.scene_index || 0)))
     .map((scene) => `#${scene.scene_index} ${scene.title}`)
@@ -184,7 +190,8 @@ const requestReviewRegeneration = async ({ videoId, note = "", mockMode = config
       maxAssets: REVIEW_REFRESH_MAX_ASSETS,
       sceneIndexes: refreshedSceneIndexes,
       preserveExisting: true,
-      refreshReason: REVIEW_REFRESH_REASON,
+      refreshReason,
+      repairPlanByScene,
     });
   }
 

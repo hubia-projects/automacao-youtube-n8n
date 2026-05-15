@@ -11,6 +11,7 @@ const { validateRenderQuality } = require("./renderQualityService");
 const { renderVideo } = require("./renderService");
 const { generateAssets } = require("./assetsService");
 const { buildEditorialRegenerationPlan } = require("./editorialRepairPlanner");
+const { getThemeRequiredCategoriesForIntent } = require("../config/editorialPolicy");
 
 const DEFAULT_QA_THRESHOLD = 0.78;
 const FOOD_VISUAL_INTENTS = new Set(["gastronomy", "market", "wine", "pastry", "restaurant", "cafe", "street_food"]);
@@ -479,6 +480,8 @@ const evaluateVisualIntentCoverage = ({ state = {}, timeline = {} }) => {
   const issues = [];
   const clipIndexes = new Set();
   const sceneIndexes = new Set();
+  const themeCoverageMissingScenes = new Set();
+  const criticalThemeCoverageMissingScenes = new Set();
   const quota = {
     food_or_plate_min_ratio: 0.25,
     market_min_ratio: 0.15,
@@ -489,7 +492,7 @@ const evaluateVisualIntentCoverage = ({ state = {}, timeline = {} }) => {
   };
 
   clips.forEach((clip) => {
-    const foodIntentClip = FOOD_VISUAL_INTENTS.has(clip.visual_intent);
+    const foodIntentClip = FOOD_VISUAL_INTENTS.has(String(clip.visual_intent || "").toLowerCase());
     const hasFoodEvidence = clipHasFoodEvidence(clip);
     const hasGenericVisual = clipHasCategory(clip, ["aerial_city", "bridge", "river", "coast", "generic_street", "landscape"]);
 
@@ -498,6 +501,42 @@ const evaluateVisualIntentCoverage = ({ state = {}, timeline = {} }) => {
       sceneIndexes.add(Number(clip.scene_index || 0));
     }
   });
+
+  (state.visual_plan || [])
+    .filter((scene) => FOOD_VISUAL_INTENTS.has(String(scene.visual_intent || "").toLowerCase()))
+    .forEach((scene) => {
+      const sceneIndex = Number(scene.scene_index || 0);
+      if (!sceneIndex) return;
+      const requiredCategories = getThemeRequiredCategoriesForIntent(scene.visual_intent);
+      if (!requiredCategories.length) return;
+
+      const sceneClips = clips.filter((clip) => Number(clip.scene_index || 0) === sceneIndex);
+      if (!sceneClips.length) {
+        themeCoverageMissingScenes.add(sceneIndex);
+        sceneIndexes.add(sceneIndex);
+        return;
+      }
+
+      const sceneHasCoverage = sceneClips.some((clip) => clipHasCategory(clip, requiredCategories));
+      if (!sceneHasCoverage) {
+        themeCoverageMissingScenes.add(sceneIndex);
+        sceneIndexes.add(sceneIndex);
+        sceneClips.forEach((clip) => clipIndexes.add(Number(clip.clip_index || 0)));
+      }
+
+      const criticalSceneClips = sceneClips.filter((clip) =>
+        Boolean(clip.critical_slot)
+        || ["hook_exact", "opening_establishing", "proof_exact", "closing_payoff"].includes(String(clip.narrative_role_selected || ""))
+      );
+      if (criticalSceneClips.length) {
+        const criticalHasCoverage = criticalSceneClips.some((clip) => clipHasCategory(clip, requiredCategories));
+        if (!criticalHasCoverage) {
+          criticalThemeCoverageMissingScenes.add(sceneIndex);
+          sceneIndexes.add(sceneIndex);
+          criticalSceneClips.forEach((clip) => clipIndexes.add(Number(clip.clip_index || 0)));
+        }
+      }
+    });
 
   if (distribution.food_or_plate < quota.food_or_plate_min_ratio || distribution.market < quota.market_min_ratio || distribution.wine < quota.wine_min_ratio || distribution.restaurant_or_cafe < quota.restaurant_or_cafe_min_ratio) {
     issues.push({
@@ -528,6 +567,24 @@ const evaluateVisualIntentCoverage = ({ state = {}, timeline = {} }) => {
       type: "theme_visual_mismatch",
       severity: "critical",
       message: "Narrative theme is gastronomy but selected visuals are mostly generic city/landscape",
+    });
+  }
+
+  if (themeCoverageMissingScenes.size) {
+    issues.push({
+      type: "scene_theme_coverage_missing",
+      severity: "critical",
+      scene_indexes: unique(Array.from(themeCoverageMissingScenes)),
+      message: "Uma ou mais cenas gastronômicas não têm cobertura visual temática mínima.",
+    });
+  }
+
+  if (criticalThemeCoverageMissingScenes.size) {
+    issues.push({
+      type: "critical_scene_theme_coverage_missing",
+      severity: "critical",
+      scene_indexes: unique(Array.from(criticalThemeCoverageMissingScenes)),
+      message: "Slots críticos de cenas gastronômicas não possuem prova visual temática.",
     });
   }
 
@@ -959,6 +1016,11 @@ const computeEditorialTelemetry = ({ clips = [], clipAuditRows = [], sceneEditor
   const countStatus = (status) => clips.filter((clip) => (clip.visual_truth_status || "") === status).length;
   const criticalRows = clipAuditRows.filter((row) => isCriticalAuditRow(row));
   const criticalCovered = (sceneEditorialReadiness || []).filter((scene) => Array.isArray(scene.critical_slots_missing) && scene.critical_slots_missing.length === 0).length;
+  const themeCoveredScenes = (sceneEditorialReadiness || []).filter((scene) => {
+    const required = Array.isArray(scene.theme_required_categories) ? scene.theme_required_categories.length : 0;
+    const matched = Number(scene.theme_matched_windows || 0);
+    return required === 0 || matched > 0;
+  }).length;
 
   return {
     exact_ratio: round3(countStatus("exact") / totalClips),
@@ -972,6 +1034,7 @@ const computeEditorialTelemetry = ({ clips = [], clipAuditRows = [], sceneEditor
     ),
     critical_slots_covered: criticalCovered,
     critical_slots_total: (sceneEditorialReadiness || []).length,
+    scene_theme_coverage_ratio: round3(themeCoveredScenes / Math.max(1, (sceneEditorialReadiness || []).length)),
     scene_editorial_readiness: sceneEditorialReadiness || [],
   };
 };
@@ -1044,6 +1107,9 @@ const buildEditorialFailureCodes = ({
   if (issues.some((issue) => issue.type === "generic_asset_overuse")) codes.push("GENERIC_OVERUSE");
   if (issues.some((issue) => issue.type === "wrong_visual_category")) codes.push("WRONG_VISUAL_CATEGORY");
   if (issues.some((issue) => issue.type === "theme_visual_mismatch")) codes.push("THEME_VISUAL_MISMATCH");
+  if (issues.some((issue) => issue.type === "scene_theme_coverage_missing" || issue.type === "critical_scene_theme_coverage_missing")) {
+    codes.push("THEME_COVERAGE_MISSING");
+  }
   if (issues.some((issue) => issue.type === "runtime_degradation_used")) codes.push("RUNTIME_DEGRADATION_USED");
   if (issues.some((issue) => issue.type === "no_proof_for_promise")) {
     codes.push("NO_PROOF_FOR_PROMISE");
@@ -1139,7 +1205,11 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
   const gate = evaluateClipAuditGate({ clipAuditRows });
   const uncertainRatio = gate.uncertainRatio;
   const noProofScenes = sceneEditorialReadiness
-    .filter((scene) => (scene.blocking_reasons || []).includes("missing_exact_for_required_proof") || (scene.blocking_reasons || []).includes("no_proof_for_promise"))
+    .filter((scene) =>
+      (scene.blocking_reasons || []).includes("missing_exact_for_required_proof")
+      || (scene.blocking_reasons || []).includes("no_proof_for_promise")
+      || (scene.blocking_reasons || []).includes("missing_theme_visual_proof")
+    )
     .map((scene) => Number(scene.scene_index || 0))
     .filter((sceneIndex) => sceneIndex > 0);
   const editorialTelemetry = computeEditorialTelemetry({

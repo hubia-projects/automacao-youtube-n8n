@@ -1871,6 +1871,7 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
           critical_slot: Boolean(clip.critical_slot),
           editorial_slot_ok: clip.editorial_slot_ok !== false,
           editorial_slot_violation_codes: clip.editorial_slot_violation_codes || [],
+          theme_evidence_present: clip.theme_evidence_present !== false,
           source_tier: clip.source_tier || "free",
           approved_window_id: clip.approved_window_id || clip.asset_window_id,
           query_used: clip.query_used,
