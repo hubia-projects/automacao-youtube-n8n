@@ -1,6 +1,7 @@
 const { config } = require("../config/env");
 const { detectLocation, isSameLocation } = require("./narrativeBlockPlanner");
 const { detectVisualCategories, evaluateVisualEvidence, normalizeLabel } = require("./visualIntentService");
+const { classifyEditorialCandidate, isCriticalNarrativeRole } = require("./editorialPlanningService");
 
 const POSITIVE_GASTRONOMY_TERMS = [
   "food", "meal", "dish", "restaurant", "cafe", "bakery", "pastry", "market", "wine", "glass", "kitchen",
@@ -44,6 +45,12 @@ const computeCityMatch = ({ scene, text }) => {
   return 0;
 };
 
+const countNegativeKeywordHits = ({ scene = {}, metadataText = "" }) => {
+  const negativeKeywords = unique([...(scene.negative_keywords || []), ...(scene.forbidden_locations || [])]).map((value) => normalizeLabel(value));
+  const normalizedText = normalizeLabel(metadataText);
+  return negativeKeywords.filter((keyword) => keyword && normalizedText.includes(keyword)).length;
+};
+
 const scorePreDownloadCandidate = ({ candidate, scene }) => {
   const metadataText = buildMetadataText(candidate);
   const metadataCategories = detectVisualCategories({ text: metadataText, tags: candidate.provider_tags || [] });
@@ -59,6 +66,7 @@ const scorePreDownloadCandidate = ({ candidate, scene }) => {
 
   const positiveMatches = countMatches(metadataText, POSITIVE_GASTRONOMY_TERMS);
   const negativeMatches = countMatches(metadataText, NEGATIVE_GASTRONOMY_TERMS);
+  const negativeKeywordHits = countNegativeKeywordHits({ scene, metadataText });
   const queryIntentMatch = evidence.visual_intent_match ? 1 : evidence.required_evidence_score;
   const providerTagIntentMatch = candidate.provider_tags?.length
     ? evaluateVisualEvidence({
@@ -83,16 +91,19 @@ const scorePreDownloadCandidate = ({ candidate, scene }) => {
     videoBonus * 2 +
     resolutionScore -
     forbiddenCategoryPenalty * 8 -
-    genericTravelPenalty * 5;
+    genericTravelPenalty * 5 -
+    negativeKeywordHits * 3.5;
 
   const missingRequired = !scene.generic_asset_allowed && !evidence.visual_intent_match;
   const rejectionReason = missingRequired
     ? "missing_required_visual_evidence"
-    : forbiddenCategoryPenalty >= 0.5
-      ? "forbidden_visual_category"
-      : genericTravelPenalty >= 1 && !scene.generic_asset_allowed
-        ? "generic_travel_metadata"
-        : "";
+    : negativeKeywordHits > 0
+      ? "negative_keyword_match"
+      : forbiddenCategoryPenalty >= 0.5
+        ? "forbidden_visual_category"
+        : genericTravelPenalty >= 1 && !scene.generic_asset_allowed
+          ? "generic_travel_metadata"
+          : "";
 
   return {
     pre_download_score: Number(preDownloadScore.toFixed(3)),
@@ -111,6 +122,37 @@ const shouldRejectAssetForScene = ({ asset = {}, scene = {}, window = {} }) => {
   const windowDuration = Number(window.duration_seconds || Math.max(0, Number(window.end_seconds || 0) - Number(window.start_seconds || 0)));
   const expectedLocation = scene.expected_location || scene.location?.city || (scene.topic_type === "city" ? scene.macro_topic : "");
   const isHardBoundaryFirstSlot = Boolean(scene.hard_boundary && scene.is_boundary_first_slot);
+  const narrativeRole = scene.narrative_role || "body";
+  const negativeKeywordHits = countNegativeKeywordHits({ scene, metadataText: text });
+  const editorial = classifyEditorialCandidate({
+    scene,
+    block: scene,
+    candidate: {
+      description: window.summary || window.description || asset.semantic_text || asset.query || "",
+      summary: window.summary || window.description || asset.semantic_text || asset.query || "",
+      semantic_text: asset.semantic_text || asset.query || "",
+      query_used: asset.query_used || asset.query || "",
+      tags: unique([...(window.tags || []), ...(asset.provider_tags || []), ...(asset.analysis_tags || [])]),
+      detected_visual_categories: unique([...(window.detected_visual_categories || []), ...(asset.detected_visual_categories || [])]),
+      detected_objects: window.detected_objects || [],
+      location: window.location || asset.location || {},
+      confidence: Number(window.confidence || asset.confidence || 0),
+      visual_evidence_source: window.visual_evidence_source || asset.analysis_provider || asset.asset_analysis_provider || "metadata_fallback",
+      analysis_provider: window.method || asset.analysis_provider || asset.asset_analysis_provider || "metadata_fallback",
+      asset,
+    },
+    evidence,
+  });
+
+  if (negativeKeywordHits > 0) {
+    return {
+      reject: true,
+      reason: "negative_keyword_match",
+      warnings: ["negative_keyword_match"],
+      evidence,
+      editorial,
+    };
+  }
 
   if (isHardBoundaryFirstSlot && config.HARD_BOUNDARY_FORBID_NEUTRAL_FIRST_CLIP && (asset.neutral || window.neutral || evidence.generic_visual)) {
     return {
@@ -118,6 +160,7 @@ const shouldRejectAssetForScene = ({ asset = {}, scene = {}, window = {} }) => {
       reason: "neutral_first_clip_forbidden",
       warnings: ["hard_boundary_first_clip_must_be_specific"],
       evidence,
+      editorial,
     };
   }
 
@@ -127,6 +170,7 @@ const shouldRejectAssetForScene = ({ asset = {}, scene = {}, window = {} }) => {
       reason: "hard_boundary_missing_location",
       warnings: ["missing_location"],
       evidence,
+      editorial,
     };
   }
 
@@ -136,6 +180,27 @@ const shouldRejectAssetForScene = ({ asset = {}, scene = {}, window = {} }) => {
       reason: "wrong_block_city",
       warnings: ["asset_belongs_to_other_city"],
       evidence,
+      editorial,
+    };
+  }
+
+  if (editorial.status === "wrong") {
+    return {
+      reject: true,
+      reason: editorial.reason || "editorial_wrong",
+      warnings: ["editorial_wrong"],
+      evidence,
+      editorial,
+    };
+  }
+
+  if (editorial.critical_role && ["generic", "uncertain"].includes(editorial.status)) {
+    return {
+      reject: true,
+      reason: `critical_slot_${editorial.status}`,
+      warnings: ["critical_slot_requires_exact_or_regional"],
+      evidence,
+      editorial,
     };
   }
 
@@ -145,6 +210,7 @@ const shouldRejectAssetForScene = ({ asset = {}, scene = {}, window = {} }) => {
       reason: evidence.missing_required_visual_evidence.length ? "missing_required_visual_evidence" : "visual_intent_mismatch",
       warnings: evidence.missing_required_visual_evidence,
       evidence,
+      editorial,
     };
   }
 
@@ -154,6 +220,7 @@ const shouldRejectAssetForScene = ({ asset = {}, scene = {}, window = {} }) => {
       reason: "generic_visual_for_specific_intent",
       warnings: ["generic_visual"],
       evidence,
+      editorial,
     };
   }
 
@@ -163,6 +230,17 @@ const shouldRejectAssetForScene = ({ asset = {}, scene = {}, window = {} }) => {
       reason: "generic_establishing_too_long",
       warnings: ["generic_visual_duration_exceeded"],
       evidence,
+      editorial,
+    };
+  }
+
+  if (isCriticalNarrativeRole(narrativeRole) && editorial.status === "regional" && Number(editorial.required_evidence_score || 0) < 0.55) {
+    return {
+      reject: true,
+      reason: "critical_slot_needs_stronger_proof",
+      warnings: ["critical_slot_needs_stronger_proof"],
+      evidence,
+      editorial,
     };
   }
 
@@ -171,6 +249,7 @@ const shouldRejectAssetForScene = ({ asset = {}, scene = {}, window = {} }) => {
     reason: "",
     warnings: evidence.missing_required_visual_evidence,
     evidence,
+    editorial,
   };
 };
 
