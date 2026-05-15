@@ -49,6 +49,14 @@ const getSourceTierRank = (tier = "") => {
   const index = SOURCE_TIER_PRIORITY.indexOf(normalizedTier);
   return index === -1 ? SOURCE_TIER_PRIORITY.length + 1 : index;
 };
+const isStrongFreeCriticalCandidate = (candidate = {}) => {
+  const tier = String(candidate.source_tier || "free").toLowerCase();
+  const status = String(candidate.visual_truth_status || "uncertain").toLowerCase();
+  const confidence = Number(candidate.editorial_confidence || candidate.confidence || 0);
+  if (tier !== "free") return false;
+  if (status === "exact") return true;
+  return status === "regional" && confidence >= Number(config.CRITICAL_SLOT_FREE_CONFIDENCE_MIN || 0.82);
+};
 
 const getCandidateDetectedCategories = (candidate = {}) =>
   unique([
@@ -381,6 +389,26 @@ const filterCandidatesByHardRules = ({
     if (criticalFiltered.length) strict = criticalFiltered;
   }
 
+  if (criticalSlot && strict.length) {
+    // Hard source-tier policy for critical slots:
+    // prefer premium/curated, then only strong free evidence.
+    const premiumOrCurated = strict.filter((candidate) => {
+      const tier = String(candidate.source_tier || "free").toLowerCase();
+      return tier === "premium" || tier === "curated";
+    });
+    if (premiumOrCurated.length) {
+      strict = premiumOrCurated;
+    } else {
+      const freeStrong = strict.filter((candidate) => isStrongFreeCriticalCandidate(candidate));
+      if (freeStrong.length) {
+        strict = freeStrong;
+      } else {
+        const avoidGenerated = strict.filter((candidate) => String(candidate.source_tier || "free").toLowerCase() !== "generated");
+        if (avoidGenerated.length) strict = avoidGenerated;
+      }
+    }
+  }
+
   if (foodIntent && strict.length) {
     const requiresThemeProof = criticalSlot || ["hook_exact", "proof_exact", "closing_payoff"].includes(slotRole);
     const themeMatches = strict.filter((candidate) => candidateHasThemeEvidence({ block, candidate }));
@@ -390,13 +418,6 @@ const filterCandidatesByHardRules = ({
   }
 
   if (strict.length) return strict;
-
-  if (isBoundaryFirstSlot) {
-    if (block.chapter_card_required && allowPlaceholderFallback) {
-      const chapterCardCandidate = buildChapterCardCandidate({ block, fallbackAsset });
-      if (chapterCardCandidate) return [chapterCardCandidate];
-    }
-  }
 
   const neutral = assetWindows.filter((candidate) => candidate.neutral && candidate.scene_index === block.scene_index);
   if (neutral.length) return neutral;
@@ -413,6 +434,11 @@ const filterCandidatesByHardRules = ({
     return crossSceneFallback
       .sort((left, right) => Number(right.editorial_confidence || right.confidence || 0) - Number(left.editorial_confidence || left.confidence || 0))
       .slice(0, 12);
+  }
+
+  if (isBoundaryFirstSlot && block.chapter_card_required && allowPlaceholderFallback) {
+    const chapterCardCandidate = buildChapterCardCandidate({ block, fallbackAsset });
+    if (chapterCardCandidate) return [chapterCardCandidate];
   }
 
   return allowPlaceholderFallback ? [buildFallbackCandidate(fallbackAsset)] : [];
@@ -479,12 +505,7 @@ const selectBySourceTierPolicy = ({
     )[0];
   }
 
-  const freeStrong = available.filter((item) => {
-    const tier = String(item.candidate?.source_tier || "free").toLowerCase();
-    const status = String(item.candidate?.visual_truth_status || "uncertain").toLowerCase();
-    const confidence = Number(item.candidate?.editorial_confidence || 0);
-    return tier === "free" && (status === "exact" || (status === "regional" && confidence >= Number(config.CRITICAL_SLOT_FREE_CONFIDENCE_MIN || 0.82)));
-  });
+  const freeStrong = available.filter((item) => isStrongFreeCriticalCandidate(item.candidate));
   if (freeStrong.length) {
     const blockKey = String(block.block_id || block.id || block.scene_index || "unknown_block");
     const nichePolicy = resolveNichePolicy(block);
@@ -933,6 +954,14 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         criticalSlot,
         providerReliability,
       });
+      const approvedDegradeCandidate = assetWindows.find((item) => item.editorial_approved === true)
+        ? {
+            candidate: assetWindows.find((item) => item.editorial_approved === true),
+            score: -8,
+            features: {},
+            selection_reason: "approved_pool_degrade",
+          }
+        : null;
       const selectedFromPolicy = selectBySourceTierPolicy({
         ranked,
         slotRole,
@@ -940,9 +969,13 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         block,
         freeCriticalUsageByBlock,
       });
-      const policySelected = selectedFromPolicy || ranked.find((item) => !item.hard_blocked) || ranked[0] || (fallbackCandidate
-        ? { candidate: fallbackCandidate, score: -10, features: {}, selection_reason: "fallback" }
-        : null);
+      const policySelected = selectedFromPolicy
+        || ranked.find((item) => !item.hard_blocked)
+        || ranked[0]
+        || approvedDegradeCandidate
+        || (fallbackCandidate
+          ? { candidate: fallbackCandidate, score: -10, features: {}, selection_reason: "fallback" }
+          : null);
       const diversitySelection = selectWithDiversityQuota({
         ranked,
         preselected: policySelected,
@@ -956,7 +989,41 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         throw new Error(`Timeline blocked: no publishable candidate available for scene ${block.scene_index}.`);
       }
 
-      const candidate = selected.candidate || fallbackCandidate;
+      let candidate = selected.candidate || fallbackCandidate;
+      if (criticalSlot) {
+        const criticalUnsafe = !candidate
+          || candidate.critical_slot_allowed === false
+          || (slotRole === "closing_payoff" && candidate.closing_allowed === false)
+          || String(candidate.visual_truth_status || "").toLowerCase() === "uncertain"
+          || String(candidate.visual_truth_status || "").toLowerCase() === "wrong";
+        if (criticalUnsafe) {
+          const saferCriticalCandidates = assetWindows
+            .filter((item) =>
+              Number(item.scene_index || 0) === Number(block.scene_index || 0)
+              && item.editorial_approved === true
+              && item.critical_slot_allowed !== false
+              && ["exact", "regional"].includes(String(item.visual_truth_status || "").toLowerCase())
+              && (slotRole !== "opening_establishing" || item.opening_allowed !== false)
+              && (slotRole !== "closing_payoff" || item.closing_allowed !== false)
+            )
+            .sort((left, right) => Number(right.editorial_confidence || right.confidence || 0) - Number(left.editorial_confidence || left.confidence || 0));
+          if (saferCriticalCandidates.length) {
+            candidate = saferCriticalCandidates[0];
+          } else if (slotRole === "closing_payoff") {
+            const crossSceneClosingCandidates = assetWindows
+              .filter((item) =>
+                item.editorial_approved === true
+                && item.critical_slot_allowed !== false
+                && item.closing_allowed !== false
+                && ["exact", "regional"].includes(String(item.visual_truth_status || "").toLowerCase())
+              )
+              .sort((left, right) => Number(right.editorial_confidence || right.confidence || 0) - Number(left.editorial_confidence || left.confidence || 0));
+            if (crossSceneClosingCandidates.length) {
+              candidate = crossSceneClosingCandidates[0];
+            }
+          }
+        }
+      }
       const themeEvidenceMatched = candidateHasThemeEvidence({ block, candidate });
       const boundaryForcedViolationCodes = [];
       const expectedLocation = block.expected_location || block.location?.city || (block.topic_type === "city" ? block.macro_topic : "");
@@ -1077,7 +1144,10 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
           ...(slotRole === "opening_establishing" && candidate.opening_allowed === false ? ["opening_not_allowed"] : []),
           ...(slotRole === "closing_payoff" && candidate.closing_allowed === false ? ["closing_not_allowed"] : []),
           ...(candidate.editorial_approved !== true ? ["not_editorially_approved"] : []),
-          ...(criticalSlot && ["free", "generated"].includes(String(candidate.source_tier || "free").toLowerCase()) ? ["critical_slot_weak_source_tier"] : []),
+          ...(criticalSlot && (
+            String(candidate.source_tier || "free").toLowerCase() === "generated"
+            || (String(candidate.source_tier || "free").toLowerCase() === "free" && !isStrongFreeCriticalCandidate(candidate))
+          ) ? ["critical_slot_weak_source_tier"] : []),
           ...(FOOD_VISUAL_INTENTS.has(String(block.visual_intent || "").toLowerCase()) && !themeEvidenceMatched ? ["theme_evidence_missing_for_intent"] : []),
           ...(selected?.hard_blocked ? ["hard_boundary_candidate_forced"] : []),
           ...(diversitySelection.forced ? ["diversity_quota_enforced"] : []),

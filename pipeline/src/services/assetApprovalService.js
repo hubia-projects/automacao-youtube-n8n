@@ -92,12 +92,24 @@ const classifyVisualTruthStatus = ({
   const hasRequiredEvidence = requiredFoundCount > 0;
   const genericVisual = Boolean(evidence.generic_visual);
   const requiredMatchRatio = requiredCount > 0 ? (requiredFoundCount / requiredCount) : 0;
-  const isFoodIntent = ["gastronomy", "market", "wine", "pastry", "restaurant", "cafe", "street_food"].includes(String(scene.visual_intent || ""));
+  const normalizedIntent = String(scene.visual_intent || "").toLowerCase();
+  const isFoodIntent = ["gastronomy", "market", "wine", "pastry", "restaurant", "cafe", "street_food"].includes(normalizedIntent);
+  const themeRequiredCategories = getThemeRequiredCategoriesForIntent(normalizedIntent).map((item) => String(item || "").toLowerCase());
+  const detectedCategories = unique([
+    ...(evidence.detected_visual_categories || []),
+    ...(evidence.required_evidence_found || []),
+    ...(evidence.matched_allowed_categories || []),
+  ].map((item) => String(item || "").toLowerCase()));
+  const foodThemeHits = themeRequiredCategories.filter((category) => detectedCategories.includes(category)).length;
 
   if (requiredCount > 0) {
     if (weakVisualSource) {
       if (!hasRequiredEvidence || genericVisual) return "uncertain";
       return requiredMatchRatio >= 0.7 && !genericVisual ? "regional" : "uncertain";
+    }
+    if (isFoodIntent && !genericVisual && !weakVisualSource) {
+      if (foodThemeHits >= 2) return "exact";
+      if (foodThemeHits >= 1) return "regional";
     }
     const minExactHits = isFoodIntent ? Math.min(2, requiredCount) : 1;
     if ((requiredFoundCount >= minExactHits || requiredMatchRatio >= 0.5) && !genericVisual && !weakVisualSource) return "exact";
@@ -107,6 +119,10 @@ const classifyVisualTruthStatus = ({
   }
 
   if (weakVisualSource) return "uncertain";
+  if (isFoodIntent && !genericVisual) {
+    if (foodThemeHits >= 2) return "exact";
+    if (foodThemeHits >= 1) return "regional";
+  }
   const allowedMatches = Number((evidence.matched_allowed_categories || []).length);
   if (allowedMatches > 0 && !genericVisual && !weakVisualSource) return "exact";
   if (allowedMatches > 0 && !genericVisual) return "regional";
@@ -126,7 +142,7 @@ const buildNarrativeRolesSupported = ({
   const sceneRole = String(scene.role || "body").toLowerCase();
 
   if (status === "exact") {
-    roles.push("proof_exact", "detail_cutaway");
+    roles.push("proof_exact", "detail_cutaway", "closing_payoff");
     if (sceneRole === "intro") roles.push("hook_exact", "opening_establishing");
     if (sceneRole === "outro") roles.push("closing_payoff");
   } else if (status === "regional") {

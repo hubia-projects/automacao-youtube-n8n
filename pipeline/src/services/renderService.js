@@ -23,6 +23,12 @@ const TARGET_AVERAGE_CLIP_DURATION = 6;
 const MIN_CLIP_DURATION = 3;
 const MAX_CLIP_DURATION = 10;
 const OUTPUT_FPS = Number(config.OUTPUT_FPS || 30);
+const PRE_RENDER_CRITICAL_BLOCKING_REASONS = new Set([
+  "missing_exact_for_required_proof",
+  "no_proof_for_promise",
+  "missing_theme_visual_proof",
+  "scene_missing_theme_visual_proof",
+]);
 const SCRIPT_TERM_STOPWORDS = new Set([
   "a",
   "ao",
@@ -1583,6 +1589,43 @@ const ensureAudioIntelligenceReady = async ({ videoId, state }) => {
   return state;
 };
 
+const evaluateRenderPreflightGate = ({ state = {}, mockMode = false, allowRuntimeFallback = false } = {}) => {
+  const enabled = Boolean(config.PRE_RENDER_EDITORIAL_FAIL_FAST);
+  const runtimeProfile = String(config.QA_RUNTIME_PROFILE_PROD || "prod_strict").toLowerCase();
+  if (!enabled || mockMode || runtimeProfile !== "prod_strict") {
+    return {
+      enabled,
+      shouldAbort: false,
+      failure_codes: [],
+      approved_windows_count: Array.isArray(state.assets_json?.approved_windows) ? state.assets_json.approved_windows.length : 0,
+      blocked_scene_indexes: [],
+    };
+  }
+
+  const approvedWindows = Array.isArray(state.assets_json?.approved_windows) ? state.assets_json.approved_windows : [];
+  const sceneReadiness = Array.isArray(state.assets_json?.scene_editorial_readiness) ? state.assets_json.scene_editorial_readiness : [];
+  const blockedCriticalScenes = sceneReadiness
+    .filter((scene) => (scene.blocking_reasons || []).some((reason) => PRE_RENDER_CRITICAL_BLOCKING_REASONS.has(String(reason || ""))))
+    .map((scene) => Number(scene.scene_index || 0))
+    .filter((sceneIndex) => sceneIndex > 0);
+  const failureCodes = [];
+  if (!approvedWindows.length) failureCodes.push("NO_APPROVED_WINDOWS");
+  if (sceneReadiness.length && blockedCriticalScenes.length === sceneReadiness.length) {
+    failureCodes.push("ALL_SCENES_EDITORIALLY_BLOCKED");
+  }
+  if (!allowRuntimeFallback && blockedCriticalScenes.length) {
+    failureCodes.push("EDITORIAL_BLOCKING_SCENES_FOUND");
+  }
+
+  return {
+    enabled,
+    shouldAbort: failureCodes.length > 0,
+    failure_codes: unique(failureCodes),
+    approved_windows_count: approvedWindows.length,
+    blocked_scene_indexes: unique(blockedCriticalScenes),
+  };
+};
+
 const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = "" }) => {
   let state = await loadState(videoId);
   const paths = await ensureVideoStructure(videoId);
@@ -1620,6 +1663,29 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     : null;
 
   state = await ensureAudioIntelligenceReady({ videoId, state });
+
+  const preflightGate = evaluateRenderPreflightGate({
+    state,
+    mockMode,
+    allowRuntimeFallback,
+  });
+  if (preflightGate.shouldAbort) {
+    await updateState(
+      videoId,
+      {
+        render_preflight: {
+          evaluated_at: new Date().toISOString(),
+          ...preflightGate,
+        },
+        error_message: `Render bloqueado no preflight editorial: ${preflightGate.failure_codes.join(", ")}`,
+      },
+      {
+        currentStep: "render_blocked_preflight",
+        status: "render_blocked_preflight",
+      }
+    );
+    throw new Error(`Render blocked by editorial preflight (${preflightGate.failure_codes.join(", ")}).`);
+  }
 
   // Use the new timeline planner (audio intelligence + semantic matching)
   logger.info("renderService: construindo timeline", {
@@ -1924,5 +1990,6 @@ module.exports = {
     buildClipPlan,
     buildSceneScriptTimingHints,
     buildVideoSourceWindow,
+    evaluateRenderPreflightGate,
   },
 };

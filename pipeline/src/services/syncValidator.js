@@ -464,6 +464,17 @@ const computeVisualIntentDistribution = ({ clips = [] }) => {
   };
 };
 
+const buildApprovedPoolCategorySet = ({ state = {} }) => {
+  const approvedWindows = Array.isArray(state.assets_json?.approved_windows) ? state.assets_json.approved_windows : [];
+  const categories = approvedWindows.flatMap((window) =>
+    window?.visual_observation?.detected_visual_categories
+    || window?.editorial_inference?.detected_visual_categories
+    || window?.window?.detected_visual_categories
+    || []
+  );
+  return new Set(categories.map((item) => String(item || "").toLowerCase()).filter(Boolean));
+};
+
 const evaluateVisualIntentCoverage = ({ state = {}, timeline = {} }) => {
   if (!isGastronomyTheme({ state, timeline })) {
     return {
@@ -490,6 +501,37 @@ const evaluateVisualIntentCoverage = ({ state = {}, timeline = {} }) => {
     generic_city_max_ratio: 0.2,
     landscape_or_skyline_max_ratio: 0.15,
   };
+  const approvedPoolCategories = buildApprovedPoolCategorySet({ state });
+  const quotaChecks = [
+    {
+      key: "food_or_plate",
+      actual: distribution.food_or_plate,
+      min: quota.food_or_plate_min_ratio,
+      categories: ["food", "local_food", "pastry", "restaurant", "people_eating"],
+    },
+    {
+      key: "market",
+      actual: distribution.market,
+      min: quota.market_min_ratio,
+      categories: ["market", "street_food"],
+    },
+    {
+      key: "wine",
+      actual: distribution.wine,
+      min: quota.wine_min_ratio,
+      categories: ["wine"],
+    },
+    {
+      key: "restaurant_or_cafe",
+      actual: distribution.restaurant_or_cafe,
+      min: quota.restaurant_or_cafe_min_ratio,
+      categories: ["restaurant", "cafe", "people_eating"],
+    },
+  ];
+  const failedQuotaChecks = quotaChecks.filter((entry) => Number(entry.actual || 0) < Number(entry.min || 0));
+  const availabilityLimitedFailures = failedQuotaChecks.filter((entry) =>
+    !(entry.categories || []).some((category) => approvedPoolCategories.has(String(category || "").toLowerCase()))
+  );
 
   clips.forEach((clip) => {
     const foodIntentClip = FOOD_VISUAL_INTENTS.has(String(clip.visual_intent || "").toLowerCase());
@@ -538,10 +580,15 @@ const evaluateVisualIntentCoverage = ({ state = {}, timeline = {} }) => {
       }
     });
 
-  if (distribution.food_or_plate < quota.food_or_plate_min_ratio || distribution.market < quota.market_min_ratio || distribution.wine < quota.wine_min_ratio || distribution.restaurant_or_cafe < quota.restaurant_or_cafe_min_ratio) {
+  if (failedQuotaChecks.length) {
+    const severeCoverageGap = failedQuotaChecks.length >= 2;
+    const recoverableFromPool = availabilityLimitedFailures.length < failedQuotaChecks.length;
+    const issueSeverity = severeCoverageGap && recoverableFromPool ? "high" : "medium";
     issues.push({
       type: "visual_intent_underrepresented",
-      severity: "high",
+      severity: issueSeverity,
+      failed_quota_keys: failedQuotaChecks.map((entry) => entry.key),
+      availability_limited_keys: availabilityLimitedFailures.map((entry) => entry.key),
       message: "Gastronomy video has too few food/market/wine/restaurant clips",
     });
   }

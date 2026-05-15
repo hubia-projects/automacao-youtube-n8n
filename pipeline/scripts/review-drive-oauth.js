@@ -1,7 +1,20 @@
 const { google } = require("googleapis");
 const dotenv = require("dotenv");
+const fs = require("fs");
+const path = require("path");
 
-dotenv.config();
+const pipelineRoot = path.resolve(__dirname, "..");
+const repoRoot = path.resolve(pipelineRoot, "..");
+[
+  path.join(repoRoot, ".env"),
+  path.join(repoRoot, ".env.local"),
+  path.join(pipelineRoot, ".env"),
+  path.join(process.cwd(), ".env"),
+].forEach((candidatePath) => {
+  if (fs.existsSync(candidatePath)) {
+    dotenv.config({ path: candidatePath, override: false });
+  }
+});
 
 const clientId = process.env.GOOGLE_CLIENT_ID || process.env.YOUTUBE_CLIENT_ID || "";
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET || process.env.YOUTUBE_CLIENT_SECRET || "";

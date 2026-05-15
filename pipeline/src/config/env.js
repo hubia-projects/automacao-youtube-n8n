@@ -2,14 +2,29 @@ const path = require("path");
 const fs = require("fs-extra");
 const dotenv = require("dotenv");
 
-dotenv.config({ path: path.join(process.cwd(), ".env") });
+const PIPELINE_ROOT = path.resolve(__dirname, "..", "..");
+const REPO_ROOT = path.resolve(PIPELINE_ROOT, "..");
+
+const envCandidates = [
+  path.join(REPO_ROOT, ".env"),
+  path.join(REPO_ROOT, ".env.local"),
+  path.join(PIPELINE_ROOT, ".env"),
+  path.join(PIPELINE_ROOT, ".env.local"),
+  path.join(process.cwd(), ".env"),
+].filter((candidatePath, index, array) => array.indexOf(candidatePath) === index);
+
+envCandidates.forEach((candidatePath) => {
+  if (fs.existsSync(candidatePath)) {
+    dotenv.config({ path: candidatePath, override: false });
+  }
+});
 
 const toBool = (value, fallback = false) => {
   if (value === undefined || value === null || value === "") return fallback;
   return String(value).toLowerCase() === "true";
 };
 
-const OUTPUT_ROOT = process.env.OUTPUT_ROOT || path.join(process.cwd(), "output");
+const OUTPUT_ROOT = process.env.OUTPUT_ROOT || path.join(PIPELINE_ROOT, "output");
 
 const config = {
   APP_PORT: Number(process.env.APP_PORT || 8080),
@@ -44,6 +59,7 @@ const config = {
   RUNTIME_DEGRADE_ON_MISSING_ASSETS: toBool(process.env.RUNTIME_DEGRADE_ON_MISSING_ASSETS, true),
   QA_RUNTIME_PROFILE_MOCK: process.env.QA_RUNTIME_PROFILE_MOCK || "mock_relaxed",
   QA_RUNTIME_PROFILE_PROD: process.env.QA_RUNTIME_PROFILE_PROD || "prod_strict",
+  PRE_RENDER_EDITORIAL_FAIL_FAST: toBool(process.env.PRE_RENDER_EDITORIAL_FAIL_FAST, true),
   VISUAL_EVIDENCE_PROVIDER_VERSION: process.env.VISUAL_EVIDENCE_PROVIDER_VERSION || "v2_heuristic",
   CRITICAL_SLOT_FREE_SOURCE_BUDGET_PER_BLOCK: Number(process.env.CRITICAL_SLOT_FREE_SOURCE_BUDGET_PER_BLOCK || 1),
   CRITICAL_SLOT_FREE_CONFIDENCE_MIN: Number(process.env.CRITICAL_SLOT_FREE_CONFIDENCE_MIN || 0.82),
@@ -52,7 +68,9 @@ const config = {
   LOCAL_VIDEO_UNDERSTANDING_WINDOW_SECONDS: Number(process.env.LOCAL_VIDEO_UNDERSTANDING_WINDOW_SECONDS || 8),
   LOCAL_VIDEO_UNDERSTANDING_MAX_WINDOWS: Number(process.env.LOCAL_VIDEO_UNDERSTANDING_MAX_WINDOWS || 20),
   LOCAL_VIDEO_UNDERSTANDING_PYTHON: process.env.LOCAL_VIDEO_UNDERSTANDING_PYTHON || "python",
-  LOCAL_VIDEO_UNDERSTANDING_SCRIPT: process.env.LOCAL_VIDEO_UNDERSTANDING_SCRIPT || "tools/video-understanding/analyze_video.py",
+  LOCAL_VIDEO_UNDERSTANDING_SCRIPT:
+    process.env.LOCAL_VIDEO_UNDERSTANDING_SCRIPT
+    || path.join(PIPELINE_ROOT, "tools", "video-understanding", "analyze_video.py"),
   ASSET_SEARCH_RESULTS_PER_QUERY: Number(process.env.ASSET_SEARCH_RESULTS_PER_QUERY || 12),
   ASSET_CANDIDATE_POOL_PER_SCENE: Number(process.env.ASSET_CANDIDATE_POOL_PER_SCENE || 30),
   ASSET_DOWNLOAD_TOP_PER_SCENE: Number(process.env.ASSET_DOWNLOAD_TOP_PER_SCENE || 6),
@@ -83,6 +101,8 @@ const config = {
   YOUTUBE_CAPTION_NAME: process.env.YOUTUBE_CAPTION_NAME || "Português (Brasil)",
   N8N_WORKFLOW_2_WEBHOOK: process.env.N8N_WORKFLOW_2_WEBHOOK || "",
   N8N_WORKFLOW_3_WEBHOOK: process.env.N8N_WORKFLOW_3_WEBHOOK || "",
+  REPO_ROOT,
+  PIPELINE_ROOT,
 };
 
 fs.ensureDirSync(config.OUTPUT_ROOT);
