@@ -83,6 +83,12 @@ agenthub/agents/youtube/db
 # Generated pipeline artifacts
 pipeline/output/draft/
 
+# Embedded multivozes workspace internals
+multivozes_br_engine/.git/
+multivozes_br_engine/.venv/
+multivozes_br_engine/__pycache__/
+multivozes_br_engine/*.mp3
+
 # Build caches
 .cache/
 

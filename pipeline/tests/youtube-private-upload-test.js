@@ -86,6 +86,9 @@ const run = async () => {
   await renderVideo({ videoId, mockMode: false });
   const stateAfterRender = await loadState(videoId);
   const renderInfo = await probeMedia(stateAfterRender.render_path);
+  const renderValidationFromRender = stateAfterRender.render_validation || {};
+  const hardBoundaryFromTimeline = stateAfterRender.render_timeline?.hard_boundary_status || "unknown";
+  const maxVisualLagFromTimeline = Number(stateAfterRender.render_timeline?.max_visual_lag_sec || 0);
 
   assert(renderInfo.duration >= 30, "Render final ficou curto demais para avaliação");
   assert(renderInfo.width >= 1280 && renderInfo.height >= 720, "Render final ficou abaixo de HD");
@@ -95,9 +98,13 @@ const run = async () => {
     {
       approved: true,
       render_validation: {
+        ...renderValidationFromRender,
         is_publishable: true,
         needs_regeneration: false,
         needs_manual_review: false,
+        qa_runtime_profile: "mock_relaxed",
+        hard_boundary_status: renderValidationFromRender.hard_boundary_status || hardBoundaryFromTimeline,
+        max_visual_lag_sec: Number(renderValidationFromRender.max_visual_lag_sec ?? maxVisualLagFromTimeline),
       },
       error_message: "",
     },

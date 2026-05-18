@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "src/index.js",
   "license": "MIT",
+
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
@@ -54,13 +55,19 @@
     "test:sync-validator-micro-gate": "node tests/sync-validator-micro-gate-test.js",
     "test:editorial-repair-micro-plan": "node tests/editorial-repair-micro-plan-test.js",
     "test:block-query-planner-micro-repair": "node tests/block-query-planner-micro-repair-test.js",
+    "test:clip-library": "node tests/clip-library-service-test.js",
+    "test:scene-index": "node tests/scene-index-service-test.js",
+    "test:timeline-clip-library-priority": "node tests/timeline-clip-library-priority-test.js",
+    "test:clip-library-shadow": "node tests/clip-library-shadow-run-test.js",
     "test:production-preflight": "node tests/production-preflight-test.js",
     "test:coverage-gate": "node tests/coverage-gate-service-test.js",
     "test:asset-readiness-coverage-gate": "node tests/asset-readiness-coverage-gate-test.js",
     "test:repair-planner": "node tests/repair-planner-service-test.js",
     "test:assets-limitations-improvements": "node tests/assets-limitations-improvements-test.js",
-    "test:final-editorial-closure": "node tests/final-editorial-closure-test.js"
+    "test:final-editorial-closure": "node tests/final-editorial-closure-test.js",
+    "test:gemini:standalone": "node ../test-gemini.js"
   },
+  
   "dependencies": {
     "axios": "^1.15.2",
     "cors": "^2.8.6",

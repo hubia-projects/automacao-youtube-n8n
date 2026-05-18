@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Multivozes Voice Lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Bricolage+Grotesque:wght@500;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-1: #f3f6ff;
+      --bg-2: #fef4df;
+      --ink: #172038;
+      --muted: #5f6783;
+      --card: rgba(255, 255, 255, 0.72);
+      --line: rgba(23, 32, 56, 0.14);
+      --accent: #ff5f3d;
+      --accent-2: #2b68ff;
+      --ok: #0f9d58;
+      --shadow: 0 14px 40px rgba(23, 32, 56, 0.14);
+      --radius: 18px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Space Grotesk", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 500px at -10% -15%, rgba(43, 104, 255, 0.22), transparent 70%),
+        radial-gradient(900px 450px at 110% 0%, rgba(255, 95, 61, 0.22), transparent 72%),
+        linear-gradient(135deg, var(--bg-1), var(--bg-2));
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+
+    .shell {
+      width: min(980px, 100%);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: var(--card);
+      backdrop-filter: blur(9px);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      animation: rise-in 0.6s ease;
+    }
+
+    .hero {
+      padding: 24px;
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      gap: 8px;
+      background: linear-gradient(90deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0));
+    }
+
+    .badge {
+      width: fit-content;
+      font-size: 0.75rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: white;
+      background: linear-gradient(90deg, var(--accent), #f2852f);
+      border-radius: 999px;
+      padding: 6px 11px;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: "Bricolage Grotesque", "Segoe UI", sans-serif;
+      font-size: clamp(1.6rem, 2.5vw, 2.3rem);
+      line-height: 1.1;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.97rem;
+    }
+
+    .grid {
+      padding: 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 7px;
+      font-size: 0.86rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #404962;
+      font-weight: 700;
+    }
+
+    input,
+    textarea,
+    select,
+    button {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      padding: 11px 13px;
+      font: inherit;
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.92);
+      outline: none;
+      transition: border-color 0.2s ease, transform 0.2s ease;
+    }
+
+    input:focus,
+    textarea:focus,
+    select:focus {
+      border-color: var(--accent-2);
+    }
+
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap: 12px;
+    }
+
+    .range-wrap {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .range-wrap output {
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: var(--accent-2);
+      min-width: 42px;
+      text-align: right;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: 700;
+      border: 0;
+      color: white;
+      background: linear-gradient(90deg, var(--accent), #f2852f);
+      box-shadow: 0 7px 18px rgba(255, 95, 61, 0.32);
+    }
+
+    button.secondary {
+      background: linear-gradient(90deg, var(--accent-2), #5f98ff);
+      box-shadow: 0 7px 18px rgba(43, 104, 255, 0.28);
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    .player-box {
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.64);
+      border-radius: 14px;
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }
+
+    audio {
+      width: 100%;
+    }
+
+    .status {
+      margin: 0;
+      font-size: 0.92rem;
+      color: var(--muted);
+      min-height: 20px;
+    }
+
+    .status.ok {
+      color: var(--ok);
+      font-weight: 700;
+    }
+
+    .status.err {
+      color: #b42318;
+      font-weight: 700;
+    }
+
+    @keyframes rise-in {
+      from {
+        opacity: 0;
+        transform: translateY(14px) scale(0.98);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    @media (max-width: 840px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .row,
+      .actions {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <span class="badge">Voice Lab</span>
+      <h1>Teste de vozes em tempo real</h1>
+      <p class="subtitle">Use este painel para gerar audio pela API local e comparar vozes rapidamente.</p>
+    </header>
+
+    <section class="grid">
+      <div>
+        <label for="apiUrl">URL da API</label>
+        <input id="apiUrl" type="text" />
+      </div>
+
+      <div>
+        <label for="apiKey">API Key (opcional)</label>
+        <input id="apiKey" type="text" placeholder="Bearer token" />
+      </div>
+
+      <div class="full">
+        <label for="textInput">Texto</label>
+        <textarea id="textInput">Ola! Este e um teste local do Multivozes BR Engine.</textarea>
+      </div>
+
+      <div class="full row">
+        <div>
+          <label for="voiceSelect">Voz (alias)</label>
+          <select id="voiceSelect"></select>
+        </div>
+
+        <div>
+          <label for="formatSelect">Formato</label>
+          <select id="formatSelect">
+            <option value="mp3" selected>mp3</option>
+            <option value="wav">wav</option>
+            <option value="flac">flac</option>
+            <option value="opus">opus</option>
+            <option value="aac">aac</option>
+            <option value="pcm">pcm</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="speedInput">Velocidade</label>
+          <div class="range-wrap">
+            <input id="speedInput" type="range" min="0.25" max="2" step="0.05" value="1" />
+            <output id="speedValue">1.00x</output>
+          </div>
+        </div>
+      </div>
+
+      <div class="full">
+        <label for="customVoice">Voz personalizada (opcional)</label>
+        <input id="customVoice" type="text" placeholder="Exemplo: pt-BR-FranciscaNeural" />
+      </div>
+
+      <div class="full actions">
+        <button id="btnPlay" type="button">Gerar e tocar</button>
+        <button id="btnDownload" type="button" class="secondary">Gerar e baixar</button>
+      </div>
+
+      <div class="full player-box">
+        <audio id="audioPlayer" controls></audio>
+        <p id="status" class="status">Pronto para teste.</p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const apiUrlInput = document.getElementById("apiUrl");
+    const apiKeyInput = document.getElementById("apiKey");
+    const textInput = document.getElementById("textInput");
+    const voiceSelect = document.getElementById("voiceSelect");
+    const customVoice = document.getElementById("customVoice");
+    const formatSelect = document.getElementById("formatSelect");
+    const speedInput = document.getElementById("speedInput");
+    const speedValue = document.getElementById("speedValue");
+    const btnPlay = document.getElementById("btnPlay");
+    const btnDownload = document.getElementById("btnDownload");
+    const audioPlayer = document.getElementById("audioPlayer");
+    const statusEl = document.getElementById("status");
+
+    let audioObjectUrl = null;
+
+    apiUrlInput.value = window.location.origin;
+
+    speedInput.addEventListener("input", () => {
+      speedValue.value = Number(speedInput.value).toFixed(2) + "x";
+    });
+
+    function setStatus(text, type = "") {
+      statusEl.textContent = text;
+      statusEl.className = "status" + (type ? " " + type : "");
+    }
+
+    function getHeaders() {
+      const headers = { "Content-Type": "application/json" };
+      const key = apiKeyInput.value.trim();
+      if (key) {
+        headers.Authorization = "Bearer " + key;
+      }
+      return headers;
+    }
+
+    function getVoiceValue() {
+      const custom = customVoice.value.trim();
+      if (custom) {
+        return custom;
+      }
+      return voiceSelect.value || "alloy";
+    }
+
+    function releaseOldAudioUrl() {
+      if (audioObjectUrl) {
+        URL.revokeObjectURL(audioObjectUrl);
+        audioObjectUrl = null;
+      }
+    }
+
+    async function carregarVozes() {
+      voiceSelect.innerHTML = "<option value='alloy'>alloy</option>";
+      try {
+        const resp = await fetch(apiUrlInput.value.replace(/\/$/, "") + "/v1/voices");
+        if (!resp.ok) {
+          setStatus("Nao foi possivel listar vozes. Usando alias padrao.", "err");
+          return;
+        }
+        const data = await resp.json();
+        const vozes = Array.isArray(data.data) ? data.data : [];
+        if (!vozes.length) {
+          setStatus("Nenhuma voz mapeada encontrada. Usando alias padrao.", "err");
+          return;
+        }
+        voiceSelect.innerHTML = "";
+        vozes.forEach((item) => {
+          const option = document.createElement("option");
+          option.value = item.alias;
+          option.textContent = item.alias + " -> " + item.voice;
+          voiceSelect.appendChild(option);
+        });
+        setStatus("Vozes carregadas com sucesso.", "ok");
+      } catch (err) {
+        setStatus("Erro ao carregar vozes: " + err.message, "err");
+      }
+    }
+
+    async function gerarAudio(download = false) {
+      try {
+        const text = textInput.value.trim();
+        if (!text) {
+          setStatus("Digite algum texto para sintetizar.", "err");
+          return;
+        }
+
+        setStatus("Gerando audio... aguarde");
+
+        const body = {
+          model: "tts-1",
+          input: text,
+          voice: getVoiceValue(),
+          response_format: formatSelect.value,
+          speed: Number(speedInput.value)
+        };
+
+        const base = apiUrlInput.value.trim().replace(/\/$/, "");
+        const resp = await fetch(base + "/v1/audio/speech", {
+          method: "POST",
+          headers: getHeaders(),
+          body: JSON.stringify(body)
+        });
+
+        if (!resp.ok) {
+          let detail = "Erro ao gerar audio.";
+          try {
+            const errData = await resp.json();
+            detail = errData.detail || detail;
+          } catch (_) {}
+          setStatus(detail, "err");
+          return;
+        }
+
+        const blob = await resp.blob();
+        releaseOldAudioUrl();
+        audioObjectUrl = URL.createObjectURL(blob);
+
+        audioPlayer.src = audioObjectUrl;
+        audioPlayer.load();
+
+        if (download) {
+          const a = document.createElement("a");
+          a.href = audioObjectUrl;
+          a.download = "speech-" + Date.now() + "." + formatSelect.value;
+          a.click();
+          setStatus("Arquivo gerado e baixado.", "ok");
+          return;
+        }
+
+        await audioPlayer.play();
+        setStatus("Audio gerado e reproduzido.", "ok");
+      } catch (err) {
+        setStatus("Falha no teste: " + err.message, "err");
+      }
+    }
+
+    btnPlay.addEventListener("click", () => gerarAudio(false));
+    btnDownload.addEventListener("click", () => gerarAudio(true));
+
+    window.addEventListener("beforeunload", () => releaseOldAudioUrl());
+
+    carregarVozes();
+  </script>
+</body>
+</html>

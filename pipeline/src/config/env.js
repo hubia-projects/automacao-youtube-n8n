@@ -23,6 +23,16 @@ const toBool = (value, fallback = false) => {
   if (value === undefined || value === null || value === "") return fallback;
   return String(value).toLowerCase() === "true";
 };
+const toList = (value, fallback = []) =>
+  String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean).length
+    ? String(value || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+    : fallback;
 
 const OUTPUT_ROOT = process.env.OUTPUT_ROOT || path.join(PIPELINE_ROOT, "output");
 
@@ -33,9 +43,24 @@ const config = {
   OUTPUT_ROOT,
   N8N_BASE_URL: process.env.N8N_BASE_URL || "http://n8n:5678",
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",
+  GEMINI_BASE_URL: process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta",
+  GEMINI_VISION_ENABLED: toBool(process.env.GEMINI_VISION_ENABLED, true),
+  GEMINI_VISION_MODEL_LITE: process.env.GEMINI_VISION_MODEL_LITE || "gemini-2.5-flash-lite",
+  GEMINI_VISION_MODEL_FULL: process.env.GEMINI_VISION_MODEL_FULL || "gemini-2.5-flash",
+  GEMINI_VISION_FALLBACK_MODELS: toList(process.env.GEMINI_VISION_FALLBACK_MODELS, ["gemini-2.0-flash"]),
+  GEMINI_VISION_TIMEOUT_MS: Number(process.env.GEMINI_VISION_TIMEOUT_MS || 45000),
+  GEMINI_VISION_MAX_RETRIES: Number(process.env.GEMINI_VISION_MAX_RETRIES || 2),
+  GEMINI_VISION_RETRY_BASE_MS: Number(process.env.GEMINI_VISION_RETRY_BASE_MS || 1200),
+  GEMINI_VISION_ESCALATION_MIN_CONFIDENCE: Number(process.env.GEMINI_VISION_ESCALATION_MIN_CONFIDENCE || 0.62),
+  GEMINI_VISION_ESCALATION_MAX_GENERIC_RATIO: Number(process.env.GEMINI_VISION_ESCALATION_MAX_GENERIC_RATIO || 0.5),
   MULTIVOZES_BR_ENGINE:
     process.env.MULTIVOZES_BR_ENGINE || process.env.MULTIVOZEZ_BR_ENGINE || "",
   MULTIVOZES_BR_BASE_URL: process.env.MULTIVOZES_BR_BASE_URL || "http://host.docker.internal:5050/v1",
+  MULTIVOZES_AUTO_START: toBool(process.env.MULTIVOZES_AUTO_START, false),
+  MULTIVOZES_PROJECT_PATH: process.env.MULTIVOZES_PROJECT_PATH || "",
+  MULTIVOZES_DOCKER_SERVICE: process.env.MULTIVOZES_DOCKER_SERVICE || "",
+  MULTIVOZES_START_TIMEOUT_MS: Number(process.env.MULTIVOZES_START_TIMEOUT_MS || 30000),
   ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY || "",
   ELEVENLABS_VOICE_ID: process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM",
   PEXELS_API_KEY: process.env.PEXELS_API_KEY || "",
@@ -95,6 +120,24 @@ const config = {
   LOCAL_CURATED_ASSETS_DIR:
     process.env.LOCAL_CURATED_ASSETS_DIR
     || path.join(OUTPUT_ROOT, "editorial", "curated-assets"),
+  USE_CLIP_LIBRARY: toBool(process.env.USE_CLIP_LIBRARY, false),
+  USE_SCENE_INDEX: toBool(process.env.USE_SCENE_INDEX, false),
+  CLIP_LIBRARY_POLICY_VERSION: process.env.CLIP_LIBRARY_POLICY_VERSION || "v1",
+  CLIP_LIBRARY_DB_PATH:
+    process.env.CLIP_LIBRARY_DB_PATH
+    || path.join(OUTPUT_ROOT, "editorial", "clip-library.db"),
+  SCENE_INDEX_DB_PATH:
+    process.env.SCENE_INDEX_DB_PATH
+    || path.join(OUTPUT_ROOT, "editorial", "scene-index.db"),
+  CLIP_LIBRARY_ROOT_DIR:
+    process.env.CLIP_LIBRARY_ROOT_DIR
+    || path.join(OUTPUT_ROOT, "editorial", "clip-library"),
+  CLIP_LIBRARY_MAX_SEARCH_RESULTS: Number(process.env.CLIP_LIBRARY_MAX_SEARCH_RESULTS || 24),
+  CLIP_LIBRARY_SHADOW_ENABLED: toBool(process.env.CLIP_LIBRARY_SHADOW_ENABLED, false),
+  CLIP_LIBRARY_SHADOW_VIDEO_PATH: process.env.CLIP_LIBRARY_SHADOW_VIDEO_PATH || "",
+  CLIP_LIBRARY_SHADOW_REPORT_DIR:
+    process.env.CLIP_LIBRARY_SHADOW_REPORT_DIR
+    || path.join(OUTPUT_ROOT, "editorial", "shadow-reports"),
   AI_GENERATED_PLACEHOLDER_ENABLED: toBool(process.env.AI_GENERATED_PLACEHOLDER_ENABLED, false),
   EDITORIAL_LIBRARY_REUSE_COOLDOWN_HOURS: Number(process.env.EDITORIAL_LIBRARY_REUSE_COOLDOWN_HOURS || 12),
   MIN_SPECIFIC_ASSETS_PER_SCENE: Number(process.env.MIN_SPECIFIC_ASSETS_PER_SCENE || 2),
@@ -130,5 +173,9 @@ const config = {
 
 fs.ensureDirSync(config.OUTPUT_ROOT);
 fs.ensureDirSync(path.join(config.OUTPUT_ROOT, "draft"));
+fs.ensureDirSync(path.dirname(config.CLIP_LIBRARY_DB_PATH));
+fs.ensureDirSync(path.dirname(config.SCENE_INDEX_DB_PATH));
+fs.ensureDirSync(config.CLIP_LIBRARY_ROOT_DIR);
+fs.ensureDirSync(config.CLIP_LIBRARY_SHADOW_REPORT_DIR);
 
 module.exports = { config };

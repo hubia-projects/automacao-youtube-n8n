@@ -7,12 +7,40 @@ services:
     ports:
       - "${APP_HOST_PORT:-8081}:8080"
     env_file:
-      - .env
+      - ../.env
+    environment:
+      - MULTIVOZES_BR_BASE_URL=http://multivozes:5050/v1
     volumes:
       - ./output:/app/pipeline/output
       - ./src:/app/src
       - ./tests:/app/tests
       - ./n8n:/app/n8n
+    depends_on:
+      multivozes:
+        condition: service_healthy
+    restart: unless-stopped
+
+  multivozes:
+    build:
+      context: ../multivozes_br_engine
+      dockerfile: Dockerfile
+    container_name: yt-pipeline-multivozes
+    env_file:
+      - ../multivozes_br_engine/.env
+    ports:
+      - "5050:5050"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5050/v1/models', timeout=5)"
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
     restart: unless-stopped
 
   n8n:
@@ -21,7 +49,7 @@ services:
     ports:
       - "${N8N_HOST_PORT:-5679}:5678"
     env_file:
-      - .env
+      - ../.env
     environment:
       - GENERIC_TIMEZONE=America/Sao_Paulo
       - TZ=America/Sao_Paulo

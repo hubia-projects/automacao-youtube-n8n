@@ -27,6 +27,10 @@ const {
   findLocalRecutCandidate,
   repairTimelineClipSequence,
 } = require("./timelineRepairExecutorService");
+const {
+  searchApprovedClips,
+  markClipUsed,
+} = require("./clipLibraryService");
 
 const OUTPUT_WIDTH = Number(config.OUTPUT_WIDTH || 1920);
 const OUTPUT_HEIGHT = Number(config.OUTPUT_HEIGHT || 1080);
@@ -378,6 +382,126 @@ const buildFallbackCandidate = (fallbackAsset) => ({
   semantic_text: fallbackAsset.semantic_text || fallbackAsset.query || "neutral travel fallback",
 });
 
+const mapClipLibraryRecordToCandidate = (clip = {}) => {
+  const sourcePath = String(clip.clip_path || "");
+  return {
+    id: `cliplib_${clip.clip_id}`,
+    asset_id: String(clip.clip_id || clip.asset_id || ""),
+    asset: {
+      asset_id: String(clip.clip_id || clip.asset_id || ""),
+      provider: "clip_library",
+      local_path: sourcePath,
+      source_url: `clip_library://${clip.clip_id}`,
+      asset_type: "video",
+      type: "video",
+      source_duration_seconds: Number(clip.duration_sec || 0),
+      duration_estimate: Number(clip.duration_sec || 0),
+      resolution: {
+        width: Number(config.OUTPUT_WIDTH || 1920),
+        height: Number(config.OUTPUT_HEIGHT || 1080),
+      },
+      semantic_text: [clip.visual_intent, ...(clip.tags_semanticas || []), ...(clip.entities || [])].join(" "),
+      from_clip_library: true,
+      clip_id: clip.clip_id,
+    },
+    source: "clip_library",
+    scene_index: Number(clip.scene_index || 0),
+    block_id: String(clip.block_id || ""),
+    start_sec: 0,
+    end_sec: Number(clip.duration_sec || 0),
+    duration_sec: Number(clip.duration_sec || 0),
+    description: [clip.visual_intent, ...(clip.tags_semanticas || [])].join(" ").trim() || "clip library candidate",
+    summary: [clip.visual_intent, ...(clip.tags_semanticas || [])].join(" ").trim() || "clip library candidate",
+    tags: clip.tags_semanticas || [],
+    location: clip.location || { city: "", country: "", confidence: 0 },
+    landmarks: (clip.entities || []).map((item) => ({ name: item, confidence: clip.confidence || 0.6 })),
+    location_type: "",
+    visual_features: {
+      shot_type: clip.shot_type || "unknown",
+      camera_motion: "unknown",
+      dominant_colors: [],
+      has_people: false,
+      has_water: false,
+      has_architecture: false,
+    },
+    quality: {
+      sharpness: 0.85,
+      stability: 0.85,
+      brightness: 0.85,
+      usable: true,
+      resolution_score: 1,
+    },
+    detected_visual_categories: clip.tags_semanticas || [],
+    detected_objects: clip.entities || [],
+    visual_intent_match: true,
+    generic_visual: false,
+    required_evidence_found: clip.tags_semanticas || [],
+    missing_required_visual_evidence: [],
+    confidence: Number(clip.confidence || 0.85),
+    neutral: false,
+    visual_evidence_source: "clip_library",
+    visual_observation_origin: "real_vision",
+    semantic_text: [clip.visual_intent, ...(clip.tags_semanticas || []), ...(clip.entities || [])].join(" ").trim(),
+    window_index: 1,
+    analysis_provider: "clip_library",
+    visual_truth_status: "exact",
+    editorial_confidence: Number(clip.confidence || 0.85),
+    narrative_roles_supported: ["hook_exact", "opening_establishing", "proof_exact", "context_regional", "detail_cutaway", "closing_payoff"],
+    opening_allowed: true,
+    closing_allowed: true,
+    critical_slot_allowed: true,
+    editorial_approved: true,
+    approved_window_id: `cliplib:${clip.clip_id}`,
+    source_tier: "curated",
+    content_slot_type: "",
+    content_slot_id: "",
+    slot_match_score: 1,
+    slot_coverage_contribution: 1,
+    micro_need_match_score: 0.6,
+    micro_need_match_scores: {},
+    micro_needs_supported: [],
+    action_tokens_detected: [],
+    temporal_match_hints: {
+      duration_seconds: Number(clip.duration_sec || 0),
+      dominant_action_tokens: [],
+      dominant_categories: clip.tags_semanticas || [],
+    },
+    visual_family: "",
+    landmark_id: "",
+    shot_scale: clip.shot_type || "",
+    human_presence: false,
+    provider_signature: `clip_library|${clip.clip_id}`,
+    scene_function: "",
+    source_url: `clip_library://${clip.clip_id}`,
+    from_clip_library: true,
+    clip_library_id: clip.clip_id,
+  };
+};
+
+const mergeApprovedPoolWithClipLibrary = async ({ microBlocks = [], approvedCandidates = [] }) => {
+  if (!config.USE_CLIP_LIBRARY) return approvedCandidates;
+  const merged = [...approvedCandidates];
+
+  for (const block of microBlocks || []) {
+    const results = await searchApprovedClips({
+      sceneIndex: Number(block.scene_index || 0),
+      blockId: String(block.block_id || ""),
+      visualIntent: String(block.visual_intent || ""),
+      keywords: block.keywords || [],
+      limit: Math.max(8, Number(config.CLIP_LIBRARY_MAX_SEARCH_RESULTS || 24)),
+    }).catch(() => []);
+    const candidates = (results || []).map(mapClipLibraryRecordToCandidate);
+    candidates.forEach((candidate) => {
+      const exists = merged.some((item) =>
+        String(item.clip_library_id || "") === String(candidate.clip_library_id || "")
+      );
+      if (!exists) merged.push(candidate);
+    });
+  }
+
+  return merged;
+};
+
 const buildChapterCardCandidate = ({ block, fallbackAsset }) => {
   if (!fallbackAsset) return null;
   const base = buildFallbackCandidate(fallbackAsset);
@@ -648,6 +772,22 @@ const candidateRespectsDiversityQuotas = ({
   if (providerCount >= maxProviderCount) return false;
   if (landmarkCount >= 1) return false;
   return true;
+};
+
+const prioritizeClipLibraryPoolForSlot = ({ block, slotRole = "", assetWindows = [] }) => {
+  const clipLibraryScoped = (assetWindows || []).filter((candidate) => {
+    if (!candidate.from_clip_library) return false;
+    const sceneMatch = Number(candidate.scene_index || 0) === Number(block.scene_index || 0);
+    const blockMatch = String(candidate.block_id || "") && String(candidate.block_id || "") === String(block.block_id || "");
+    if (!sceneMatch && !blockMatch) return false;
+    const roles = candidate.narrative_roles_supported || [];
+    if (!roles.length || !slotRole) return true;
+    return roles.includes(slotRole);
+  });
+  if (clipLibraryScoped.length) {
+    return clipLibraryScoped;
+  }
+  return assetWindows || [];
 };
 
 const selectWithDiversityQuota = ({
@@ -1081,7 +1221,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
   const eligibleApprovedAssets = allowPlaceholderFallback
     ? approvedAssets
     : approvedAssets.filter((asset) => isPublishableAsset(asset, { mockMode: false }));
-  const approvedWindowCandidates = approvedWindowsContracts.length
+  const approvedWindowCandidatesBase = approvedWindowsContracts.length
     ? buildApprovedWindowCandidates({ approvedWindows: approvedWindowsContracts, assets: rawAssets })
     : flattenAssetWindows(eligibleApprovedAssets.length ? eligibleApprovedAssets : allowPlaceholderFallback ? [fallbackAsset] : []).map((candidate) => ({
       ...candidate,
@@ -1094,6 +1234,10 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
       source_tier: candidate.source_tier || "free",
       visual_truth_status: candidate.visual_truth_status || "regional",
     }));
+  const approvedWindowCandidates = await mergeApprovedPoolWithClipLibrary({
+    microBlocks,
+    approvedCandidates: approvedWindowCandidatesBase,
+  });
   const sceneBlockIdByIndex = (Array.isArray(state.visual_plan) ? state.visual_plan : []).reduce((acc, scene) => {
     const sceneIndex = Number(scene.scene_index || 0);
     if (!sceneIndex) return acc;
@@ -1164,9 +1308,14 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         endSeconds: slot.end,
         fallback: sceneFallbackNarration,
       });
+      const candidatePool = prioritizeClipLibraryPoolForSlot({
+        block,
+        slotRole,
+        assetWindows,
+      });
       const candidates = filterCandidatesByHardRules({
         block,
-        assetWindows,
+        assetWindows: candidatePool,
         previousMacroTopic,
         fallbackAsset,
         allowPlaceholderFallback,
@@ -1426,6 +1575,9 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         ...((chosenFeatures?.detectedVisualCategories) || []),
       ]);
       registerClipUsage({ usage, block, candidate, clipIndex: clips.length + 1 });
+      if (candidate.from_clip_library && candidate.clip_library_id) {
+        await markClipUsed({ clipId: candidate.clip_library_id }).catch(() => null);
+      }
       if (criticalSlot && ["free", "generated"].includes(String(candidate.source_tier || "free").toLowerCase())) {
         const blockKey = String(block.block_id || block.id || block.scene_index || "unknown_block");
         freeCriticalUsageByBlock.set(blockKey, Number(freeCriticalUsageByBlock.get(blockKey) || 0) + 1);
@@ -1486,6 +1638,8 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         asset_semantic_text: candidate.description || candidate.semantic_text || candidate.asset?.semantic_text || candidate.asset?.query || "",
         asset_window_id: candidate.id,
         asset_id: candidate.asset_id,
+        clip_library_id: candidate.clip_library_id || "",
+        from_clip_library: candidate.from_clip_library === true,
         asset_window_key: `${candidate.asset_id}:${candidate.start_sec}:${candidate.end_sec}`,
         asset_window_summary: candidate.description || candidate.summary || "",
         asset_window_start_seconds: Number(candidate.start_sec || 0),
@@ -1706,5 +1860,7 @@ module.exports = {
     belongsToTopic,
     splitBlockIntoTimelineSlots,
     getNarrationTextBetween,
+    mapClipLibraryRecordToCandidate,
+    prioritizeClipLibraryPoolForSlot,
   },
 };

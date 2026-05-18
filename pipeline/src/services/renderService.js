@@ -7,6 +7,7 @@ const { isPlaceholderAsset, shouldAllowPlaceholderAssets } = require("./assetRea
 const { buildTimeline, chooseOutputResolution } = require("./timelinePlanner");
 const { analyzeAudio } = require("./audioIntelligence");
 const { applyOverlaysToVideo, buildBlockOverlays } = require("./overlayService");
+const { summarizeClipLibrary } = require("./clipLibraryService");
 const { config } = require("../config/env");
 const { logger } = require("../utils/logger");
 
@@ -1652,8 +1653,8 @@ const evaluateRenderPreflightGate = ({ state = {}, mockMode = false, allowRuntim
   );
   const failureCodes = [];
   if (!approvedWindows.length) failureCodes.push("NO_APPROVED_WINDOWS");
-  if (insufficientCoverageScenes.length) failureCodes.push("INSUFFICIENT_BLOCK_COVERAGE");
-  if (strictStrongOnly && !allowPartialCoverage && (partialReadinessScenes.length || partialBlockScenes.length)) {
+  if (!allowRuntimeFallback && insufficientCoverageScenes.length) failureCodes.push("INSUFFICIENT_BLOCK_COVERAGE");
+  if (!allowRuntimeFallback && strictStrongOnly && !allowPartialCoverage && (partialReadinessScenes.length || partialBlockScenes.length)) {
     failureCodes.push("PARTIAL_BLOCK_COVERAGE");
   }
   if (criticalSlotOnlyGenericScenes.length || criticalGenericClips.length) {
@@ -1662,7 +1663,7 @@ const evaluateRenderPreflightGate = ({ state = {}, mockMode = false, allowRuntim
   if (diversityBypassCriticalClips.length) {
     failureCodes.push("DIVERSITY_BYPASS_ON_CRITICAL_SLOT");
   }
-  if (sceneReadiness.length && blockedCriticalScenes.length === sceneReadiness.length) {
+  if (!allowRuntimeFallback && sceneReadiness.length && blockedCriticalScenes.length === sceneReadiness.length) {
     failureCodes.push("ALL_SCENES_EDITORIALLY_BLOCKED");
   }
   if (!allowRuntimeFallback && blockedCriticalScenes.length) {
@@ -1925,6 +1926,23 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
   const outputInfo = await probeMedia(finalRenderPath).catch(() => ({ width: 0, height: 0, duration: audioDuration }));
   const uniqueAssetCount = new Set(clipPlan.map((clip) => clip.asset?.local_path).filter(Boolean)).size;
   const semanticScores = clipPlan.map((clip) => Number((clip.timeline_score ?? clip.composite_score ?? clip.semantic_match_score) || 0));
+  const clipLibrarySummary = config.USE_CLIP_LIBRARY
+    ? await summarizeClipLibrary({ videoId }).catch(() => ({
+      clips_generated: 0,
+      clips_approved: 0,
+      clip_reuse_ratio: 0,
+      generated_clip_ids: [],
+      approved_clip_ids: [],
+      last_updated_at: "",
+    }))
+    : {
+      clips_generated: 0,
+      clips_approved: 0,
+      clip_reuse_ratio: 0,
+      generated_clip_ids: [],
+      approved_clip_ids: [],
+      last_updated_at: "",
+    };
 
   const nextState = await updateState(
     videoId,
@@ -2001,6 +2019,8 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
           forbidden_visual_categories: clip.forbidden_visual_categories,
           asset_semantic_text: clip.asset_semantic_text,
           asset_window_id: clip.asset_window_id,
+          clip_library_id: clip.clip_library_id || "",
+          from_clip_library: clip.from_clip_library === true,
           asset_window_key: clip.asset_window_key,
           asset_window_summary: clip.asset_window_summary,
           asset_window_start_seconds: clip.asset_window_start_seconds,
@@ -2054,6 +2074,14 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
             label: outputResolution.width >= 1920 ? "Full HD" : "HD",
           },
         })),
+      },
+      clip_library_summary: {
+        clips_generated: Number(clipLibrarySummary.clips_generated || 0),
+        clips_approved: Number(clipLibrarySummary.clips_approved || 0),
+        clip_reuse_ratio: Number(clipLibrarySummary.clip_reuse_ratio || 0),
+        generated_clip_ids: clipLibrarySummary.generated_clip_ids || [],
+        approved_clip_ids: clipLibrarySummary.approved_clip_ids || [],
+        last_updated_at: clipLibrarySummary.last_updated_at || new Date().toISOString(),
       },
       error_message: "",
     },

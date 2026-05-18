@@ -8,6 +8,11 @@ const { ttsWithOpenAI } = require("./openaiService");
 const { sendWorkflowStatus } = require("./telegramService");
 const { logger } = require("../utils/logger");
 const { probeMedia } = require("../utils/mediaUtils");
+const {
+  ensureMultivozesStarted,
+  shouldAttemptMultivozesAutoStart,
+  waitForMultivozesReady,
+} = require("./multivozesRuntimeService");
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -24,9 +29,29 @@ const hasMultivozes = () => Boolean(config.MULTIVOZES_BR_ENGINE && config.MULTIV
 const hasElevenLabs = () => Boolean(config.ELEVENLABS_API_KEY);
 
 const getMultivozesBaseUrl = () => config.MULTIVOZES_BR_BASE_URL.replace(/\/+$/, "");
+const isDockerRuntime = () => process.platform !== "win32" && fs.existsSync("/.dockerenv");
+const isLocalhostMultivozesBaseUrl = () => /^https?:\/\/(localhost|127\.0\.0\.1)(?::\d+)?(?:\/|$)/i.test(getMultivozesBaseUrl());
 
 const pickRandomMultivozesVoice = () =>
   MULTIVOZES_TEST_VOICES[Math.floor(Math.random() * MULTIVOZES_TEST_VOICES.length)];
+
+const formatProviderError = (error) => {
+  const message = String(error?.message || "").trim();
+  const status = Number(error?.response?.status || 0);
+  const statusText = String(error?.response?.statusText || "").trim();
+  const providerMessage =
+    error?.response?.data?.error?.message
+    || error?.response?.data?.message
+    || error?.response?.data?.error
+    || "";
+  const code = String(error?.code || "").trim();
+
+  if (message) return message;
+  if (providerMessage) return String(providerMessage);
+  if (status > 0) return `HTTP ${status}${statusText ? ` ${statusText}` : ""}`;
+  if (code) return code;
+  return "Erro desconhecido no provider.";
+};
 
 const estimateDurationFromText = (text = "") => {
   const words = text.trim().split(/\s+/).filter(Boolean).length;
@@ -234,6 +259,62 @@ const ttsWithMultivozes = async ({ text, voice }) => {
   };
 };
 
+const buildMultivozesMisconfigurationHint = () => {
+  if (!isDockerRuntime() || !isLocalhostMultivozesBaseUrl()) return "";
+  return " Em ambiente Docker, localhost aponta para o próprio container; use host.docker.internal ou o nome do serviço do Multivozes.";
+};
+
+const probeMultivozesModels = async () => {
+  const response = await axios.get(`${getMultivozesBaseUrl()}/models`, {
+    headers: { Authorization: `Bearer ${config.MULTIVOZES_BR_ENGINE}` },
+    timeout: 20000,
+  });
+
+  return {
+    configured: true,
+    ok: true,
+    message: `Modelos encontrados: ${response.data?.data?.length || 0}`,
+  };
+};
+
+const buildMultivozesHealthFailure = (error, suffix = "") => {
+  const baseMessage = `${formatProviderError(error)}${buildMultivozesMisconfigurationHint()}`.trim();
+  return {
+    configured: true,
+    ok: false,
+    message: suffix ? `${baseMessage} ${suffix}`.trim() : baseMessage,
+  };
+};
+
+const isTransientMultivozesError = (error) => {
+  const status = Number(error?.response?.status || 0);
+  const code = String(error?.code || "").toUpperCase();
+  return status >= 500 || ["ETIMEDOUT", "ECONNRESET", "EAI_AGAIN"].includes(code);
+};
+
+const synthesizeWithMultivozesWithAutoStart = async ({ text }) => {
+  try {
+    return await ttsWithMultivozes({ text });
+  } catch (error) {
+    if (isTransientMultivozesError(error)) {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      return ttsWithMultivozes({ text });
+    }
+
+    if (!shouldAttemptMultivozesAutoStart(error)) {
+      throw error;
+    }
+
+    const startResult = await ensureMultivozesStarted();
+    if (!startResult.ok) {
+      throw new Error(`Multivozes offline e auto-start falhou: ${startResult.message}`);
+    }
+
+    await waitForMultivozesReady(async () => probeMultivozesModels());
+    return ttsWithMultivozes({ text });
+  }
+};
+
 const generateAudio = async ({ videoId, mockMode = false, provider = "multivozes" }) => {
   const state = await loadState(videoId);
   if (!state.script_text) {
@@ -251,12 +332,12 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "multivozes
 
   if (!mockMode && provider === "multivozes") {
     try {
-      const multivozesResponse = await ttsWithMultivozes({ text });
+      const multivozesResponse = await synthesizeWithMultivozesWithAutoStart({ text });
       audioBuffer = multivozesResponse?.buffer || null;
       usedVoice = multivozesResponse?.voice || "";
       if (audioBuffer) usedProvider = "multivozes";
     } catch (error) {
-      logger.warn("Multivozes falhou, tentando OpenAI TTS fallback", { message: error.message });
+      logger.warn("Multivozes falhou, tentando OpenAI TTS fallback", { message: formatProviderError(error) });
     }
   }
 
@@ -339,18 +420,29 @@ const basicMultivozesHealthcheck = async () => {
   }
 
   try {
-    const response = await axios.get(`${getMultivozesBaseUrl()}/models`, {
-      headers: { Authorization: `Bearer ${config.MULTIVOZES_BR_ENGINE}` },
-      timeout: 20000,
-    });
-
-    return {
-      configured: true,
-      ok: true,
-      message: `Modelos encontrados: ${response.data?.data?.length || 0}`,
-    };
+    return await probeMultivozesModels();
   } catch (error) {
-    return { configured: true, ok: false, message: error.message };
+    if (!shouldAttemptMultivozesAutoStart(error)) {
+      return buildMultivozesHealthFailure(error);
+    }
+
+    const startResult = await ensureMultivozesStarted();
+    if (!startResult.ok) {
+      return buildMultivozesHealthFailure(error, `Auto-start do Multivozes falhou: ${startResult.message}`);
+    }
+
+    try {
+      const result = await waitForMultivozesReady(probeMultivozesModels);
+      return {
+        ...result,
+        message: `${result.message} (auto-start via docker compose)`,
+      };
+    } catch (retryError) {
+      return buildMultivozesHealthFailure(
+        retryError,
+        `Auto-start executado, mas o serviço não ficou pronto: ${startResult.message}`
+      );
+    }
   }
 };
 

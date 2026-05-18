@@ -1,0 +1,9 @@
+.env
+.git
+.venv
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+teste-frontend.mp3
+teste-local.mp3

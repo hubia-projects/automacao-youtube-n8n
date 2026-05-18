@@ -16,6 +16,7 @@ const { loadState, updateState, setStateError } = require("../services/stateServ
 const { triggerWorkflow2, triggerWorkflow3 } = require("../services/workflowHandoffService");
 const { requestReviewRegeneration } = require("../services/reviewRevisionService");
 const { ingestRetentionLearning } = require("../services/editorialLearningService");
+const { runClipLibraryShadow } = require("../services/clipLibraryShadowService");
 const { config } = require("../config/env");
 
 const router = Router();
@@ -431,6 +432,24 @@ router.post("/videos/youtube/upload", async (req, res, next) => {
     res.json({ ok: true, ...result });
   } catch (error) {
     await setStateError(req.body?.video_id, error, "youtube_upload_failed").catch(() => null);
+    next(error);
+  }
+});
+
+router.post("/videos/clip-library/shadow-run", async (req, res, next) => {
+  try {
+    const schema = bodyWithVideoId.extend({
+      video_path: z.string().min(3),
+      window_seconds: z.number().min(1).max(30).optional(),
+    });
+    const parsed = schema.parse(req.body || {});
+    const result = await runClipLibraryShadow({
+      videoPath: parsed.video_path,
+      videoId: parsed.video_id,
+      windowSec: parsed.window_seconds || 3,
+    });
+    res.json({ ok: true, ...result });
+  } catch (error) {
     next(error);
   }
 });

@@ -1,6 +1,7 @@
 const fs = require("fs");
 const ffmpegPath = require("ffmpeg-static");
 const { basicOpenAIHealthcheck } = require("./openaiService");
+const { basicGeminiHealthcheck } = require("./geminiService");
 const { basicMultivozesHealthcheck, basicElevenLabsHealthcheck } = require("./ttsService");
 const { basicPexelsHealthcheck, basicPixabayHealthcheck } = require("./assetsService");
 const { basicTelegramHealthcheck } = require("./telegramService");
@@ -8,8 +9,9 @@ const { basicYoutubeHealthcheck } = require("./youtubeService");
 const { config } = require("../config/env");
 
 const runIntegrationHealthchecks = async () => {
-  const [openai, multivozes, elevenlabs, pexels, pixabay, telegram, youtube] = await Promise.all([
+  const [openai, gemini, multivozes, elevenlabs, pexels, pixabay, telegram, youtube] = await Promise.all([
     basicOpenAIHealthcheck(),
+    basicGeminiHealthcheck(),
     basicMultivozesHealthcheck(),
     basicElevenLabsHealthcheck(),
     basicPexelsHealthcheck(),
@@ -24,7 +26,7 @@ const runIntegrationHealthchecks = async () => {
     message: ffmpegPath || "ffmpeg-static não encontrado",
   };
 
-  const checks = { openai, multivozes, elevenlabs, pexels, pixabay, telegram, youtube, ffmpeg };
+  const checks = { openai, gemini, multivozes, elevenlabs, pexels, pixabay, telegram, youtube, ffmpeg };
 
   const mandatoryProviders = [
     "openai",
@@ -34,6 +36,10 @@ const runIntegrationHealthchecks = async () => {
 
   if (multivozes.configured) {
     mandatoryProviders.push("multivozes");
+  }
+
+  if (gemini.configured) {
+    mandatoryProviders.push("gemini");
   }
 
   const strictOk = mandatoryProviders.every((provider) => checks[provider]?.ok);
