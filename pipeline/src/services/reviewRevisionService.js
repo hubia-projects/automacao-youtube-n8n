@@ -141,13 +141,25 @@ const requestReviewRegeneration = async ({ videoId, note = "", mockMode = config
   const nextVersion = Math.max(1, Number(state.review?.draft_version || 1)) + 1;
   const refreshedSceneIndexes = chooseScenesForAssetRefresh({ state });
   const qaRegenerationPlan = state?.render_validation?.regeneration_plan || {};
-  const repairPlanByScene = Array.isArray(qaRegenerationPlan.repair_by_scene) ? qaRegenerationPlan.repair_by_scene : [];
+  const localRepairPlan = state?.assets_json?.local_repair_plan || {};
+  const qaRepairPlanByScene = Array.isArray(qaRegenerationPlan.repair_by_scene) ? qaRegenerationPlan.repair_by_scene : [];
+  const localRepairByScene = Array.isArray(localRepairPlan.repair_by_scene) ? localRepairPlan.repair_by_scene : [];
+  const repairPlanByScene = [...qaRepairPlanByScene, ...localRepairByScene];
+  const repairSceneIndexes = unique([
+    ...(Array.isArray(qaRegenerationPlan.scene_indexes_to_refresh) ? qaRegenerationPlan.scene_indexes_to_refresh : []),
+    ...(Array.isArray(localRepairPlan.scene_indexes_to_refresh) ? localRepairPlan.scene_indexes_to_refresh : []),
+  ].map((sceneIndex) => Number(sceneIndex || 0)).filter((sceneIndex) => sceneIndex > 0));
+  const prioritizedSceneIndexes = repairSceneIndexes.length
+    ? repairSceneIndexes
+    : refreshedSceneIndexes;
   const dominantFailureCode = Array.isArray(state?.render_validation?.editorial_failure_codes) && state.render_validation.editorial_failure_codes.length
     ? state.render_validation.editorial_failure_codes[0]
     : "";
-  const refreshReason = dominantFailureCode ? `${REVIEW_REFRESH_REASON}:${dominantFailureCode}` : REVIEW_REFRESH_REASON;
+  const refreshReason = dominantFailureCode
+    ? `${REVIEW_REFRESH_REASON}:${dominantFailureCode}:local_repair_first`
+    : `${REVIEW_REFRESH_REASON}:local_repair_first`;
   const refreshedScenesLabel = (state.visual_plan || [])
-    .filter((scene) => refreshedSceneIndexes.includes(Number(scene.scene_index || 0)))
+    .filter((scene) => prioritizedSceneIndexes.includes(Number(scene.scene_index || 0)))
     .map((scene) => `#${scene.scene_index} ${scene.title}`)
     .join("; ");
   const refreshedAt = new Date().toISOString();
@@ -162,9 +174,9 @@ const requestReviewRegeneration = async ({ videoId, note = "", mockMode = config
         draft_version: nextVersion,
         last_rejection_note: note,
         last_rejected_at: new Date().toISOString(),
-        last_refreshed_scene_indexes: refreshedSceneIndexes,
-        last_refresh_reason: refreshedSceneIndexes.length ? REVIEW_REFRESH_REASON : "",
-        last_refreshed_at: refreshedSceneIndexes.length ? refreshedAt : "",
+        last_refreshed_scene_indexes: prioritizedSceneIndexes,
+        last_refresh_reason: prioritizedSceneIndexes.length ? refreshReason : "",
+        last_refreshed_at: prioritizedSceneIndexes.length ? refreshedAt : "",
       },
     },
     {
@@ -179,16 +191,16 @@ const requestReviewRegeneration = async ({ videoId, note = "", mockMode = config
     icon: "🔁",
     lines: [
       `Gerando nova versão do draft: v${nextVersion}.`,
-      refreshedSceneIndexes.length ? `Rebuscando assets nas cenas: ${refreshedScenesLabel}.` : "Mantendo os assets atuais e replanejando a timeline.",
+      prioritizedSceneIndexes.length ? `Repair local nas cenas: ${refreshedScenesLabel}.` : "Mantendo os assets atuais e replanejando a timeline.",
     ],
   }).catch(() => null);
 
-  if (refreshedSceneIndexes.length) {
+  if (prioritizedSceneIndexes.length) {
     await generateAssets({
       videoId,
       mockMode,
       maxAssets: REVIEW_REFRESH_MAX_ASSETS,
-      sceneIndexes: refreshedSceneIndexes,
+      sceneIndexes: prioritizedSceneIndexes,
       preserveExisting: true,
       refreshReason,
       repairPlanByScene,
@@ -203,7 +215,7 @@ const requestReviewRegeneration = async ({ videoId, note = "", mockMode = config
     regenerated: true,
     draft_version: nextVersion,
     note,
-    refreshed_scene_indexes: refreshedSceneIndexes,
+    refreshed_scene_indexes: prioritizedSceneIndexes,
     ...metadata,
   };
 };

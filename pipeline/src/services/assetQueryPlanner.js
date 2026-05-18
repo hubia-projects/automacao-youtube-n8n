@@ -16,6 +16,8 @@ const GASTRONOMY_TERMS = [
   "glass",
   "kitchen",
   "chef",
+  "vendor",
+  "stall",
   "eating",
   "seafood",
   "dessert",
@@ -503,13 +505,329 @@ const buildSceneQueryPlan = ({ scene = {}, topic = "", repairHints = {} }) => {
   };
 };
 
+const BLOCK_RETRIEVAL_BUDGET_DEFAULTS = {
+  raw_candidates_per_block: 60,
+  cheap_shortlist_per_block: 20,
+  vision_finalists_per_block: 8,
+  max_repair_rounds_per_block: 1,
+};
+
+const getCitySearchTermsFromBlock = (block = {}) =>
+  unique([
+    normalizeLabel(block.expected_location || ""),
+    normalizeLabel(block.location?.city || ""),
+    normalizeLabel(block.block_label || ""),
+  ]).filter(Boolean);
+
+const getCountrySearchTermsFromBlock = (block = {}, topic = "") =>
+  unique([
+    normalizeLabel(block.location?.country || (/portugal/i.test(topic) ? "Portugal" : "")),
+  ]).filter(Boolean);
+
+const getBlockSceneKeywords = (block = {}) =>
+  unique(
+    (block.keywords || [])
+      .map((keyword) => normalizeLabel(keyword).replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim())
+      .filter((keyword) => keyword && keyword.split(/\s+/).length <= 5)
+  );
+
+const applyBlockBudgetToQueries = ({ entries = [], budgetProfile = {} }) => {
+  const maxQueries = Math.max(8, Math.min(36, Number(budgetProfile.max_queries || 24)));
+  const ranked = [...entries]
+    .map((entry, index) => ({ ...entry, _priority: Number(entry.priority || 1), _index: index }))
+    .sort((left, right) => right._priority - left._priority || left._index - right._index)
+    .slice(0, maxQueries)
+    .sort((left, right) => left._index - right._index)
+    .map(({ _priority, _index, ...entry }) => entry);
+  return {
+    entries: ranked,
+    trimmed: ranked.length < entries.length,
+  };
+};
+
+const buildBlockQueryPlan = ({
+  block = {},
+  slots = [],
+  topic = "",
+  repairHints = {},
+  budgetProfile = {},
+}) => {
+  const entries = [];
+  const seen = new Set();
+  const boundaryExpectedLocation = normalizeLabel(repairHints.boundary_expected_location || "");
+  const cityTerms = unique([
+    boundaryExpectedLocation,
+    ...getCitySearchTermsFromBlock(block),
+  ]).filter(Boolean);
+  const countryTerms = getCountrySearchTermsFromBlock(block, topic);
+  const blockKeywords = getBlockSceneKeywords(block);
+  const intent = block.visual_intent || block.intent || "generic_travel";
+  const negativeKeywords = unique([
+    ...(block.negative_keywords || []),
+    ...(block.forbidden_locations || []),
+    ...(repairHints.extra_negative_keywords || []),
+    ...((repairHints.avoid_visual_families || []).map((family) => String(family || "").split("|")[0]).filter(Boolean)),
+  ]);
+  const mergedBudget = {
+    ...BLOCK_RETRIEVAL_BUDGET_DEFAULTS,
+    ...(budgetProfile || {}),
+  };
+  const pushSlotQuery = ({ query, reason, slot, priorityDelta = 0 }) => {
+    const before = entries.length;
+    pushQuery({
+      entries,
+      seen,
+      query,
+      reason,
+      scene: {
+        visual_intent: intent,
+        generic_asset_allowed: slot.generic_tolerance !== "low",
+      },
+    });
+    if (entries.length <= before) return;
+    const index = entries.length - 1;
+    entries[index] = {
+      ...entries[index],
+      slot_id: slot.slot_id,
+      slot_type: slot.slot_type,
+      priority: Number(slot.priority || 1) + Number(priorityDelta || 0),
+      content_need: slot.slot_type,
+      requires_visual_proof: slot.requires_visual_proof === true,
+    };
+  };
+
+  (slots || [])
+    .sort((left, right) => Number(right.priority || 0) - Number(left.priority || 0))
+    .forEach((slot) => {
+      const slotHints = unique([
+        ...(slot.query_hints || []),
+        ...blockKeywords.slice(0, 3),
+        ...(INTENT_QUERY_LIBRARY[intent] || []).slice(0, 4),
+      ]).slice(0, 6);
+
+      cityTerms.forEach((cityTerm) => {
+        slotHints.forEach((hint, index) => {
+          pushSlotQuery({
+            query: `${cityTerm} ${hint}`,
+            reason: `slot_${slot.slot_type}_${slot.slot_id}_city_${index + 1}`,
+            slot,
+            priorityDelta: 0,
+          });
+        });
+      });
+
+      countryTerms.forEach((countryTerm) => {
+        slotHints.slice(0, 4).forEach((hint, index) => {
+          pushSlotQuery({
+            query: `${countryTerm} ${hint}`,
+            reason: `slot_${slot.slot_type}_${slot.slot_id}_country_${index + 1}`,
+            slot,
+            priorityDelta: -0.5,
+          });
+        });
+      });
+    });
+
+  const repairMicroNeeds = unique((repairHints.target_micro_needs || []).map((need) => normalizeLabel(need))).filter(Boolean);
+  const repairMicroQueries = unique((repairHints.micro_repair_queries || []).map((query) => normalizeLabel(query))).filter(Boolean);
+  const diversityRepairQueries = unique((repairHints.diversity_repair_queries || []).map((query) => normalizeLabel(query))).filter(Boolean);
+  const slotByType = new Map((slots || []).map((slot) => [String(slot.slot_type || "").toLowerCase(), slot]));
+  repairMicroNeeds.forEach((need) => {
+    const matchingSlot = slotByType.get(need) || slotByType.get("proof_exact") || (slots || [])[0] || {};
+    const baseNeedQuery = String(need || "").replace(/_/g, " ").trim();
+    cityTerms.forEach((cityTerm) => {
+      pushSlotQuery({
+        query: `${cityTerm} ${baseNeedQuery} authentic real action`,
+        reason: `repair_micro_need_${need}_city_${buildReasonToken(cityTerm)}`,
+        slot: {
+          ...matchingSlot,
+          slot_id: matchingSlot.slot_id || `repair_micro_${need}`,
+          slot_type: matchingSlot.slot_type || need,
+          priority: Number(matchingSlot.priority || 1) + 3,
+          generic_tolerance: "low",
+          requires_visual_proof: true,
+        },
+        priorityDelta: 2,
+      });
+    });
+    countryTerms.forEach((countryTerm) => {
+      pushSlotQuery({
+        query: `${countryTerm} ${baseNeedQuery} authentic real action`,
+        reason: `repair_micro_need_${need}_country_${buildReasonToken(countryTerm)}`,
+        slot: {
+          ...matchingSlot,
+          slot_id: matchingSlot.slot_id || `repair_micro_${need}`,
+          slot_type: matchingSlot.slot_type || need,
+          priority: Number(matchingSlot.priority || 1) + 2,
+          generic_tolerance: "low",
+          requires_visual_proof: true,
+        },
+        priorityDelta: 1,
+      });
+    });
+  });
+  repairMicroQueries.forEach((query, index) => {
+    const matchingSlot = (slots || [])[0] || {};
+    pushSlotQuery({
+      query,
+      reason: `repair_micro_query_${index + 1}`,
+      slot: {
+        ...matchingSlot,
+        slot_id: matchingSlot.slot_id || `repair_micro_query_${index + 1}`,
+        slot_type: matchingSlot.slot_type || "proof_exact",
+        priority: Number(matchingSlot.priority || 1) + 2,
+        generic_tolerance: "low",
+        requires_visual_proof: true,
+      },
+      priorityDelta: 2,
+    });
+  });
+  diversityRepairQueries.forEach((query, index) => {
+    const matchingSlot = (slots || []).find((slot) => slot.requires_visual_proof === true) || (slots || [])[0] || {};
+    pushSlotQuery({
+      query,
+      reason: `repair_diversity_query_${index + 1}`,
+      slot: {
+        ...matchingSlot,
+        slot_id: matchingSlot.slot_id || `repair_diversity_query_${index + 1}`,
+        slot_type: matchingSlot.slot_type || "proof_exact",
+        priority: Number(matchingSlot.priority || 1) + 2,
+        generic_tolerance: "low",
+        requires_visual_proof: true,
+      },
+      priorityDelta: 2,
+    });
+    cityTerms.forEach((cityTerm) => {
+      pushSlotQuery({
+        query: `${cityTerm} ${query}`,
+        reason: `repair_diversity_query_${index + 1}_city_${buildReasonToken(cityTerm)}`,
+        slot: {
+          ...matchingSlot,
+          slot_id: matchingSlot.slot_id || `repair_diversity_query_${index + 1}`,
+          slot_type: matchingSlot.slot_type || "proof_exact",
+          priority: Number(matchingSlot.priority || 1) + 3,
+          generic_tolerance: "low",
+          requires_visual_proof: true,
+        },
+        priorityDelta: 2,
+      });
+    });
+  });
+
+  if (repairHints.require_location_match === true && boundaryExpectedLocation) {
+    const boundarySlot = (slots || []).find((slot) => slot.required === true && slot.requires_visual_proof === true)
+      || (slots || [])[0]
+      || {};
+    const boundaryQueries = [
+      `${boundaryExpectedLocation} street level authentic local people`,
+      `${boundaryExpectedLocation} local market real footage`,
+      `${boundaryExpectedLocation} food district walking people`,
+    ];
+    boundaryQueries.forEach((query, index) => {
+      pushSlotQuery({
+        query,
+        reason: `repair_boundary_location_${index + 1}`,
+        slot: {
+          ...boundarySlot,
+          slot_id: boundarySlot.slot_id || `repair_boundary_location_${index + 1}`,
+          slot_type: boundarySlot.slot_type || "context_regional",
+          priority: Number(boundarySlot.priority || 1) + 4,
+          generic_tolerance: "low",
+          requires_visual_proof: true,
+        },
+        priorityDelta: 3,
+      });
+    });
+  }
+
+  if (!entries.length) {
+    const emergency = unique([
+      cityTerms[0],
+      countryTerms[0],
+      ...blockKeywords.slice(0, 2),
+      isFoodIntent(intent) ? "food market" : "authentic local scene",
+    ]).filter(Boolean).join(" ");
+
+    const before = entries.length;
+    pushQuery({
+      entries,
+      seen,
+      query: emergency,
+      reason: "block_emergency_fallback",
+      scene: {
+        visual_intent: intent,
+        generic_asset_allowed: true,
+      },
+    });
+    if (entries.length > before) {
+      entries[entries.length - 1] = {
+        ...entries[entries.length - 1],
+        slot_id: "fallback_safe",
+        slot_type: "fallback_safe",
+        priority: 1,
+        content_need: "fallback_safe",
+        requires_visual_proof: false,
+      };
+    }
+  }
+
+  const budgeted = applyBlockBudgetToQueries({
+    entries,
+    budgetProfile: {
+      ...mergedBudget,
+      max_queries: Math.max(10, Math.min(36, Number((slots || []).length * 4 || 16))),
+    },
+  });
+  const maxQueries = Math.max(10, Math.min(36, Number((slots || []).length * 4 || 16)));
+  const bestBySlot = new Map();
+  [...entries]
+    .sort((left, right) => Number(right.priority || 0) - Number(left.priority || 0))
+    .forEach((entry) => {
+      if (!entry.slot_id) return;
+      if (bestBySlot.has(entry.slot_id)) return;
+      bestBySlot.set(entry.slot_id, entry);
+    });
+  const mergedByCoverage = [];
+  const seenMerged = new Set();
+  [...bestBySlot.values(), ...budgeted.entries].forEach((entry) => {
+    const key = `${entry.slot_id || ""}::${entry.query}`;
+    if (seenMerged.has(key)) return;
+    seenMerged.add(key);
+    mergedByCoverage.push(entry);
+  });
+  const finalEntries = mergedByCoverage.slice(0, maxQueries);
+
+  return {
+    queries: finalEntries.map((entry) => entry.query),
+    queryDetails: finalEntries.map((entry) => ({
+      query: entry.query,
+      reason: entry.reason,
+      slot_id: entry.slot_id,
+      slot_type: entry.slot_type,
+      priority: Number(entry.priority || 1),
+      content_need: entry.content_need || entry.slot_type || "",
+      requires_visual_proof: entry.requires_visual_proof === true,
+    })),
+    negativeKeywords,
+    retrievalBudget: {
+      ...mergedBudget,
+      max_queries: Math.max(10, Math.min(36, Number((slots || []).length * 4 || 16))),
+      trimmed: budgeted.trimmed,
+    },
+    searchReason: `block_content_package_${normalizeLabel(intent || "generic_travel")}`,
+  };
+};
+
 module.exports = {
   GASTRONOMY_TERMS,
   INTENT_QUERY_LIBRARY,
+  BLOCK_RETRIEVAL_BUDGET_DEFAULTS,
   buildSceneQueryPlan,
+  buildBlockQueryPlan,
   containsGastronomyTerm,
   isFoodIntent,
   __test__: {
+    buildBlockQueryPlan,
     buildSceneQueryPlan,
     containsGastronomyTerm,
     isFoodIntent,

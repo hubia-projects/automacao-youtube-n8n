@@ -6,6 +6,7 @@ const { sendWorkflowStatus } = require("./telegramService");
 
 const YOUTUBE_CAPTION_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl";
 const YOUTUBE_PARTNER_SCOPE = "https://www.googleapis.com/auth/youtubepartner";
+const unique = (values = []) => [...new Set((values || []).filter(Boolean))];
 
 const createYoutubeOAuthClient = () => {
   const oauth2Client = new google.auth.OAuth2(
@@ -214,6 +215,49 @@ const hasYoutubeCredentials = () =>
       config.YOUTUBE_CLIENT_SECRET &&
       config.YOUTUBE_REFRESH_TOKEN
   );
+
+const hasProviderCredentials = () =>
+  Boolean(config.PEXELS_API_KEY || config.PIXABAY_API_KEY);
+
+const getProductionPreflightStatus = async ({ videoId = "", mockMode = false } = {}) => {
+  const state = videoId ? await loadState(videoId).catch(() => null) : null;
+  const runtimeProfile = String(
+    state?.render_validation?.qa_runtime_profile
+    || (mockMode ? config.QA_RUNTIME_PROFILE_MOCK : config.QA_RUNTIME_PROFILE_PROD)
+    || "prod_strict"
+  ).toLowerCase();
+  const strictRuntimeProfile = runtimeProfile !== "mock_relaxed";
+  const checks = {
+    has_youtube_credentials: hasYoutubeCredentials(),
+    has_provider_credentials: hasProviderCredentials(),
+    has_openai_key: Boolean(config.OPENAI_API_KEY),
+    has_render_validation: Boolean(state?.render_validation),
+    render_publishable: state?.render_validation?.is_publishable === true,
+    editorial_blocked: Boolean(state?.render_validation?.publish_blocked),
+    hard_boundary_pass: String(state?.render_validation?.hard_boundary_status || "") === "pass",
+  };
+  const missing = [];
+  if (!checks.has_provider_credentials) missing.push("PROVIDER_CREDENTIALS_MISSING");
+  if (!checks.has_openai_key) missing.push("OPENAI_API_KEY_MISSING");
+  if (strictRuntimeProfile && !checks.has_youtube_credentials) missing.push("YOUTUBE_CREDENTIALS_MISSING");
+  if (strictRuntimeProfile && !checks.has_render_validation) missing.push("RENDER_VALIDATION_MISSING");
+  if (strictRuntimeProfile && !checks.render_publishable) missing.push("RENDER_NOT_PUBLISHABLE");
+  if (strictRuntimeProfile && checks.editorial_blocked) missing.push("EDITORIAL_BLOCKED");
+  if (strictRuntimeProfile && !checks.hard_boundary_pass) missing.push("HARD_BOUNDARY_NOT_PASS");
+
+  return {
+    video_id: videoId || "",
+    qa_runtime_profile: runtimeProfile,
+    strict_runtime_profile: strictRuntimeProfile,
+    checks,
+    ready_for_real_publish: missing.length === 0,
+    blocking_codes: unique(missing),
+    publish_blocked_codes: unique([
+      ...(state?.render_validation?.publish_blocked_codes || []),
+      ...(state?.render_validation?.editorial_failure_codes || []),
+    ]),
+  };
+};
 
 const ensureRenderIsPublishableForUpload = (state = {}) => {
   const renderValidation = state.render_validation || {};
@@ -424,6 +468,7 @@ const basicYoutubeHealthcheck = async () => {
 module.exports = {
   uploadToYoutube,
   basicYoutubeHealthcheck,
+  getProductionPreflightStatus,
   __test__: {
     ensureRenderIsPublishableForUpload,
   },

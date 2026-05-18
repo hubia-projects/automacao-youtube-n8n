@@ -1,0 +1,5295 @@
+{
+  "video_id": "final_validation_1778847454646",
+  "provider": "fallback_estimation",
+  "analyzed_at": "2026-05-15T12:17:35.413Z",
+  "audio_path": "C:\\Users\\HABILFIX\\Desktop\\Hubia\\Projetos\\youtube-video-pipeline\\automacao-youtube-n8n\\output\\draft\\final_validation_1778847454646\\audio\\narration.mp3",
+  "words": [
+    {
+      "word": "#",
+      "start": 0,
+      "end": 0.094,
+      "synthetic": true
+    },
+    {
+      "word": "3",
+      "start": 0.239,
+      "end": 0.327,
+      "synthetic": true
+    },
+    {
+      "word": "cidades",
+      "start": 0.492,
+      "end": 0.579,
+      "synthetic": true
+    },
+    {
+      "word": "mais",
+      "start": 0.745,
+      "end": 0.829,
+      "synthetic": true
+    },
+    {
+      "word": "bonitas",
+      "start": 0.997,
+      "end": 1.087,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 1.249,
+      "end": 1.342,
+      "synthetic": true
+    },
+    {
+      "word": "Portugal:",
+      "start": 1.502,
+      "end": 1.593,
+      "synthetic": true
+    },
+    {
+      "word": "Lisboa,",
+      "start": 1.754,
+      "end": 1.852,
+      "synthetic": true
+    },
+    {
+      "word": "Porto",
+      "start": 2.007,
+      "end": 2.105,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 2.259,
+      "end": 2.357,
+      "synthetic": true
+    },
+    {
+      "word": "Faro",
+      "start": 2.512,
+      "end": 2.608,
+      "synthetic": true
+    },
+    {
+      "word": "##",
+      "start": 2.766,
+      "end": 2.854,
+      "synthetic": true
+    },
+    {
+      "word": "Intro",
+      "start": 3.019,
+      "end": 3.106,
+      "synthetic": true
+    },
+    {
+      "word": "Hook",
+      "start": 3.27,
+      "end": 3.365,
+      "synthetic": true
+    },
+    {
+      "word": "Se",
+      "start": 3.523,
+      "end": 3.616,
+      "synthetic": true
+    },
+    {
+      "word": "você",
+      "start": 3.777,
+      "end": 3.862,
+      "synthetic": true
+    },
+    {
+      "word": "quer",
+      "start": 4.028,
+      "end": 4.126,
+      "synthetic": true
+    },
+    {
+      "word": "viajar",
+      "start": 4.282,
+      "end": 4.368,
+      "synthetic": true
+    },
+    {
+      "word": "melhor",
+      "start": 4.532,
+      "end": 4.635,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 4.786,
+      "end": 4.885,
+      "synthetic": true
+    },
+    {
+      "word": "gastar",
+      "start": 5.038,
+      "end": 5.14,
+      "synthetic": true
+    },
+    {
+      "word": "menos,",
+      "start": 5.292,
+      "end": 5.386,
+      "synthetic": true
+    },
+    {
+      "word": "este",
+      "start": 5.543,
+      "end": 5.644,
+      "synthetic": true
+    },
+    {
+      "word": "vídeo",
+      "start": 5.798,
+      "end": 5.884,
+      "synthetic": true
+    },
+    {
+      "word": "sobre",
+      "start": 6.049,
+      "end": 6.15,
+      "synthetic": true
+    },
+    {
+      "word": "3",
+      "start": 6.302,
+      "end": 6.401,
+      "synthetic": true
+    },
+    {
+      "word": "cidades",
+      "start": 6.555,
+      "end": 6.649,
+      "synthetic": true
+    },
+    {
+      "word": "mais",
+      "start": 6.808,
+      "end": 6.899,
+      "synthetic": true
+    },
+    {
+      "word": "bonitas",
+      "start": 7.06,
+      "end": 7.155,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 7.313,
+      "end": 7.405,
+      "synthetic": true
+    },
+    {
+      "word": "Portugal:",
+      "start": 7.566,
+      "end": 7.659,
+      "synthetic": true
+    },
+    {
+      "word": "Lisboa,",
+      "start": 7.817,
+      "end": 7.919,
+      "synthetic": true
+    },
+    {
+      "word": "Porto",
+      "start": 8.071,
+      "end": 8.167,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 8.324,
+      "end": 8.416,
+      "synthetic": true
+    },
+    {
+      "word": "Faro",
+      "start": 8.576,
+      "end": 8.67,
+      "synthetic": true
+    },
+    {
+      "word": "vai",
+      "start": 8.83,
+      "end": 8.918,
+      "synthetic": true
+    },
+    {
+      "word": "te",
+      "start": 9.082,
+      "end": 9.176,
+      "synthetic": true
+    },
+    {
+      "word": "poupar",
+      "start": 9.334,
+      "end": 9.43,
+      "synthetic": true
+    },
+    {
+      "word": "tempo",
+      "start": 9.587,
+      "end": 9.683,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 9.841,
+      "end": 9.925,
+      "synthetic": true
+    },
+    {
+      "word": "dinheiro.",
+      "start": 10.091,
+      "end": 10.192,
+      "synthetic": true
+    },
+    {
+      "word": "Neste",
+      "start": 10.345,
+      "end": 10.437,
+      "synthetic": true
+    },
+    {
+      "word": "roteiro,",
+      "start": 10.598,
+      "end": 10.687,
+      "synthetic": true
+    },
+    {
+      "word": "voce",
+      "start": 10.852,
+      "end": 10.936,
+      "synthetic": true
+    },
+    {
+      "word": "vai",
+      "start": 11.103,
+      "end": 11.199,
+      "synthetic": true
+    },
+    {
+      "word": "conhecer",
+      "start": 11.356,
+      "end": 11.449,
+      "synthetic": true
+    },
+    {
+      "word": "tres",
+      "start": 11.608,
+      "end": 11.701,
+      "synthetic": true
+    },
+    {
+      "word": "cidades",
+      "start": 11.861,
+      "end": 11.952,
+      "synthetic": true
+    },
+    {
+      "word": "que",
+      "start": 12.115,
+      "end": 12.201,
+      "synthetic": true
+    },
+    {
+      "word": "representam",
+      "start": 12.368,
+      "end": 12.452,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 12.62,
+      "end": 12.707,
+      "synthetic": true
+    },
+    {
+      "word": "melhor",
+      "start": 12.872,
+      "end": 12.962,
+      "synthetic": true
+    },
+    {
+      "word": "do",
+      "start": 13.123,
+      "end": 13.225,
+      "synthetic": true
+    },
+    {
+      "word": "pais",
+      "start": 13.375,
+      "end": 13.479,
+      "synthetic": true
+    },
+    {
+      "word": "em",
+      "start": 13.63,
+      "end": 13.72,
+      "synthetic": true
+    },
+    {
+      "word": "historia,",
+      "start": 13.881,
+      "end": 13.98,
+      "synthetic": true
+    },
+    {
+      "word": "paisagem",
+      "start": 14.135,
+      "end": 14.231,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 14.386,
+      "end": 14.487,
+      "synthetic": true
+    },
+    {
+      "word": "experiencia",
+      "start": 14.641,
+      "end": 14.727,
+      "synthetic": true
+    },
+    {
+      "word": "local.",
+      "start": 14.892,
+      "end": 14.99,
+      "synthetic": true
+    },
+    {
+      "word": "Numero",
+      "start": 15.145,
+      "end": 15.243,
+      "synthetic": true
+    },
+    {
+      "word": "1",
+      "start": 15.4,
+      "end": 15.484,
+      "synthetic": true
+    },
+    {
+      "word": "Lisboa.",
+      "start": 15.651,
+      "end": 15.742,
+      "synthetic": true
+    },
+    {
+      "word": "Lisboa",
+      "start": 15.902,
+      "end": 16.004,
+      "synthetic": true
+    },
+    {
+      "word": "mistura",
+      "start": 16.155,
+      "end": 16.255,
+      "synthetic": true
+    },
+    {
+      "word": "tradicao",
+      "start": 16.407,
+      "end": 16.51,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 16.661,
+      "end": 16.759,
+      "synthetic": true
+    },
+    {
+      "word": "energia",
+      "start": 16.915,
+      "end": 17.003,
+      "synthetic": true
+    },
+    {
+      "word": "contemporanea",
+      "start": 17.166,
+      "end": 17.264,
+      "synthetic": true
+    },
+    {
+      "word": "como",
+      "start": 17.418,
+      "end": 17.52,
+      "synthetic": true
+    },
+    {
+      "word": "poucas",
+      "start": 17.672,
+      "end": 17.769,
+      "synthetic": true
+    },
+    {
+      "word": "capitais",
+      "start": 17.925,
+      "end": 18.018,
+      "synthetic": true
+    },
+    {
+      "word": "europeias.",
+      "start": 18.178,
+      "end": 18.267,
+      "synthetic": true
+    },
+    {
+      "word": "Comece",
+      "start": 18.43,
+      "end": 18.522,
+      "synthetic": true
+    },
+    {
+      "word": "pela",
+      "start": 18.684,
+      "end": 18.772,
+      "synthetic": true
+    },
+    {
+      "word": "Alfama,",
+      "start": 18.934,
+      "end": 19.037,
+      "synthetic": true
+    },
+    {
+      "word": "caminhe",
+      "start": 19.189,
+      "end": 19.277,
+      "synthetic": true
+    },
+    {
+      "word": "pelas",
+      "start": 19.441,
+      "end": 19.535,
+      "synthetic": true
+    },
+    {
+      "word": "ruas",
+      "start": 19.693,
+      "end": 19.791,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 19.945,
+      "end": 20.045,
+      "synthetic": true
+    },
+    {
+      "word": "pedra",
+      "start": 20.198,
+      "end": 20.299,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 20.45,
+      "end": 20.552,
+      "synthetic": true
+    },
+    {
+      "word": "suba",
+      "start": 20.703,
+      "end": 20.801,
+      "synthetic": true
+    },
+    {
+      "word": "aos",
+      "start": 20.957,
+      "end": 21.051,
+      "synthetic": true
+    },
+    {
+      "word": "miradouros",
+      "start": 21.209,
+      "end": 21.306,
+      "synthetic": true
+    },
+    {
+      "word": "para",
+      "start": 21.462,
+      "end": 21.557,
+      "synthetic": true
+    },
+    {
+      "word": "ver",
+      "start": 21.716,
+      "end": 21.803,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 21.968,
+      "end": 22.059,
+      "synthetic": true
+    },
+    {
+      "word": "Tejo",
+      "start": 22.219,
+      "end": 22.319,
+      "synthetic": true
+    },
+    {
+      "word": "iluminando",
+      "start": 22.473,
+      "end": 22.566,
+      "synthetic": true
+    },
+    {
+      "word": "a",
+      "start": 22.726,
+      "end": 22.813,
+      "synthetic": true
+    },
+    {
+      "word": "cidade.",
+      "start": 22.977,
+      "end": 23.077,
+      "synthetic": true
+    },
+    {
+      "word": "No",
+      "start": 23.229,
+      "end": 23.333,
+      "synthetic": true
+    },
+    {
+      "word": "eixo",
+      "start": 23.484,
+      "end": 23.572,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 23.736,
+      "end": 23.832,
+      "synthetic": true
+    },
+    {
+      "word": "Belem,",
+      "start": 23.989,
+      "end": 24.082,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 24.24,
+      "end": 24.339,
+      "synthetic": true
+    },
+    {
+      "word": "roteiro",
+      "start": 24.494,
+      "end": 24.585,
+      "synthetic": true
+    },
+    {
+      "word": "ganha",
+      "start": 24.748,
+      "end": 24.832,
+      "synthetic": true
+    },
+    {
+      "word": "imponencia",
+      "start": 24.999,
+      "end": 25.097,
+      "synthetic": true
+    },
+    {
+      "word": "com",
+      "start": 25.253,
+      "end": 25.341,
+      "synthetic": true
+    },
+    {
+      "word": "a",
+      "start": 25.506,
+      "end": 25.592,
+      "synthetic": true
+    },
+    {
+      "word": "Torre",
+      "start": 25.757,
+      "end": 25.85,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 26.011,
+      "end": 26.095,
+      "synthetic": true
+    },
+    {
+      "word": "Belem",
+      "start": 26.263,
+      "end": 26.355,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 26.515,
+      "end": 26.613,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 26.768,
+      "end": 26.862,
+      "synthetic": true
+    },
+    {
+      "word": "Mosteiro",
+      "start": 27.022,
+      "end": 27.108,
+      "synthetic": true
+    },
+    {
+      "word": "dos",
+      "start": 27.274,
+      "end": 27.363,
+      "synthetic": true
+    },
+    {
+      "word": "Jeronimos.",
+      "start": 27.526,
+      "end": 27.62,
+      "synthetic": true
+    },
+    {
+      "word": "Visualmente,",
+      "start": 27.779,
+      "end": 27.871,
+      "synthetic": true
+    },
+    {
+      "word": "a",
+      "start": 28.03,
+      "end": 28.133,
+      "synthetic": true
+    },
+    {
+      "word": "cidade",
+      "start": 28.283,
+      "end": 28.38,
+      "synthetic": true
+    },
+    {
+      "word": "funciona",
+      "start": 28.535,
+      "end": 28.638,
+      "synthetic": true
+    },
+    {
+      "word": "em",
+      "start": 28.788,
+      "end": 28.89,
+      "synthetic": true
+    },
+    {
+      "word": "camadas:",
+      "start": 29.043,
+      "end": 29.13,
+      "synthetic": true
+    },
+    {
+      "word": "bondes",
+      "start": 29.293,
+      "end": 29.394,
+      "synthetic": true
+    },
+    {
+      "word": "amarelos,",
+      "start": 29.548,
+      "end": 29.635,
+      "synthetic": true
+    },
+    {
+      "word": "fachadas",
+      "start": 29.8,
+      "end": 29.892,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 30.053,
+      "end": 30.144,
+      "synthetic": true
+    },
+    {
+      "word": "azulejo,",
+      "start": 30.305,
+      "end": 30.398,
+      "synthetic": true
+    },
+    {
+      "word": "pracas",
+      "start": 30.559,
+      "end": 30.645,
+      "synthetic": true
+    },
+    {
+      "word": "abertas",
+      "start": 30.81,
+      "end": 30.906,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 31.064,
+      "end": 31.152,
+      "synthetic": true
+    },
+    {
+      "word": "fim",
+      "start": 31.316,
+      "end": 31.408,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 31.567,
+      "end": 31.669,
+      "synthetic": true
+    },
+    {
+      "word": "tarde",
+      "start": 31.822,
+      "end": 31.912,
+      "synthetic": true
+    },
+    {
+      "word": "dourado.",
+      "start": 32.073,
+      "end": 32.17,
+      "synthetic": true
+    },
+    {
+      "word": "Na",
+      "start": 32.328,
+      "end": 32.413,
+      "synthetic": true
+    },
+    {
+      "word": "gastronomia,",
+      "start": 32.58,
+      "end": 32.666,
+      "synthetic": true
+    },
+    {
+      "word": "Lisboa",
+      "start": 32.833,
+      "end": 32.92,
+      "synthetic": true
+    },
+    {
+      "word": "entrega",
+      "start": 33.084,
+      "end": 33.18,
+      "synthetic": true
+    },
+    {
+      "word": "identidade:",
+      "start": 33.338,
+      "end": 33.426,
+      "synthetic": true
+    },
+    {
+      "word": "pastel",
+      "start": 33.588,
+      "end": 33.69,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 33.842,
+      "end": 33.938,
+      "synthetic": true
+    },
+    {
+      "word": "nata",
+      "start": 34.096,
+      "end": 34.184,
+      "synthetic": true
+    },
+    {
+      "word": "saindo",
+      "start": 34.347,
+      "end": 34.442,
+      "synthetic": true
+    },
+    {
+      "word": "do",
+      "start": 34.601,
+      "end": 34.692,
+      "synthetic": true
+    },
+    {
+      "word": "forno,",
+      "start": 34.854,
+      "end": 34.94,
+      "synthetic": true
+    },
+    {
+      "word": "bacalhau",
+      "start": 35.105,
+      "end": 35.204,
+      "synthetic": true
+    },
+    {
+      "word": "a",
+      "start": 35.359,
+      "end": 35.449,
+      "synthetic": true
+    },
+    {
+      "word": "bras",
+      "start": 35.612,
+      "end": 35.697,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 35.864,
+      "end": 35.954,
+      "synthetic": true
+    },
+    {
+      "word": "sardinha",
+      "start": 36.118,
+      "end": 36.203,
+      "synthetic": true
+    },
+    {
+      "word": "assada",
+      "start": 36.369,
+      "end": 36.461,
+      "synthetic": true
+    },
+    {
+      "word": "em",
+      "start": 36.623,
+      "end": 36.707,
+      "synthetic": true
+    },
+    {
+      "word": "ambientes",
+      "start": 36.875,
+      "end": 36.961,
+      "synthetic": true
+    },
+    {
+      "word": "cheios",
+      "start": 37.127,
+      "end": 37.222,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 37.379,
+      "end": 37.474,
+      "synthetic": true
+    },
+    {
+      "word": "vida",
+      "start": 37.632,
+      "end": 37.726,
+      "synthetic": true
+    },
+    {
+      "word": "local.",
+      "start": 37.884,
+      "end": 37.984,
+      "synthetic": true
+    },
+    {
+      "word": "Numero",
+      "start": 38.137,
+      "end": 38.236,
+      "synthetic": true
+    },
+    {
+      "word": "2",
+      "start": 38.389,
+      "end": 38.489,
+      "synthetic": true
+    },
+    {
+      "word": "Porto.",
+      "start": 38.644,
+      "end": 38.732,
+      "synthetic": true
+    },
+    {
+      "word": "Porto",
+      "start": 38.897,
+      "end": 38.983,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 39.148,
+      "end": 39.244,
+      "synthetic": true
+    },
+    {
+      "word": "intensidade",
+      "start": 39.399,
+      "end": 39.503,
+      "synthetic": true
+    },
+    {
+      "word": "arquitetonica",
+      "start": 39.654,
+      "end": 39.746,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 39.908,
+      "end": 39.991,
+      "synthetic": true
+    },
+    {
+      "word": "cultural.",
+      "start": 40.158,
+      "end": 40.256,
+      "synthetic": true
+    },
+    {
+      "word": "A",
+      "start": 40.411,
+      "end": 40.505,
+      "synthetic": true
+    },
+    {
+      "word": "Ribeira,",
+      "start": 40.663,
+      "end": 40.762,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 40.916,
+      "end": 41.016,
+      "synthetic": true
+    },
+    {
+      "word": "frente",
+      "start": 41.171,
+      "end": 41.256,
+      "synthetic": true
+    },
+    {
+      "word": "para",
+      "start": 41.423,
+      "end": 41.514,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 41.675,
+      "end": 41.765,
+      "synthetic": true
+    },
+    {
+      "word": "Douro,",
+      "start": 41.928,
+      "end": 42.019,
+      "synthetic": true
+    },
+    {
+      "word": "oferece",
+      "start": 42.179,
+      "end": 42.277,
+      "synthetic": true
+    },
+    {
+      "word": "um",
+      "start": 42.433,
+      "end": 42.524,
+      "synthetic": true
+    },
+    {
+      "word": "dos",
+      "start": 42.686,
+      "end": 42.776,
+      "synthetic": true
+    },
+    {
+      "word": "cenarios",
+      "start": 42.94,
+      "end": 43.023,
+      "synthetic": true
+    },
+    {
+      "word": "urbanos",
+      "start": 43.191,
+      "end": 43.281,
+      "synthetic": true
+    },
+    {
+      "word": "mais",
+      "start": 43.444,
+      "end": 43.535,
+      "synthetic": true
+    },
+    {
+      "word": "fotogenicos",
+      "start": 43.695,
+      "end": 43.797,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 43.949,
+      "end": 44.038,
+      "synthetic": true
+    },
+    {
+      "word": "Portugal,",
+      "start": 44.203,
+      "end": 44.288,
+      "synthetic": true
+    },
+    {
+      "word": "com",
+      "start": 44.453,
+      "end": 44.554,
+      "synthetic": true
+    },
+    {
+      "word": "casarios",
+      "start": 44.706,
+      "end": 44.803,
+      "synthetic": true
+    },
+    {
+      "word": "coloridos,",
+      "start": 44.959,
+      "end": 45.054,
+      "synthetic": true
+    },
+    {
+      "word": "barcos",
+      "start": 45.213,
+      "end": 45.301,
+      "synthetic": true
+    },
+    {
+      "word": "tradicionais",
+      "start": 45.464,
+      "end": 45.561,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 45.716,
+      "end": 45.818,
+      "synthetic": true
+    },
+    {
+      "word": "pontes",
+      "start": 45.971,
+      "end": 46.056,
+      "synthetic": true
+    },
+    {
+      "word": "historicas.",
+      "start": 46.223,
+      "end": 46.316,
+      "synthetic": true
+    },
+    {
+      "word": "A",
+      "start": 46.474,
+      "end": 46.577,
+      "synthetic": true
+    },
+    {
+      "word": "Ponte",
+      "start": 46.728,
+      "end": 46.821,
+      "synthetic": true
+    },
+    {
+      "word": "Dom",
+      "start": 46.981,
+      "end": 47.072,
+      "synthetic": true
+    },
+    {
+      "word": "Luis",
+      "start": 47.233,
+      "end": 47.326,
+      "synthetic": true
+    },
+    {
+      "word": "I",
+      "start": 47.485,
+      "end": 47.584,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 47.739,
+      "end": 47.828,
+      "synthetic": true
+    },
+    {
+      "word": "as",
+      "start": 47.99,
+      "end": 48.092,
+      "synthetic": true
+    },
+    {
+      "word": "margens",
+      "start": 48.245,
+      "end": 48.332,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 48.498,
+      "end": 48.585,
+      "synthetic": true
+    },
+    {
+      "word": "Vila",
+      "start": 48.749,
+      "end": 48.846,
+      "synthetic": true
+    },
+    {
+      "word": "Nova",
+      "start": 49.001,
+      "end": 49.1,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 49.255,
+      "end": 49.349,
+      "synthetic": true
+    },
+    {
+      "word": "Gaia",
+      "start": 49.507,
+      "end": 49.604,
+      "synthetic": true
+    },
+    {
+      "word": "criam",
+      "start": 49.759,
+      "end": 49.858,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 50.012,
+      "end": 50.109,
+      "synthetic": true
+    },
+    {
+      "word": "momento",
+      "start": 50.264,
+      "end": 50.364,
+      "synthetic": true
+    },
+    {
+      "word": "visual",
+      "start": 50.519,
+      "end": 50.608,
+      "synthetic": true
+    },
+    {
+      "word": "mais",
+      "start": 50.771,
+      "end": 50.859,
+      "synthetic": true
+    },
+    {
+      "word": "emblematico",
+      "start": 51.024,
+      "end": 51.113,
+      "synthetic": true
+    },
+    {
+      "word": "da",
+      "start": 51.275,
+      "end": 51.372,
+      "synthetic": true
+    },
+    {
+      "word": "cidade,",
+      "start": 51.529,
+      "end": 51.621,
+      "synthetic": true
+    },
+    {
+      "word": "especialmente",
+      "start": 51.78,
+      "end": 51.88,
+      "synthetic": true
+    },
+    {
+      "word": "no",
+      "start": 52.033,
+      "end": 52.129,
+      "synthetic": true
+    },
+    {
+      "word": "por",
+      "start": 52.286,
+      "end": 52.382,
+      "synthetic": true
+    },
+    {
+      "word": "do",
+      "start": 52.539,
+      "end": 52.636,
+      "synthetic": true
+    },
+    {
+      "word": "sol.",
+      "start": 52.792,
+      "end": 52.887,
+      "synthetic": true
+    },
+    {
+      "word": "No",
+      "start": 53.046,
+      "end": 53.13,
+      "synthetic": true
+    },
+    {
+      "word": "ritmo",
+      "start": 53.297,
+      "end": 53.389,
+      "synthetic": true
+    },
+    {
+      "word": "da",
+      "start": 53.55,
+      "end": 53.645,
+      "synthetic": true
+    },
+    {
+      "word": "visita,",
+      "start": 53.802,
+      "end": 53.897,
+      "synthetic": true
+    },
+    {
+      "word": "entram",
+      "start": 54.054,
+      "end": 54.157,
+      "synthetic": true
+    },
+    {
+      "word": "livrarias",
+      "start": 54.308,
+      "end": 54.4,
+      "synthetic": true
+    },
+    {
+      "word": "historicas,",
+      "start": 54.56,
+      "end": 54.658,
+      "synthetic": true
+    },
+    {
+      "word": "igrejas",
+      "start": 54.812,
+      "end": 54.911,
+      "synthetic": true
+    },
+    {
+      "word": "revestidas",
+      "start": 55.065,
+      "end": 55.163,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 55.317,
+      "end": 55.42,
+      "synthetic": true
+    },
+    {
+      "word": "azulejo",
+      "start": 55.572,
+      "end": 55.662,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 55.825,
+      "end": 55.911,
+      "synthetic": true
+    },
+    {
+      "word": "ruas",
+      "start": 56.077,
+      "end": 56.166,
+      "synthetic": true
+    },
+    {
+      "word": "elegantes.",
+      "start": 56.329,
+      "end": 56.424,
+      "synthetic": true
+    },
+    {
+      "word": "No",
+      "start": 56.582,
+      "end": 56.672,
+      "synthetic": true
+    },
+    {
+      "word": "prato,",
+      "start": 56.833,
+      "end": 56.936,
+      "synthetic": true
+    },
+    {
+      "word": "Porto",
+      "start": 57.087,
+      "end": 57.182,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 57.339,
+      "end": 57.438,
+      "synthetic": true
+    },
+    {
+      "word": "memoravel:",
+      "start": 57.593,
+      "end": 57.68,
+      "synthetic": true
+    },
+    {
+      "word": "francesinha",
+      "start": 57.844,
+      "end": 57.945,
+      "synthetic": true
+    },
+    {
+      "word": "bem",
+      "start": 58.097,
+      "end": 58.193,
+      "synthetic": true
+    },
+    {
+      "word": "servida,",
+      "start": 58.351,
+      "end": 58.439,
+      "synthetic": true
+    },
+    {
+      "word": "restaurantes",
+      "start": 58.603,
+      "end": 58.698,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 58.857,
+      "end": 58.941,
+      "synthetic": true
+    },
+    {
+      "word": "cozinha",
+      "start": 59.108,
+      "end": 59.201,
+      "synthetic": true
+    },
+    {
+      "word": "regional",
+      "start": 59.36,
+      "end": 59.46,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 59.614,
+      "end": 59.703,
+      "synthetic": true
+    },
+    {
+      "word": "degustacoes",
+      "start": 59.867,
+      "end": 59.954,
+      "synthetic": true
+    },
+    {
+      "word": "nas",
+      "start": 60.12,
+      "end": 60.207,
+      "synthetic": true
+    },
+    {
+      "word": "caves",
+      "start": 60.371,
+      "end": 60.467,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 60.623,
+      "end": 60.726,
+      "synthetic": true
+    },
+    {
+      "word": "vinho",
+      "start": 60.878,
+      "end": 60.962,
+      "synthetic": true
+    },
+    {
+      "word": "do",
+      "start": 61.131,
+      "end": 61.218,
+      "synthetic": true
+    },
+    {
+      "word": "Porto.",
+      "start": 61.383,
+      "end": 61.47,
+      "synthetic": true
+    },
+    {
+      "word": "Numero",
+      "start": 61.636,
+      "end": 61.72,
+      "synthetic": true
+    },
+    {
+      "word": "3",
+      "start": 61.886,
+      "end": 61.989,
+      "synthetic": true
+    },
+    {
+      "word": "Faro.",
+      "start": 62.139,
+      "end": 62.241,
+      "synthetic": true
+    },
+    {
+      "word": "Faro",
+      "start": 62.393,
+      "end": 62.486,
+      "synthetic": true
+    },
+    {
+      "word": "abre",
+      "start": 62.646,
+      "end": 62.736,
+      "synthetic": true
+    },
+    {
+      "word": "um",
+      "start": 62.897,
+      "end": 62.998,
+      "synthetic": true
+    },
+    {
+      "word": "Portugal",
+      "start": 63.15,
+      "end": 63.249,
+      "synthetic": true
+    },
+    {
+      "word": "mais",
+      "start": 63.404,
+      "end": 63.492,
+      "synthetic": true
+    },
+    {
+      "word": "luminoso",
+      "start": 63.657,
+      "end": 63.744,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 63.907,
+      "end": 64.011,
+      "synthetic": true
+    },
+    {
+      "word": "natural,",
+      "start": 64.163,
+      "end": 64.248,
+      "synthetic": true
+    },
+    {
+      "word": "com",
+      "start": 64.413,
+      "end": 64.514,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 64.667,
+      "end": 64.762,
+      "synthetic": true
+    },
+    {
+      "word": "centro",
+      "start": 64.92,
+      "end": 65.011,
+      "synthetic": true
+    },
+    {
+      "word": "historico",
+      "start": 65.171,
+      "end": 65.272,
+      "synthetic": true
+    },
+    {
+      "word": "cercado",
+      "start": 65.425,
+      "end": 65.519,
+      "synthetic": true
+    },
+    {
+      "word": "por",
+      "start": 65.676,
+      "end": 65.778,
+      "synthetic": true
+    },
+    {
+      "word": "muralhas",
+      "start": 65.931,
+      "end": 66.021,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 66.184,
+      "end": 66.268,
+      "synthetic": true
+    },
+    {
+      "word": "uma",
+      "start": 66.435,
+      "end": 66.533,
+      "synthetic": true
+    },
+    {
+      "word": "atmosfera",
+      "start": 66.689,
+      "end": 66.775,
+      "synthetic": true
+    },
+    {
+      "word": "calma,",
+      "start": 66.942,
+      "end": 67.029,
+      "synthetic": true
+    },
+    {
+      "word": "ideal",
+      "start": 67.194,
+      "end": 67.285,
+      "synthetic": true
+    },
+    {
+      "word": "para",
+      "start": 67.447,
+      "end": 67.533,
+      "synthetic": true
+    },
+    {
+      "word": "quem",
+      "start": 67.699,
+      "end": 67.79,
+      "synthetic": true
+    },
+    {
+      "word": "busca",
+      "start": 67.953,
+      "end": 68.038,
+      "synthetic": true
+    },
+    {
+      "word": "beleza",
+      "start": 68.204,
+      "end": 68.295,
+      "synthetic": true
+    },
+    {
+      "word": "com",
+      "start": 68.457,
+      "end": 68.549,
+      "synthetic": true
+    },
+    {
+      "word": "autenticidade.",
+      "start": 68.71,
+      "end": 68.798,
+      "synthetic": true
+    },
+    {
+      "word": "Pela",
+      "start": 68.963,
+      "end": 69.051,
+      "synthetic": true
+    },
+    {
+      "word": "Cidade",
+      "start": 69.214,
+      "end": 69.314,
+      "synthetic": true
+    },
+    {
+      "word": "Velha,",
+      "start": 69.467,
+      "end": 69.56,
+      "synthetic": true
+    },
+    {
+      "word": "voce",
+      "start": 69.721,
+      "end": 69.809,
+      "synthetic": true
+    },
+    {
+      "word": "encontra",
+      "start": 69.973,
+      "end": 70.062,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 70.226,
+      "end": 70.313,
+      "synthetic": true
+    },
+    {
+      "word": "Arco",
+      "start": 70.479,
+      "end": 70.567,
+      "synthetic": true
+    },
+    {
+      "word": "da",
+      "start": 70.732,
+      "end": 70.817,
+      "synthetic": true
+    },
+    {
+      "word": "Vila,",
+      "start": 70.982,
+      "end": 71.084,
+      "synthetic": true
+    },
+    {
+      "word": "pracas",
+      "start": 71.235,
+      "end": 71.337,
+      "synthetic": true
+    },
+    {
+      "word": "intimistas",
+      "start": 71.488,
+      "end": 71.586,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 71.742,
+      "end": 71.83,
+      "synthetic": true
+    },
+    {
+      "word": "arquitetura",
+      "start": 71.995,
+      "end": 72.084,
+      "synthetic": true
+    },
+    {
+      "word": "tradicional.",
+      "start": 72.247,
+      "end": 72.337,
+      "synthetic": true
+    },
+    {
+      "word": "Na",
+      "start": 72.5,
+      "end": 72.587,
+      "synthetic": true
+    },
+    {
+      "word": "sequencia,",
+      "start": 72.753,
+      "end": 72.84,
+      "synthetic": true
+    },
+    {
+      "word": "a",
+      "start": 73.006,
+      "end": 73.092,
+      "synthetic": true
+    },
+    {
+      "word": "Ria",
+      "start": 73.257,
+      "end": 73.355,
+      "synthetic": true
+    },
+    {
+      "word": "Formosa",
+      "start": 73.511,
+      "end": 73.596,
+      "synthetic": true
+    },
+    {
+      "word": "assume",
+      "start": 73.762,
+      "end": 73.861,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 74.016,
+      "end": 74.104,
+      "synthetic": true
+    },
+    {
+      "word": "protagonismo",
+      "start": 74.268,
+      "end": 74.362,
+      "synthetic": true
+    },
+    {
+      "word": "com",
+      "start": 74.521,
+      "end": 74.61,
+      "synthetic": true
+    },
+    {
+      "word": "passeios",
+      "start": 74.773,
+      "end": 74.867,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 75.026,
+      "end": 75.117,
+      "synthetic": true
+    },
+    {
+      "word": "barco,",
+      "start": 75.279,
+      "end": 75.368,
+      "synthetic": true
+    },
+    {
+      "word": "ilhas",
+      "start": 75.533,
+      "end": 75.617,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 75.784,
+      "end": 75.879,
+      "synthetic": true
+    },
+    {
+      "word": "areia",
+      "start": 76.035,
+      "end": 76.137,
+      "synthetic": true
+    },
+    {
+      "word": "clara",
+      "start": 76.288,
+      "end": 76.391,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 76.541,
+      "end": 76.639,
+      "synthetic": true
+    },
+    {
+      "word": "agua",
+      "start": 76.794,
+      "end": 76.892,
+      "synthetic": true
+    },
+    {
+      "word": "em",
+      "start": 77.048,
+      "end": 77.137,
+      "synthetic": true
+    },
+    {
+      "word": "tons",
+      "start": 77.299,
+      "end": 77.399,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 77.551,
+      "end": 77.653,
+      "synthetic": true
+    },
+    {
+      "word": "azul",
+      "start": 77.806,
+      "end": 77.896,
+      "synthetic": true
+    },
+    {
+      "word": "que",
+      "start": 78.057,
+      "end": 78.153,
+      "synthetic": true
+    },
+    {
+      "word": "mudam",
+      "start": 78.311,
+      "end": 78.4,
+      "synthetic": true
+    },
+    {
+      "word": "ao",
+      "start": 78.562,
+      "end": 78.66,
+      "synthetic": true
+    },
+    {
+      "word": "longo",
+      "start": 78.815,
+      "end": 78.911,
+      "synthetic": true
+    },
+    {
+      "word": "do",
+      "start": 79.067,
+      "end": 79.168,
+      "synthetic": true
+    },
+    {
+      "word": "dia.",
+      "start": 79.32,
+      "end": 79.419,
+      "synthetic": true
+    },
+    {
+      "word": "A",
+      "start": 79.572,
+      "end": 79.675,
+      "synthetic": true
+    },
+    {
+      "word": "experiencia",
+      "start": 79.827,
+      "end": 79.916,
+      "synthetic": true
+    },
+    {
+      "word": "gastronomica",
+      "start": 80.08,
+      "end": 80.169,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 80.332,
+      "end": 80.426,
+      "synthetic": true
+    },
+    {
+      "word": "Faro",
+      "start": 80.586,
+      "end": 80.669,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 80.837,
+      "end": 80.933,
+      "synthetic": true
+    },
+    {
+      "word": "marcada",
+      "start": 81.091,
+      "end": 81.175,
+      "synthetic": true
+    },
+    {
+      "word": "por",
+      "start": 81.341,
+      "end": 81.442,
+      "synthetic": true
+    },
+    {
+      "word": "frutos",
+      "start": 81.595,
+      "end": 81.688,
+      "synthetic": true
+    },
+    {
+      "word": "do",
+      "start": 81.848,
+      "end": 81.941,
+      "synthetic": true
+    },
+    {
+      "word": "mar",
+      "start": 82.102,
+      "end": 82.187,
+      "synthetic": true
+    },
+    {
+      "word": "frescos:",
+      "start": 82.354,
+      "end": 82.443,
+      "synthetic": true
+    },
+    {
+      "word": "cataplana,",
+      "start": 82.604,
+      "end": 82.706,
+      "synthetic": true
+    },
+    {
+      "word": "ameijoas",
+      "start": 82.858,
+      "end": 82.956,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 83.111,
+      "end": 83.205,
+      "synthetic": true
+    },
+    {
+      "word": "peixe",
+      "start": 83.364,
+      "end": 83.452,
+      "synthetic": true
+    },
+    {
+      "word": "grelhado,",
+      "start": 83.615,
+      "end": 83.716,
+      "synthetic": true
+    },
+    {
+      "word": "sempre",
+      "start": 83.87,
+      "end": 83.959,
+      "synthetic": true
+    },
+    {
+      "word": "com",
+      "start": 84.121,
+      "end": 84.22,
+      "synthetic": true
+    },
+    {
+      "word": "foco",
+      "start": 84.374,
+      "end": 84.467,
+      "synthetic": true
+    },
+    {
+      "word": "em",
+      "start": 84.628,
+      "end": 84.717,
+      "synthetic": true
+    },
+    {
+      "word": "ingredientes",
+      "start": 84.878,
+      "end": 84.981,
+      "synthetic": true
+    },
+    {
+      "word": "locais.",
+      "start": 85.133,
+      "end": 85.22,
+      "synthetic": true
+    },
+    {
+      "word": "No",
+      "start": 85.385,
+      "end": 85.48,
+      "synthetic": true
+    },
+    {
+      "word": "fechamento,",
+      "start": 85.637,
+      "end": 85.736,
+      "synthetic": true
+    },
+    {
+      "word": "a",
+      "start": 85.889,
+      "end": 85.989,
+      "synthetic": true
+    },
+    {
+      "word": "comparacao",
+      "start": 86.144,
+      "end": 86.231,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 86.396,
+      "end": 86.486,
+      "synthetic": true
+    },
+    {
+      "word": "simples:",
+      "start": 86.648,
+      "end": 86.742,
+      "synthetic": true
+    },
+    {
+      "word": "cada",
+      "start": 86.899,
+      "end": 87.003,
+      "synthetic": true
+    },
+    {
+      "word": "cidade",
+      "start": 87.153,
+      "end": 87.251,
+      "synthetic": true
+    },
+    {
+      "word": "tem",
+      "start": 87.407,
+      "end": 87.493,
+      "synthetic": true
+    },
+    {
+      "word": "ritmo",
+      "start": 87.66,
+      "end": 87.746,
+      "synthetic": true
+    },
+    {
+      "word": "proprio",
+      "start": 87.911,
+      "end": 88.008,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 88.164,
+      "end": 88.256,
+      "synthetic": true
+    },
+    {
+      "word": "complementa",
+      "start": 88.416,
+      "end": 88.516,
+      "synthetic": true
+    },
+    {
+      "word": "as",
+      "start": 88.668,
+      "end": 88.77,
+      "synthetic": true
+    },
+    {
+      "word": "outras",
+      "start": 88.922,
+      "end": 89.015,
+      "synthetic": true
+    },
+    {
+      "word": "em",
+      "start": 89.175,
+      "end": 89.267,
+      "synthetic": true
+    },
+    {
+      "word": "uma",
+      "start": 89.427,
+      "end": 89.523,
+      "synthetic": true
+    },
+    {
+      "word": "viagem",
+      "start": 89.681,
+      "end": 89.767,
+      "synthetic": true
+    },
+    {
+      "word": "completa",
+      "start": 89.932,
+      "end": 90.031,
+      "synthetic": true
+    },
+    {
+      "word": "por",
+      "start": 90.184,
+      "end": 90.287,
+      "synthetic": true
+    },
+    {
+      "word": "Portugal.",
+      "start": 90.438,
+      "end": 90.532,
+      "synthetic": true
+    },
+    {
+      "word": "Com",
+      "start": 90.69,
+      "end": 90.788,
+      "synthetic": true
+    },
+    {
+      "word": "esse",
+      "start": 90.945,
+      "end": 91.029,
+      "synthetic": true
+    },
+    {
+      "word": "recorte,",
+      "start": 91.196,
+      "end": 91.288,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 91.448,
+      "end": 91.545,
+      "synthetic": true
+    },
+    {
+      "word": "roteiro",
+      "start": 91.702,
+      "end": 91.793,
+      "synthetic": true
+    },
+    {
+      "word": "fica",
+      "start": 91.955,
+      "end": 92.045,
+      "synthetic": true
+    },
+    {
+      "word": "equilibrado",
+      "start": 92.206,
+      "end": 92.306,
+      "synthetic": true
+    },
+    {
+      "word": "entre",
+      "start": 92.46,
+      "end": 92.55,
+      "synthetic": true
+    },
+    {
+      "word": "historia,",
+      "start": 92.713,
+      "end": 92.802,
+      "synthetic": true
+    },
+    {
+      "word": "paisagem,",
+      "start": 92.964,
+      "end": 93.065,
+      "synthetic": true
+    },
+    {
+      "word": "cultura",
+      "start": 93.218,
+      "end": 93.306,
+      "synthetic": true
+    },
+    {
+      "word": "local",
+      "start": 93.469,
+      "end": 93.572,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 93.722,
+      "end": 93.82,
+      "synthetic": true
+    },
+    {
+      "word": "experiencia",
+      "start": 93.977,
+      "end": 94.061,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 94.227,
+      "end": 94.324,
+      "synthetic": true
+    },
+    {
+      "word": "viagem",
+      "start": 94.481,
+      "end": 94.572,
+      "synthetic": true
+    },
+    {
+      "word": "real.",
+      "start": 94.733,
+      "end": 94.831,
+      "synthetic": true
+    }
+  ],
+  "segments": [
+    {
+      "text": "# 3 cidades mais bonitas de Portugal: Lisboa, Porto e Faro ## Intro Hook Se você quer viajar melhor e gastar menos, este vídeo sobre 3 cidades mais bonitas de Portugal: Lisboa, Porto e Faro vai te poupar tempo e dinheiro. Neste roteiro, voce vai conhecer tres",
+      "start": 0,
+      "end": 11.701,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "#",
+          "start": 0,
+          "end": 0.094,
+          "synthetic": true
+        },
+        {
+          "word": "3",
+          "start": 0.239,
+          "end": 0.327,
+          "synthetic": true
+        },
+        {
+          "word": "cidades",
+          "start": 0.492,
+          "end": 0.579,
+          "synthetic": true
+        },
+        {
+          "word": "mais",
+          "start": 0.745,
+          "end": 0.829,
+          "synthetic": true
+        },
+        {
+          "word": "bonitas",
+          "start": 0.997,
+          "end": 1.087,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 1.249,
+          "end": 1.342,
+          "synthetic": true
+        },
+        {
+          "word": "Portugal:",
+          "start": 1.502,
+          "end": 1.593,
+          "synthetic": true
+        },
+        {
+          "word": "Lisboa,",
+          "start": 1.754,
+          "end": 1.852,
+          "synthetic": true
+        },
+        {
+          "word": "Porto",
+          "start": 2.007,
+          "end": 2.105,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 2.259,
+          "end": 2.357,
+          "synthetic": true
+        },
+        {
+          "word": "Faro",
+          "start": 2.512,
+          "end": 2.608,
+          "synthetic": true
+        },
+        {
+          "word": "##",
+          "start": 2.766,
+          "end": 2.854,
+          "synthetic": true
+        },
+        {
+          "word": "Intro",
+          "start": 3.019,
+          "end": 3.106,
+          "synthetic": true
+        },
+        {
+          "word": "Hook",
+          "start": 3.27,
+          "end": 3.365,
+          "synthetic": true
+        },
+        {
+          "word": "Se",
+          "start": 3.523,
+          "end": 3.616,
+          "synthetic": true
+        },
+        {
+          "word": "você",
+          "start": 3.777,
+          "end": 3.862,
+          "synthetic": true
+        },
+        {
+          "word": "quer",
+          "start": 4.028,
+          "end": 4.126,
+          "synthetic": true
+        },
+        {
+          "word": "viajar",
+          "start": 4.282,
+          "end": 4.368,
+          "synthetic": true
+        },
+        {
+          "word": "melhor",
+          "start": 4.532,
+          "end": 4.635,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 4.786,
+          "end": 4.885,
+          "synthetic": true
+        },
+        {
+          "word": "gastar",
+          "start": 5.038,
+          "end": 5.14,
+          "synthetic": true
+        },
+        {
+          "word": "menos,",
+          "start": 5.292,
+          "end": 5.386,
+          "synthetic": true
+        },
+        {
+          "word": "este",
+          "start": 5.543,
+          "end": 5.644,
+          "synthetic": true
+        },
+        {
+          "word": "vídeo",
+          "start": 5.798,
+          "end": 5.884,
+          "synthetic": true
+        },
+        {
+          "word": "sobre",
+          "start": 6.049,
+          "end": 6.15,
+          "synthetic": true
+        },
+        {
+          "word": "3",
+          "start": 6.302,
+          "end": 6.401,
+          "synthetic": true
+        },
+        {
+          "word": "cidades",
+          "start": 6.555,
+          "end": 6.649,
+          "synthetic": true
+        },
+        {
+          "word": "mais",
+          "start": 6.808,
+          "end": 6.899,
+          "synthetic": true
+        },
+        {
+          "word": "bonitas",
+          "start": 7.06,
+          "end": 7.155,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 7.313,
+          "end": 7.405,
+          "synthetic": true
+        },
+        {
+          "word": "Portugal:",
+          "start": 7.566,
+          "end": 7.659,
+          "synthetic": true
+        },
+        {
+          "word": "Lisboa,",
+          "start": 7.817,
+          "end": 7.919,
+          "synthetic": true
+        },
+        {
+          "word": "Porto",
+          "start": 8.071,
+          "end": 8.167,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 8.324,
+          "end": 8.416,
+          "synthetic": true
+        },
+        {
+          "word": "Faro",
+          "start": 8.576,
+          "end": 8.67,
+          "synthetic": true
+        },
+        {
+          "word": "vai",
+          "start": 8.83,
+          "end": 8.918,
+          "synthetic": true
+        },
+        {
+          "word": "te",
+          "start": 9.082,
+          "end": 9.176,
+          "synthetic": true
+        },
+        {
+          "word": "poupar",
+          "start": 9.334,
+          "end": 9.43,
+          "synthetic": true
+        },
+        {
+          "word": "tempo",
+          "start": 9.587,
+          "end": 9.683,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 9.841,
+          "end": 9.925,
+          "synthetic": true
+        },
+        {
+          "word": "dinheiro.",
+          "start": 10.091,
+          "end": 10.192,
+          "synthetic": true
+        },
+        {
+          "word": "Neste",
+          "start": 10.345,
+          "end": 10.437,
+          "synthetic": true
+        },
+        {
+          "word": "roteiro,",
+          "start": 10.598,
+          "end": 10.687,
+          "synthetic": true
+        },
+        {
+          "word": "voce",
+          "start": 10.852,
+          "end": 10.936,
+          "synthetic": true
+        },
+        {
+          "word": "vai",
+          "start": 11.103,
+          "end": 11.199,
+          "synthetic": true
+        },
+        {
+          "word": "conhecer",
+          "start": 11.356,
+          "end": 11.449,
+          "synthetic": true
+        },
+        {
+          "word": "tres",
+          "start": 11.608,
+          "end": 11.701,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "cidades que representam o melhor do pais em historia, paisagem e experiencia local. Numero 1 Lisboa. Lisboa mistura tradicao e energia contemporanea como poucas capitais europeias. Comece pela Alfama, caminhe pelas ruas de pedra e suba aos miradouros para ver o Tejo iluminando a cidade. No eixo",
+      "start": 11.861,
+      "end": 23.572,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "cidades",
+          "start": 11.861,
+          "end": 11.952,
+          "synthetic": true
+        },
+        {
+          "word": "que",
+          "start": 12.115,
+          "end": 12.201,
+          "synthetic": true
+        },
+        {
+          "word": "representam",
+          "start": 12.368,
+          "end": 12.452,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 12.62,
+          "end": 12.707,
+          "synthetic": true
+        },
+        {
+          "word": "melhor",
+          "start": 12.872,
+          "end": 12.962,
+          "synthetic": true
+        },
+        {
+          "word": "do",
+          "start": 13.123,
+          "end": 13.225,
+          "synthetic": true
+        },
+        {
+          "word": "pais",
+          "start": 13.375,
+          "end": 13.479,
+          "synthetic": true
+        },
+        {
+          "word": "em",
+          "start": 13.63,
+          "end": 13.72,
+          "synthetic": true
+        },
+        {
+          "word": "historia,",
+          "start": 13.881,
+          "end": 13.98,
+          "synthetic": true
+        },
+        {
+          "word": "paisagem",
+          "start": 14.135,
+          "end": 14.231,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 14.386,
+          "end": 14.487,
+          "synthetic": true
+        },
+        {
+          "word": "experiencia",
+          "start": 14.641,
+          "end": 14.727,
+          "synthetic": true
+        },
+        {
+          "word": "local.",
+          "start": 14.892,
+          "end": 14.99,
+          "synthetic": true
+        },
+        {
+          "word": "Numero",
+          "start": 15.145,
+          "end": 15.243,
+          "synthetic": true
+        },
+        {
+          "word": "1",
+          "start": 15.4,
+          "end": 15.484,
+          "synthetic": true
+        },
+        {
+          "word": "Lisboa.",
+          "start": 15.651,
+          "end": 15.742,
+          "synthetic": true
+        },
+        {
+          "word": "Lisboa",
+          "start": 15.902,
+          "end": 16.004,
+          "synthetic": true
+        },
+        {
+          "word": "mistura",
+          "start": 16.155,
+          "end": 16.255,
+          "synthetic": true
+        },
+        {
+          "word": "tradicao",
+          "start": 16.407,
+          "end": 16.51,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 16.661,
+          "end": 16.759,
+          "synthetic": true
+        },
+        {
+          "word": "energia",
+          "start": 16.915,
+          "end": 17.003,
+          "synthetic": true
+        },
+        {
+          "word": "contemporanea",
+          "start": 17.166,
+          "end": 17.264,
+          "synthetic": true
+        },
+        {
+          "word": "como",
+          "start": 17.418,
+          "end": 17.52,
+          "synthetic": true
+        },
+        {
+          "word": "poucas",
+          "start": 17.672,
+          "end": 17.769,
+          "synthetic": true
+        },
+        {
+          "word": "capitais",
+          "start": 17.925,
+          "end": 18.018,
+          "synthetic": true
+        },
+        {
+          "word": "europeias.",
+          "start": 18.178,
+          "end": 18.267,
+          "synthetic": true
+        },
+        {
+          "word": "Comece",
+          "start": 18.43,
+          "end": 18.522,
+          "synthetic": true
+        },
+        {
+          "word": "pela",
+          "start": 18.684,
+          "end": 18.772,
+          "synthetic": true
+        },
+        {
+          "word": "Alfama,",
+          "start": 18.934,
+          "end": 19.037,
+          "synthetic": true
+        },
+        {
+          "word": "caminhe",
+          "start": 19.189,
+          "end": 19.277,
+          "synthetic": true
+        },
+        {
+          "word": "pelas",
+          "start": 19.441,
+          "end": 19.535,
+          "synthetic": true
+        },
+        {
+          "word": "ruas",
+          "start": 19.693,
+          "end": 19.791,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 19.945,
+          "end": 20.045,
+          "synthetic": true
+        },
+        {
+          "word": "pedra",
+          "start": 20.198,
+          "end": 20.299,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 20.45,
+          "end": 20.552,
+          "synthetic": true
+        },
+        {
+          "word": "suba",
+          "start": 20.703,
+          "end": 20.801,
+          "synthetic": true
+        },
+        {
+          "word": "aos",
+          "start": 20.957,
+          "end": 21.051,
+          "synthetic": true
+        },
+        {
+          "word": "miradouros",
+          "start": 21.209,
+          "end": 21.306,
+          "synthetic": true
+        },
+        {
+          "word": "para",
+          "start": 21.462,
+          "end": 21.557,
+          "synthetic": true
+        },
+        {
+          "word": "ver",
+          "start": 21.716,
+          "end": 21.803,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 21.968,
+          "end": 22.059,
+          "synthetic": true
+        },
+        {
+          "word": "Tejo",
+          "start": 22.219,
+          "end": 22.319,
+          "synthetic": true
+        },
+        {
+          "word": "iluminando",
+          "start": 22.473,
+          "end": 22.566,
+          "synthetic": true
+        },
+        {
+          "word": "a",
+          "start": 22.726,
+          "end": 22.813,
+          "synthetic": true
+        },
+        {
+          "word": "cidade.",
+          "start": 22.977,
+          "end": 23.077,
+          "synthetic": true
+        },
+        {
+          "word": "No",
+          "start": 23.229,
+          "end": 23.333,
+          "synthetic": true
+        },
+        {
+          "word": "eixo",
+          "start": 23.484,
+          "end": 23.572,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "de Belem, o roteiro ganha imponencia com a Torre de Belem e o Mosteiro dos Jeronimos. Visualmente, a cidade funciona em camadas: bondes amarelos, fachadas de azulejo, pracas abertas e fim de tarde dourado. Na gastronomia, Lisboa entrega identidade: pastel de nata saindo do forno, bacalhau a",
+      "start": 23.736,
+      "end": 35.449,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "de",
+          "start": 23.736,
+          "end": 23.832,
+          "synthetic": true
+        },
+        {
+          "word": "Belem,",
+          "start": 23.989,
+          "end": 24.082,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 24.24,
+          "end": 24.339,
+          "synthetic": true
+        },
+        {
+          "word": "roteiro",
+          "start": 24.494,
+          "end": 24.585,
+          "synthetic": true
+        },
+        {
+          "word": "ganha",
+          "start": 24.748,
+          "end": 24.832,
+          "synthetic": true
+        },
+        {
+          "word": "imponencia",
+          "start": 24.999,
+          "end": 25.097,
+          "synthetic": true
+        },
+        {
+          "word": "com",
+          "start": 25.253,
+          "end": 25.341,
+          "synthetic": true
+        },
+        {
+          "word": "a",
+          "start": 25.506,
+          "end": 25.592,
+          "synthetic": true
+        },
+        {
+          "word": "Torre",
+          "start": 25.757,
+          "end": 25.85,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 26.011,
+          "end": 26.095,
+          "synthetic": true
+        },
+        {
+          "word": "Belem",
+          "start": 26.263,
+          "end": 26.355,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 26.515,
+          "end": 26.613,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 26.768,
+          "end": 26.862,
+          "synthetic": true
+        },
+        {
+          "word": "Mosteiro",
+          "start": 27.022,
+          "end": 27.108,
+          "synthetic": true
+        },
+        {
+          "word": "dos",
+          "start": 27.274,
+          "end": 27.363,
+          "synthetic": true
+        },
+        {
+          "word": "Jeronimos.",
+          "start": 27.526,
+          "end": 27.62,
+          "synthetic": true
+        },
+        {
+          "word": "Visualmente,",
+          "start": 27.779,
+          "end": 27.871,
+          "synthetic": true
+        },
+        {
+          "word": "a",
+          "start": 28.03,
+          "end": 28.133,
+          "synthetic": true
+        },
+        {
+          "word": "cidade",
+          "start": 28.283,
+          "end": 28.38,
+          "synthetic": true
+        },
+        {
+          "word": "funciona",
+          "start": 28.535,
+          "end": 28.638,
+          "synthetic": true
+        },
+        {
+          "word": "em",
+          "start": 28.788,
+          "end": 28.89,
+          "synthetic": true
+        },
+        {
+          "word": "camadas:",
+          "start": 29.043,
+          "end": 29.13,
+          "synthetic": true
+        },
+        {
+          "word": "bondes",
+          "start": 29.293,
+          "end": 29.394,
+          "synthetic": true
+        },
+        {
+          "word": "amarelos,",
+          "start": 29.548,
+          "end": 29.635,
+          "synthetic": true
+        },
+        {
+          "word": "fachadas",
+          "start": 29.8,
+          "end": 29.892,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 30.053,
+          "end": 30.144,
+          "synthetic": true
+        },
+        {
+          "word": "azulejo,",
+          "start": 30.305,
+          "end": 30.398,
+          "synthetic": true
+        },
+        {
+          "word": "pracas",
+          "start": 30.559,
+          "end": 30.645,
+          "synthetic": true
+        },
+        {
+          "word": "abertas",
+          "start": 30.81,
+          "end": 30.906,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 31.064,
+          "end": 31.152,
+          "synthetic": true
+        },
+        {
+          "word": "fim",
+          "start": 31.316,
+          "end": 31.408,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 31.567,
+          "end": 31.669,
+          "synthetic": true
+        },
+        {
+          "word": "tarde",
+          "start": 31.822,
+          "end": 31.912,
+          "synthetic": true
+        },
+        {
+          "word": "dourado.",
+          "start": 32.073,
+          "end": 32.17,
+          "synthetic": true
+        },
+        {
+          "word": "Na",
+          "start": 32.328,
+          "end": 32.413,
+          "synthetic": true
+        },
+        {
+          "word": "gastronomia,",
+          "start": 32.58,
+          "end": 32.666,
+          "synthetic": true
+        },
+        {
+          "word": "Lisboa",
+          "start": 32.833,
+          "end": 32.92,
+          "synthetic": true
+        },
+        {
+          "word": "entrega",
+          "start": 33.084,
+          "end": 33.18,
+          "synthetic": true
+        },
+        {
+          "word": "identidade:",
+          "start": 33.338,
+          "end": 33.426,
+          "synthetic": true
+        },
+        {
+          "word": "pastel",
+          "start": 33.588,
+          "end": 33.69,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 33.842,
+          "end": 33.938,
+          "synthetic": true
+        },
+        {
+          "word": "nata",
+          "start": 34.096,
+          "end": 34.184,
+          "synthetic": true
+        },
+        {
+          "word": "saindo",
+          "start": 34.347,
+          "end": 34.442,
+          "synthetic": true
+        },
+        {
+          "word": "do",
+          "start": 34.601,
+          "end": 34.692,
+          "synthetic": true
+        },
+        {
+          "word": "forno,",
+          "start": 34.854,
+          "end": 34.94,
+          "synthetic": true
+        },
+        {
+          "word": "bacalhau",
+          "start": 35.105,
+          "end": 35.204,
+          "synthetic": true
+        },
+        {
+          "word": "a",
+          "start": 35.359,
+          "end": 35.449,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "bras e sardinha assada em ambientes cheios de vida local. Numero 2 Porto. Porto e intensidade arquitetonica e cultural. A Ribeira, de frente para o Douro, oferece um dos cenarios urbanos mais fotogenicos de Portugal, com casarios coloridos, barcos tradicionais e pontes historicas. A Ponte Dom Luis",
+      "start": 35.612,
+      "end": 47.326,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "bras",
+          "start": 35.612,
+          "end": 35.697,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 35.864,
+          "end": 35.954,
+          "synthetic": true
+        },
+        {
+          "word": "sardinha",
+          "start": 36.118,
+          "end": 36.203,
+          "synthetic": true
+        },
+        {
+          "word": "assada",
+          "start": 36.369,
+          "end": 36.461,
+          "synthetic": true
+        },
+        {
+          "word": "em",
+          "start": 36.623,
+          "end": 36.707,
+          "synthetic": true
+        },
+        {
+          "word": "ambientes",
+          "start": 36.875,
+          "end": 36.961,
+          "synthetic": true
+        },
+        {
+          "word": "cheios",
+          "start": 37.127,
+          "end": 37.222,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 37.379,
+          "end": 37.474,
+          "synthetic": true
+        },
+        {
+          "word": "vida",
+          "start": 37.632,
+          "end": 37.726,
+          "synthetic": true
+        },
+        {
+          "word": "local.",
+          "start": 37.884,
+          "end": 37.984,
+          "synthetic": true
+        },
+        {
+          "word": "Numero",
+          "start": 38.137,
+          "end": 38.236,
+          "synthetic": true
+        },
+        {
+          "word": "2",
+          "start": 38.389,
+          "end": 38.489,
+          "synthetic": true
+        },
+        {
+          "word": "Porto.",
+          "start": 38.644,
+          "end": 38.732,
+          "synthetic": true
+        },
+        {
+          "word": "Porto",
+          "start": 38.897,
+          "end": 38.983,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 39.148,
+          "end": 39.244,
+          "synthetic": true
+        },
+        {
+          "word": "intensidade",
+          "start": 39.399,
+          "end": 39.503,
+          "synthetic": true
+        },
+        {
+          "word": "arquitetonica",
+          "start": 39.654,
+          "end": 39.746,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 39.908,
+          "end": 39.991,
+          "synthetic": true
+        },
+        {
+          "word": "cultural.",
+          "start": 40.158,
+          "end": 40.256,
+          "synthetic": true
+        },
+        {
+          "word": "A",
+          "start": 40.411,
+          "end": 40.505,
+          "synthetic": true
+        },
+        {
+          "word": "Ribeira,",
+          "start": 40.663,
+          "end": 40.762,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 40.916,
+          "end": 41.016,
+          "synthetic": true
+        },
+        {
+          "word": "frente",
+          "start": 41.171,
+          "end": 41.256,
+          "synthetic": true
+        },
+        {
+          "word": "para",
+          "start": 41.423,
+          "end": 41.514,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 41.675,
+          "end": 41.765,
+          "synthetic": true
+        },
+        {
+          "word": "Douro,",
+          "start": 41.928,
+          "end": 42.019,
+          "synthetic": true
+        },
+        {
+          "word": "oferece",
+          "start": 42.179,
+          "end": 42.277,
+          "synthetic": true
+        },
+        {
+          "word": "um",
+          "start": 42.433,
+          "end": 42.524,
+          "synthetic": true
+        },
+        {
+          "word": "dos",
+          "start": 42.686,
+          "end": 42.776,
+          "synthetic": true
+        },
+        {
+          "word": "cenarios",
+          "start": 42.94,
+          "end": 43.023,
+          "synthetic": true
+        },
+        {
+          "word": "urbanos",
+          "start": 43.191,
+          "end": 43.281,
+          "synthetic": true
+        },
+        {
+          "word": "mais",
+          "start": 43.444,
+          "end": 43.535,
+          "synthetic": true
+        },
+        {
+          "word": "fotogenicos",
+          "start": 43.695,
+          "end": 43.797,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 43.949,
+          "end": 44.038,
+          "synthetic": true
+        },
+        {
+          "word": "Portugal,",
+          "start": 44.203,
+          "end": 44.288,
+          "synthetic": true
+        },
+        {
+          "word": "com",
+          "start": 44.453,
+          "end": 44.554,
+          "synthetic": true
+        },
+        {
+          "word": "casarios",
+          "start": 44.706,
+          "end": 44.803,
+          "synthetic": true
+        },
+        {
+          "word": "coloridos,",
+          "start": 44.959,
+          "end": 45.054,
+          "synthetic": true
+        },
+        {
+          "word": "barcos",
+          "start": 45.213,
+          "end": 45.301,
+          "synthetic": true
+        },
+        {
+          "word": "tradicionais",
+          "start": 45.464,
+          "end": 45.561,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 45.716,
+          "end": 45.818,
+          "synthetic": true
+        },
+        {
+          "word": "pontes",
+          "start": 45.971,
+          "end": 46.056,
+          "synthetic": true
+        },
+        {
+          "word": "historicas.",
+          "start": 46.223,
+          "end": 46.316,
+          "synthetic": true
+        },
+        {
+          "word": "A",
+          "start": 46.474,
+          "end": 46.577,
+          "synthetic": true
+        },
+        {
+          "word": "Ponte",
+          "start": 46.728,
+          "end": 46.821,
+          "synthetic": true
+        },
+        {
+          "word": "Dom",
+          "start": 46.981,
+          "end": 47.072,
+          "synthetic": true
+        },
+        {
+          "word": "Luis",
+          "start": 47.233,
+          "end": 47.326,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "I e as margens de Vila Nova de Gaia criam o momento visual mais emblematico da cidade, especialmente no por do sol. No ritmo da visita, entram livrarias historicas, igrejas revestidas de azulejo e ruas elegantes. No prato, Porto e memoravel: francesinha bem servida, restaurantes de cozinha",
+      "start": 47.485,
+      "end": 59.201,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "I",
+          "start": 47.485,
+          "end": 47.584,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 47.739,
+          "end": 47.828,
+          "synthetic": true
+        },
+        {
+          "word": "as",
+          "start": 47.99,
+          "end": 48.092,
+          "synthetic": true
+        },
+        {
+          "word": "margens",
+          "start": 48.245,
+          "end": 48.332,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 48.498,
+          "end": 48.585,
+          "synthetic": true
+        },
+        {
+          "word": "Vila",
+          "start": 48.749,
+          "end": 48.846,
+          "synthetic": true
+        },
+        {
+          "word": "Nova",
+          "start": 49.001,
+          "end": 49.1,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 49.255,
+          "end": 49.349,
+          "synthetic": true
+        },
+        {
+          "word": "Gaia",
+          "start": 49.507,
+          "end": 49.604,
+          "synthetic": true
+        },
+        {
+          "word": "criam",
+          "start": 49.759,
+          "end": 49.858,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 50.012,
+          "end": 50.109,
+          "synthetic": true
+        },
+        {
+          "word": "momento",
+          "start": 50.264,
+          "end": 50.364,
+          "synthetic": true
+        },
+        {
+          "word": "visual",
+          "start": 50.519,
+          "end": 50.608,
+          "synthetic": true
+        },
+        {
+          "word": "mais",
+          "start": 50.771,
+          "end": 50.859,
+          "synthetic": true
+        },
+        {
+          "word": "emblematico",
+          "start": 51.024,
+          "end": 51.113,
+          "synthetic": true
+        },
+        {
+          "word": "da",
+          "start": 51.275,
+          "end": 51.372,
+          "synthetic": true
+        },
+        {
+          "word": "cidade,",
+          "start": 51.529,
+          "end": 51.621,
+          "synthetic": true
+        },
+        {
+          "word": "especialmente",
+          "start": 51.78,
+          "end": 51.88,
+          "synthetic": true
+        },
+        {
+          "word": "no",
+          "start": 52.033,
+          "end": 52.129,
+          "synthetic": true
+        },
+        {
+          "word": "por",
+          "start": 52.286,
+          "end": 52.382,
+          "synthetic": true
+        },
+        {
+          "word": "do",
+          "start": 52.539,
+          "end": 52.636,
+          "synthetic": true
+        },
+        {
+          "word": "sol.",
+          "start": 52.792,
+          "end": 52.887,
+          "synthetic": true
+        },
+        {
+          "word": "No",
+          "start": 53.046,
+          "end": 53.13,
+          "synthetic": true
+        },
+        {
+          "word": "ritmo",
+          "start": 53.297,
+          "end": 53.389,
+          "synthetic": true
+        },
+        {
+          "word": "da",
+          "start": 53.55,
+          "end": 53.645,
+          "synthetic": true
+        },
+        {
+          "word": "visita,",
+          "start": 53.802,
+          "end": 53.897,
+          "synthetic": true
+        },
+        {
+          "word": "entram",
+          "start": 54.054,
+          "end": 54.157,
+          "synthetic": true
+        },
+        {
+          "word": "livrarias",
+          "start": 54.308,
+          "end": 54.4,
+          "synthetic": true
+        },
+        {
+          "word": "historicas,",
+          "start": 54.56,
+          "end": 54.658,
+          "synthetic": true
+        },
+        {
+          "word": "igrejas",
+          "start": 54.812,
+          "end": 54.911,
+          "synthetic": true
+        },
+        {
+          "word": "revestidas",
+          "start": 55.065,
+          "end": 55.163,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 55.317,
+          "end": 55.42,
+          "synthetic": true
+        },
+        {
+          "word": "azulejo",
+          "start": 55.572,
+          "end": 55.662,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 55.825,
+          "end": 55.911,
+          "synthetic": true
+        },
+        {
+          "word": "ruas",
+          "start": 56.077,
+          "end": 56.166,
+          "synthetic": true
+        },
+        {
+          "word": "elegantes.",
+          "start": 56.329,
+          "end": 56.424,
+          "synthetic": true
+        },
+        {
+          "word": "No",
+          "start": 56.582,
+          "end": 56.672,
+          "synthetic": true
+        },
+        {
+          "word": "prato,",
+          "start": 56.833,
+          "end": 56.936,
+          "synthetic": true
+        },
+        {
+          "word": "Porto",
+          "start": 57.087,
+          "end": 57.182,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 57.339,
+          "end": 57.438,
+          "synthetic": true
+        },
+        {
+          "word": "memoravel:",
+          "start": 57.593,
+          "end": 57.68,
+          "synthetic": true
+        },
+        {
+          "word": "francesinha",
+          "start": 57.844,
+          "end": 57.945,
+          "synthetic": true
+        },
+        {
+          "word": "bem",
+          "start": 58.097,
+          "end": 58.193,
+          "synthetic": true
+        },
+        {
+          "word": "servida,",
+          "start": 58.351,
+          "end": 58.439,
+          "synthetic": true
+        },
+        {
+          "word": "restaurantes",
+          "start": 58.603,
+          "end": 58.698,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 58.857,
+          "end": 58.941,
+          "synthetic": true
+        },
+        {
+          "word": "cozinha",
+          "start": 59.108,
+          "end": 59.201,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "regional e degustacoes nas caves de vinho do Porto. Numero 3 Faro. Faro abre um Portugal mais luminoso e natural, com o centro historico cercado por muralhas e uma atmosfera calma, ideal para quem busca beleza com autenticidade. Pela Cidade Velha, voce encontra o Arco da Vila,",
+      "start": 59.36,
+      "end": 71.084,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "regional",
+          "start": 59.36,
+          "end": 59.46,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 59.614,
+          "end": 59.703,
+          "synthetic": true
+        },
+        {
+          "word": "degustacoes",
+          "start": 59.867,
+          "end": 59.954,
+          "synthetic": true
+        },
+        {
+          "word": "nas",
+          "start": 60.12,
+          "end": 60.207,
+          "synthetic": true
+        },
+        {
+          "word": "caves",
+          "start": 60.371,
+          "end": 60.467,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 60.623,
+          "end": 60.726,
+          "synthetic": true
+        },
+        {
+          "word": "vinho",
+          "start": 60.878,
+          "end": 60.962,
+          "synthetic": true
+        },
+        {
+          "word": "do",
+          "start": 61.131,
+          "end": 61.218,
+          "synthetic": true
+        },
+        {
+          "word": "Porto.",
+          "start": 61.383,
+          "end": 61.47,
+          "synthetic": true
+        },
+        {
+          "word": "Numero",
+          "start": 61.636,
+          "end": 61.72,
+          "synthetic": true
+        },
+        {
+          "word": "3",
+          "start": 61.886,
+          "end": 61.989,
+          "synthetic": true
+        },
+        {
+          "word": "Faro.",
+          "start": 62.139,
+          "end": 62.241,
+          "synthetic": true
+        },
+        {
+          "word": "Faro",
+          "start": 62.393,
+          "end": 62.486,
+          "synthetic": true
+        },
+        {
+          "word": "abre",
+          "start": 62.646,
+          "end": 62.736,
+          "synthetic": true
+        },
+        {
+          "word": "um",
+          "start": 62.897,
+          "end": 62.998,
+          "synthetic": true
+        },
+        {
+          "word": "Portugal",
+          "start": 63.15,
+          "end": 63.249,
+          "synthetic": true
+        },
+        {
+          "word": "mais",
+          "start": 63.404,
+          "end": 63.492,
+          "synthetic": true
+        },
+        {
+          "word": "luminoso",
+          "start": 63.657,
+          "end": 63.744,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 63.907,
+          "end": 64.011,
+          "synthetic": true
+        },
+        {
+          "word": "natural,",
+          "start": 64.163,
+          "end": 64.248,
+          "synthetic": true
+        },
+        {
+          "word": "com",
+          "start": 64.413,
+          "end": 64.514,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 64.667,
+          "end": 64.762,
+          "synthetic": true
+        },
+        {
+          "word": "centro",
+          "start": 64.92,
+          "end": 65.011,
+          "synthetic": true
+        },
+        {
+          "word": "historico",
+          "start": 65.171,
+          "end": 65.272,
+          "synthetic": true
+        },
+        {
+          "word": "cercado",
+          "start": 65.425,
+          "end": 65.519,
+          "synthetic": true
+        },
+        {
+          "word": "por",
+          "start": 65.676,
+          "end": 65.778,
+          "synthetic": true
+        },
+        {
+          "word": "muralhas",
+          "start": 65.931,
+          "end": 66.021,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 66.184,
+          "end": 66.268,
+          "synthetic": true
+        },
+        {
+          "word": "uma",
+          "start": 66.435,
+          "end": 66.533,
+          "synthetic": true
+        },
+        {
+          "word": "atmosfera",
+          "start": 66.689,
+          "end": 66.775,
+          "synthetic": true
+        },
+        {
+          "word": "calma,",
+          "start": 66.942,
+          "end": 67.029,
+          "synthetic": true
+        },
+        {
+          "word": "ideal",
+          "start": 67.194,
+          "end": 67.285,
+          "synthetic": true
+        },
+        {
+          "word": "para",
+          "start": 67.447,
+          "end": 67.533,
+          "synthetic": true
+        },
+        {
+          "word": "quem",
+          "start": 67.699,
+          "end": 67.79,
+          "synthetic": true
+        },
+        {
+          "word": "busca",
+          "start": 67.953,
+          "end": 68.038,
+          "synthetic": true
+        },
+        {
+          "word": "beleza",
+          "start": 68.204,
+          "end": 68.295,
+          "synthetic": true
+        },
+        {
+          "word": "com",
+          "start": 68.457,
+          "end": 68.549,
+          "synthetic": true
+        },
+        {
+          "word": "autenticidade.",
+          "start": 68.71,
+          "end": 68.798,
+          "synthetic": true
+        },
+        {
+          "word": "Pela",
+          "start": 68.963,
+          "end": 69.051,
+          "synthetic": true
+        },
+        {
+          "word": "Cidade",
+          "start": 69.214,
+          "end": 69.314,
+          "synthetic": true
+        },
+        {
+          "word": "Velha,",
+          "start": 69.467,
+          "end": 69.56,
+          "synthetic": true
+        },
+        {
+          "word": "voce",
+          "start": 69.721,
+          "end": 69.809,
+          "synthetic": true
+        },
+        {
+          "word": "encontra",
+          "start": 69.973,
+          "end": 70.062,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 70.226,
+          "end": 70.313,
+          "synthetic": true
+        },
+        {
+          "word": "Arco",
+          "start": 70.479,
+          "end": 70.567,
+          "synthetic": true
+        },
+        {
+          "word": "da",
+          "start": 70.732,
+          "end": 70.817,
+          "synthetic": true
+        },
+        {
+          "word": "Vila,",
+          "start": 70.982,
+          "end": 71.084,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "pracas intimistas e arquitetura tradicional. Na sequencia, a Ria Formosa assume o protagonismo com passeios de barco, ilhas de areia clara e agua em tons de azul que mudam ao longo do dia. A experiencia gastronomica de Faro e marcada por frutos do mar frescos: cataplana, ameijoas",
+      "start": 71.235,
+      "end": 82.956,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "pracas",
+          "start": 71.235,
+          "end": 71.337,
+          "synthetic": true
+        },
+        {
+          "word": "intimistas",
+          "start": 71.488,
+          "end": 71.586,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 71.742,
+          "end": 71.83,
+          "synthetic": true
+        },
+        {
+          "word": "arquitetura",
+          "start": 71.995,
+          "end": 72.084,
+          "synthetic": true
+        },
+        {
+          "word": "tradicional.",
+          "start": 72.247,
+          "end": 72.337,
+          "synthetic": true
+        },
+        {
+          "word": "Na",
+          "start": 72.5,
+          "end": 72.587,
+          "synthetic": true
+        },
+        {
+          "word": "sequencia,",
+          "start": 72.753,
+          "end": 72.84,
+          "synthetic": true
+        },
+        {
+          "word": "a",
+          "start": 73.006,
+          "end": 73.092,
+          "synthetic": true
+        },
+        {
+          "word": "Ria",
+          "start": 73.257,
+          "end": 73.355,
+          "synthetic": true
+        },
+        {
+          "word": "Formosa",
+          "start": 73.511,
+          "end": 73.596,
+          "synthetic": true
+        },
+        {
+          "word": "assume",
+          "start": 73.762,
+          "end": 73.861,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 74.016,
+          "end": 74.104,
+          "synthetic": true
+        },
+        {
+          "word": "protagonismo",
+          "start": 74.268,
+          "end": 74.362,
+          "synthetic": true
+        },
+        {
+          "word": "com",
+          "start": 74.521,
+          "end": 74.61,
+          "synthetic": true
+        },
+        {
+          "word": "passeios",
+          "start": 74.773,
+          "end": 74.867,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 75.026,
+          "end": 75.117,
+          "synthetic": true
+        },
+        {
+          "word": "barco,",
+          "start": 75.279,
+          "end": 75.368,
+          "synthetic": true
+        },
+        {
+          "word": "ilhas",
+          "start": 75.533,
+          "end": 75.617,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 75.784,
+          "end": 75.879,
+          "synthetic": true
+        },
+        {
+          "word": "areia",
+          "start": 76.035,
+          "end": 76.137,
+          "synthetic": true
+        },
+        {
+          "word": "clara",
+          "start": 76.288,
+          "end": 76.391,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 76.541,
+          "end": 76.639,
+          "synthetic": true
+        },
+        {
+          "word": "agua",
+          "start": 76.794,
+          "end": 76.892,
+          "synthetic": true
+        },
+        {
+          "word": "em",
+          "start": 77.048,
+          "end": 77.137,
+          "synthetic": true
+        },
+        {
+          "word": "tons",
+          "start": 77.299,
+          "end": 77.399,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 77.551,
+          "end": 77.653,
+          "synthetic": true
+        },
+        {
+          "word": "azul",
+          "start": 77.806,
+          "end": 77.896,
+          "synthetic": true
+        },
+        {
+          "word": "que",
+          "start": 78.057,
+          "end": 78.153,
+          "synthetic": true
+        },
+        {
+          "word": "mudam",
+          "start": 78.311,
+          "end": 78.4,
+          "synthetic": true
+        },
+        {
+          "word": "ao",
+          "start": 78.562,
+          "end": 78.66,
+          "synthetic": true
+        },
+        {
+          "word": "longo",
+          "start": 78.815,
+          "end": 78.911,
+          "synthetic": true
+        },
+        {
+          "word": "do",
+          "start": 79.067,
+          "end": 79.168,
+          "synthetic": true
+        },
+        {
+          "word": "dia.",
+          "start": 79.32,
+          "end": 79.419,
+          "synthetic": true
+        },
+        {
+          "word": "A",
+          "start": 79.572,
+          "end": 79.675,
+          "synthetic": true
+        },
+        {
+          "word": "experiencia",
+          "start": 79.827,
+          "end": 79.916,
+          "synthetic": true
+        },
+        {
+          "word": "gastronomica",
+          "start": 80.08,
+          "end": 80.169,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 80.332,
+          "end": 80.426,
+          "synthetic": true
+        },
+        {
+          "word": "Faro",
+          "start": 80.586,
+          "end": 80.669,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 80.837,
+          "end": 80.933,
+          "synthetic": true
+        },
+        {
+          "word": "marcada",
+          "start": 81.091,
+          "end": 81.175,
+          "synthetic": true
+        },
+        {
+          "word": "por",
+          "start": 81.341,
+          "end": 81.442,
+          "synthetic": true
+        },
+        {
+          "word": "frutos",
+          "start": 81.595,
+          "end": 81.688,
+          "synthetic": true
+        },
+        {
+          "word": "do",
+          "start": 81.848,
+          "end": 81.941,
+          "synthetic": true
+        },
+        {
+          "word": "mar",
+          "start": 82.102,
+          "end": 82.187,
+          "synthetic": true
+        },
+        {
+          "word": "frescos:",
+          "start": 82.354,
+          "end": 82.443,
+          "synthetic": true
+        },
+        {
+          "word": "cataplana,",
+          "start": 82.604,
+          "end": 82.706,
+          "synthetic": true
+        },
+        {
+          "word": "ameijoas",
+          "start": 82.858,
+          "end": 82.956,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "e peixe grelhado, sempre com foco em ingredientes locais. No fechamento, a comparacao e simples: cada cidade tem ritmo proprio e complementa as outras em uma viagem completa por Portugal. Com esse recorte, o roteiro fica equilibrado entre historia, paisagem, cultura local e experiencia de viagem real.",
+      "start": 83.111,
+      "end": 94.831,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "e",
+          "start": 83.111,
+          "end": 83.205,
+          "synthetic": true
+        },
+        {
+          "word": "peixe",
+          "start": 83.364,
+          "end": 83.452,
+          "synthetic": true
+        },
+        {
+          "word": "grelhado,",
+          "start": 83.615,
+          "end": 83.716,
+          "synthetic": true
+        },
+        {
+          "word": "sempre",
+          "start": 83.87,
+          "end": 83.959,
+          "synthetic": true
+        },
+        {
+          "word": "com",
+          "start": 84.121,
+          "end": 84.22,
+          "synthetic": true
+        },
+        {
+          "word": "foco",
+          "start": 84.374,
+          "end": 84.467,
+          "synthetic": true
+        },
+        {
+          "word": "em",
+          "start": 84.628,
+          "end": 84.717,
+          "synthetic": true
+        },
+        {
+          "word": "ingredientes",
+          "start": 84.878,
+          "end": 84.981,
+          "synthetic": true
+        },
+        {
+          "word": "locais.",
+          "start": 85.133,
+          "end": 85.22,
+          "synthetic": true
+        },
+        {
+          "word": "No",
+          "start": 85.385,
+          "end": 85.48,
+          "synthetic": true
+        },
+        {
+          "word": "fechamento,",
+          "start": 85.637,
+          "end": 85.736,
+          "synthetic": true
+        },
+        {
+          "word": "a",
+          "start": 85.889,
+          "end": 85.989,
+          "synthetic": true
+        },
+        {
+          "word": "comparacao",
+          "start": 86.144,
+          "end": 86.231,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 86.396,
+          "end": 86.486,
+          "synthetic": true
+        },
+        {
+          "word": "simples:",
+          "start": 86.648,
+          "end": 86.742,
+          "synthetic": true
+        },
+        {
+          "word": "cada",
+          "start": 86.899,
+          "end": 87.003,
+          "synthetic": true
+        },
+        {
+          "word": "cidade",
+          "start": 87.153,
+          "end": 87.251,
+          "synthetic": true
+        },
+        {
+          "word": "tem",
+          "start": 87.407,
+          "end": 87.493,
+          "synthetic": true
+        },
+        {
+          "word": "ritmo",
+          "start": 87.66,
+          "end": 87.746,
+          "synthetic": true
+        },
+        {
+          "word": "proprio",
+          "start": 87.911,
+          "end": 88.008,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 88.164,
+          "end": 88.256,
+          "synthetic": true
+        },
+        {
+          "word": "complementa",
+          "start": 88.416,
+          "end": 88.516,
+          "synthetic": true
+        },
+        {
+          "word": "as",
+          "start": 88.668,
+          "end": 88.77,
+          "synthetic": true
+        },
+        {
+          "word": "outras",
+          "start": 88.922,
+          "end": 89.015,
+          "synthetic": true
+        },
+        {
+          "word": "em",
+          "start": 89.175,
+          "end": 89.267,
+          "synthetic": true
+        },
+        {
+          "word": "uma",
+          "start": 89.427,
+          "end": 89.523,
+          "synthetic": true
+        },
+        {
+          "word": "viagem",
+          "start": 89.681,
+          "end": 89.767,
+          "synthetic": true
+        },
+        {
+          "word": "completa",
+          "start": 89.932,
+          "end": 90.031,
+          "synthetic": true
+        },
+        {
+          "word": "por",
+          "start": 90.184,
+          "end": 90.287,
+          "synthetic": true
+        },
+        {
+          "word": "Portugal.",
+          "start": 90.438,
+          "end": 90.532,
+          "synthetic": true
+        },
+        {
+          "word": "Com",
+          "start": 90.69,
+          "end": 90.788,
+          "synthetic": true
+        },
+        {
+          "word": "esse",
+          "start": 90.945,
+          "end": 91.029,
+          "synthetic": true
+        },
+        {
+          "word": "recorte,",
+          "start": 91.196,
+          "end": 91.288,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 91.448,
+          "end": 91.545,
+          "synthetic": true
+        },
+        {
+          "word": "roteiro",
+          "start": 91.702,
+          "end": 91.793,
+          "synthetic": true
+        },
+        {
+          "word": "fica",
+          "start": 91.955,
+          "end": 92.045,
+          "synthetic": true
+        },
+        {
+          "word": "equilibrado",
+          "start": 92.206,
+          "end": 92.306,
+          "synthetic": true
+        },
+        {
+          "word": "entre",
+          "start": 92.46,
+          "end": 92.55,
+          "synthetic": true
+        },
+        {
+          "word": "historia,",
+          "start": 92.713,
+          "end": 92.802,
+          "synthetic": true
+        },
+        {
+          "word": "paisagem,",
+          "start": 92.964,
+          "end": 93.065,
+          "synthetic": true
+        },
+        {
+          "word": "cultura",
+          "start": 93.218,
+          "end": 93.306,
+          "synthetic": true
+        },
+        {
+          "word": "local",
+          "start": 93.469,
+          "end": 93.572,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 93.722,
+          "end": 93.82,
+          "synthetic": true
+        },
+        {
+          "word": "experiencia",
+          "start": 93.977,
+          "end": 94.061,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 94.227,
+          "end": 94.324,
+          "synthetic": true
+        },
+        {
+          "word": "viagem",
+          "start": 94.481,
+          "end": 94.572,
+          "synthetic": true
+        },
+        {
+          "word": "real.",
+          "start": 94.733,
+          "end": 94.831,
+          "synthetic": true
+        }
+      ]
+    }
+  ],
+  "pause_markers": [
+    {
+      "start": 10.192,
+      "end": 10.492,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 14.99,
+      "end": 15.290000000000001,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 15.742,
+      "end": 16.042,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 18.267,
+      "end": 18.567,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 23.077,
+      "end": 23.377000000000002,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 27.62,
+      "end": 27.92,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 32.17,
+      "end": 32.47,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 37.984,
+      "end": 38.284,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 38.732,
+      "end": 39.032,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 40.256,
+      "end": 40.556,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 46.316,
+      "end": 46.616,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 52.887,
+      "end": 53.187,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 56.424,
+      "end": 56.724,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 61.47,
+      "end": 61.769999999999996,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 62.241,
+      "end": 62.541,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 68.798,
+      "end": 69.098,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 72.337,
+      "end": 72.637,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 79.419,
+      "end": 79.719,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 85.22,
+      "end": 85.52,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 90.532,
+      "end": 90.832,
+      "duration": 0.3,
+      "type": "sentence_break"
+    }
+  ],
+  "speaking_rate": {
+    "average_wps": 3.96,
+    "total_duration_seconds": 95,
+    "total_words": 376,
+    "total_segments": 8
+  },
+  "scene_boundaries": [
+    {
+      "scene_index": 1,
+      "title": "Intro",
+      "role": "intro",
+      "narration_excerpt": "Abertura cinematografica de viagem com proposta visual da jornada.",
+      "keywords": [
+        "travel cinematic opening",
+        "europe travel montage",
+        "documentary intro scene"
+      ],
+      "target_duration_seconds": 10,
+      "block_id": "introducao",
+      "block_index": 1,
+      "block_label": "Introducao",
+      "block_type": "general",
+      "block_keywords": [
+        "travel cinematic opening",
+        "europe travel montage",
+        "documentary intro scene",
+        "geral",
+        "intro",
+        "abertura",
+        "cinematografica",
+        "viagem",
+        "proposta",
+        "jornada"
+      ],
+      "negative_keywords": [
+        "Lisboa",
+        "lisboa",
+        "lisbon",
+        "Porto",
+        "porto",
+        "oporto",
+        "Faro",
+        "faro"
+      ],
+      "overlay_title": "1. Introducao",
+      "visual_requirements": [
+        "establishing_shot",
+        "travel cinematic opening",
+        "europe travel montage",
+        "documentary intro scene"
+      ],
+      "narrative_function": "hook",
+      "generic_tolerance": "low",
+      "requires_visual_proof": true,
+      "slot_criticality": "high",
+      "probable_shot_role": "hook_exact",
+      "scene_order": 1,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "general",
+      "visual_intent": "generic_travel",
+      "visual_intent_source": "generic_travel",
+      "required_visual_evidence": [],
+      "allowed_visual_categories": [
+        "city_landmark",
+        "historic_street",
+        "aerial_city",
+        "river",
+        "coast",
+        "generic_street"
+      ],
+      "forbidden_visual_categories": [],
+      "generic_asset_allowed": true,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 3,
+      "hard_boundary": true,
+      "boundary_id": "hb_001_introducao",
+      "transition_type": "hard",
+      "expected_location": "",
+      "expected_visual_start_sec": 0,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 0,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Introducao",
+        "query_hint": "Introducao geral intro"
+      },
+      "audio_start_seconds": 2.259,
+      "audio_end_seconds": 40.458,
+      "audio_span_seconds": 38.199,
+      "boundary_confidence": 0.85,
+      "anchor_word": "e"
+    },
+    {
+      "scene_index": 2,
+      "title": "Lisboa",
+      "role": "body",
+      "narration_excerpt": "Numero 1 Lisboa com Alfama, Belem, miradouros e atmosfera urbana historica.",
+      "keywords": [
+        "lisbon alfama old town",
+        "belem tower lisbon",
+        "lisbon viewpoint sunset",
+        "lisbon tram historic street"
+      ],
+      "target_duration_seconds": 14,
+      "block_id": "lisboa",
+      "block_index": 2,
+      "block_label": "Lisboa",
+      "block_type": "city",
+      "block_keywords": [
+        "lisbon alfama old town",
+        "belem tower lisbon",
+        "lisbon viewpoint sunset",
+        "lisbon tram historic street",
+        "Lisboa",
+        "centro historico",
+        "lisboa",
+        "numero",
+        "alfama",
+        "belem",
+        "miradouros",
+        "atmosfera"
+      ],
+      "negative_keywords": [
+        "Porto",
+        "porto",
+        "oporto",
+        "Faro",
+        "faro"
+      ],
+      "overlay_title": "2. Lisboa",
+      "visual_requirements": [
+        "location_specific",
+        "street_life",
+        "architecture",
+        "walkthrough",
+        "lisbon alfama old town",
+        "belem tower lisbon",
+        "lisbon viewpoint sunset"
+      ],
+      "narrative_function": "detail",
+      "generic_tolerance": "medium",
+      "requires_visual_proof": false,
+      "slot_criticality": "medium",
+      "probable_shot_role": "proof_exact",
+      "scene_order": 2,
+      "location": {
+        "city": "Lisboa",
+        "country": "Portugal",
+        "confidence": 0.9,
+        "matched_alias": "lisboa",
+        "source": "alias"
+      },
+      "landmarks": [
+        {
+          "name": "Alfama",
+          "city": "Lisboa",
+          "confidence": 0.82,
+          "source": "alias"
+        },
+        {
+          "name": "Torre de Belem",
+          "city": "Lisboa",
+          "confidence": 0.82,
+          "source": "alias"
+        }
+      ],
+      "subtheme": "historic_center",
+      "visual_intent": "city_landmark",
+      "visual_intent_source": "city_landmark",
+      "required_visual_evidence": [
+        "city_landmark"
+      ],
+      "allowed_visual_categories": [
+        "city_landmark",
+        "historic_street",
+        "aerial_city"
+      ],
+      "forbidden_visual_categories": [
+        "coast"
+      ],
+      "generic_asset_allowed": true,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 3,
+      "hard_boundary": true,
+      "boundary_id": "hb_002_lisboa",
+      "transition_type": "hard",
+      "expected_location": "Lisboa",
+      "expected_visual_start_sec": 15.323,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 15.323,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Lisboa",
+        "query_hint": "Lisboa centro historico intro"
+      },
+      "audio_start_seconds": 40.458,
+      "audio_end_seconds": 77.137,
+      "audio_span_seconds": 36.679,
+      "boundary_confidence": 0.85,
+      "anchor_word": "A"
+    },
+    {
+      "scene_index": 3,
+      "title": "Porto",
+      "role": "body",
+      "narration_excerpt": "Numero 2 Porto com Ribeira, Ponte Dom Luis I, Douro e arquitetura marcante.",
+      "keywords": [
+        "porto ribeira waterfront",
+        "dom luis bridge porto",
+        "douro river porto",
+        "porto historic center streets"
+      ],
+      "target_duration_seconds": 14,
+      "block_id": "porto",
+      "block_index": 3,
+      "block_label": "Porto",
+      "block_type": "city",
+      "block_keywords": [
+        "porto ribeira waterfront",
+        "dom luis bridge porto",
+        "douro river porto",
+        "porto historic center streets",
+        "Porto",
+        "arquitetura",
+        "porto",
+        "numero",
+        "ribeira",
+        "ponte",
+        "dom",
+        "luis"
+      ],
+      "negative_keywords": [
+        "Lisboa",
+        "lisboa",
+        "lisbon",
+        "Faro",
+        "faro"
+      ],
+      "overlay_title": "3. Porto",
+      "visual_requirements": [
+        "location_specific",
+        "porto ribeira waterfront",
+        "dom luis bridge porto",
+        "douro river porto"
+      ],
+      "narrative_function": "detail",
+      "generic_tolerance": "medium",
+      "requires_visual_proof": false,
+      "slot_criticality": "medium",
+      "probable_shot_role": "proof_exact",
+      "scene_order": 3,
+      "location": {
+        "city": "Porto",
+        "country": "Portugal",
+        "confidence": 0.86,
+        "matched_alias": "Ribeira",
+        "source": "landmark_city_hint"
+      },
+      "landmarks": [
+        {
+          "name": "Ribeira",
+          "city": "Porto",
+          "confidence": 0.82,
+          "source": "alias"
+        },
+        {
+          "name": "Rio Douro",
+          "city": "Porto",
+          "confidence": 0.82,
+          "source": "alias"
+        },
+        {
+          "name": "Ponte Dom Luis",
+          "city": "Porto",
+          "confidence": 0.82,
+          "source": "alias"
+        }
+      ],
+      "subtheme": "architecture",
+      "visual_intent": "city_landmark",
+      "visual_intent_source": "city_landmark",
+      "required_visual_evidence": [
+        "city_landmark"
+      ],
+      "allowed_visual_categories": [
+        "city_landmark",
+        "historic_street",
+        "aerial_city"
+      ],
+      "forbidden_visual_categories": [
+        "coast"
+      ],
+      "generic_asset_allowed": true,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 3,
+      "hard_boundary": true,
+      "boundary_id": "hb_003_porto",
+      "transition_type": "hard",
+      "expected_location": "Porto",
+      "expected_visual_start_sec": 36.774,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 36.774,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Porto",
+        "query_hint": "Porto arquitetura intro"
+      },
+      "audio_start_seconds": 79.067,
+      "audio_end_seconds": 93.771,
+      "audio_span_seconds": 14.704,
+      "boundary_confidence": 0.85,
+      "anchor_word": "do"
+    },
+    {
+      "scene_index": 4,
+      "title": "Faro",
+      "role": "body",
+      "narration_excerpt": "Numero 3 Faro com Cidade Velha, Ria Formosa e ilhas do Algarve em luz natural.",
+      "keywords": [
+        "faro old town",
+        "ria formosa boat",
+        "algarve islands aerial",
+        "faro city walls arch"
+      ],
+      "target_duration_seconds": 14,
+      "block_id": "faro",
+      "block_index": 4,
+      "block_label": "Faro",
+      "block_type": "city",
+      "block_keywords": [
+        "faro old town",
+        "ria formosa boat",
+        "algarve islands aerial",
+        "faro city walls arch",
+        "Faro",
+        "centro historico",
+        "faro",
+        "numero",
+        "cidade",
+        "velha",
+        "ria",
+        "formosa"
+      ],
+      "negative_keywords": [
+        "Lisboa",
+        "lisboa",
+        "lisbon",
+        "Porto",
+        "porto",
+        "oporto"
+      ],
+      "overlay_title": "4. Faro",
+      "visual_requirements": [
+        "location_specific",
+        "street_life",
+        "architecture",
+        "walkthrough",
+        "faro old town",
+        "ria formosa boat",
+        "algarve islands aerial"
+      ],
+      "narrative_function": "detail",
+      "generic_tolerance": "medium",
+      "requires_visual_proof": false,
+      "slot_criticality": "medium",
+      "probable_shot_role": "proof_exact",
+      "scene_order": 4,
+      "location": {
+        "city": "Faro",
+        "country": "Portugal",
+        "confidence": 0.86,
+        "matched_alias": "Algarve",
+        "source": "landmark_city_hint"
+      },
+      "landmarks": [
+        {
+          "name": "Algarve",
+          "city": "Faro",
+          "confidence": 0.82,
+          "source": "alias"
+        },
+        {
+          "name": "Ria Formosa",
+          "city": "Faro",
+          "confidence": 0.82,
+          "source": "alias"
+        }
+      ],
+      "subtheme": "historic_center",
+      "visual_intent": "historic_street",
+      "visual_intent_source": "historic_street",
+      "required_visual_evidence": [
+        "historic_street"
+      ],
+      "allowed_visual_categories": [
+        "historic_street",
+        "city_landmark",
+        "generic_street"
+      ],
+      "forbidden_visual_categories": [
+        "coast"
+      ],
+      "generic_asset_allowed": true,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 3,
+      "hard_boundary": true,
+      "boundary_id": "hb_004_faro",
+      "transition_type": "hard",
+      "expected_location": "Faro",
+      "expected_visual_start_sec": 58.226,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 58.226,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Faro",
+        "query_hint": "Faro centro historico intro"
+      },
+      "audio_start_seconds": 93.771,
+      "audio_end_seconds": 94.275,
+      "audio_span_seconds": 0.504,
+      "boundary_confidence": 0.85,
+      "anchor_word": "e"
+    },
+    {
+      "scene_index": 5,
+      "title": "Fechamento",
+      "role": "outro",
+      "narration_excerpt": "Fechamento comparativo com recomendacao final por perfil de viagem.",
+      "keywords": [
+        "travel summary ending",
+        "destination comparison outro",
+        "documentary closing scene"
+      ],
+      "target_duration_seconds": 10,
+      "block_id": "fechamento",
+      "block_index": 5,
+      "block_label": "Fechamento",
+      "block_type": "general",
+      "block_keywords": [
+        "travel summary ending",
+        "destination comparison outro",
+        "documentary closing scene",
+        "praia",
+        "fechamento",
+        "comparativo",
+        "recomendacao",
+        "final",
+        "perfil",
+        "viagem"
+      ],
+      "negative_keywords": [
+        "Lisboa",
+        "lisboa",
+        "lisbon",
+        "Porto",
+        "porto",
+        "oporto",
+        "Faro",
+        "faro"
+      ],
+      "overlay_title": "5. Fechamento",
+      "visual_requirements": [
+        "closing_summary",
+        "travel summary ending",
+        "destination comparison outro",
+        "documentary closing scene"
+      ],
+      "narrative_function": "closing",
+      "generic_tolerance": "low",
+      "requires_visual_proof": true,
+      "slot_criticality": "high",
+      "probable_shot_role": "closing_payoff",
+      "scene_order": 5,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "beach",
+      "visual_intent": "coast",
+      "visual_intent_source": "coast",
+      "required_visual_evidence": [
+        "coast"
+      ],
+      "allowed_visual_categories": [
+        "coast",
+        "landscape"
+      ],
+      "forbidden_visual_categories": [],
+      "generic_asset_allowed": true,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 3,
+      "hard_boundary": true,
+      "boundary_id": "hb_005_fechamento",
+      "transition_type": "hard",
+      "expected_location": "",
+      "expected_visual_start_sec": 79.677,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 79.677,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Fechamento",
+        "query_hint": "Fechamento praia intro"
+      },
+      "audio_start_seconds": 94.275,
+      "audio_end_seconds": 94.572,
+      "audio_span_seconds": 0.297,
+      "boundary_confidence": 0.85,
+      "anchor_word": "de"
+    }
+  ],
+  "chapter_triggers": [
+    {
+      "scene_index": 2,
+      "timestamp_sec": 40.458,
+      "anchor_word": "A",
+      "cue_text": "arquitetonica e cultural. A Ribeira, de frente",
+      "cue_detected": false,
+      "confidence": 0.85,
+      "source": "scene_boundary"
+    },
+    {
+      "scene_index": 3,
+      "timestamp_sec": 79.067,
+      "anchor_word": "do",
+      "cue_text": "mudam ao longo do dia. A experiencia",
+      "cue_detected": false,
+      "confidence": 0.85,
+      "source": "scene_boundary"
+    },
+    {
+      "scene_index": 4,
+      "timestamp_sec": 93.771,
+      "anchor_word": "e",
+      "cue_text": "paisagem, cultura local e experiencia de viagem",
+      "cue_detected": false,
+      "confidence": 0.85,
+      "source": "scene_boundary"
+    },
+    {
+      "scene_index": 5,
+      "timestamp_sec": 94.275,
+      "anchor_word": "de",
+      "cue_text": "local e experiencia de viagem real.",
+      "cue_detected": false,
+      "confidence": 0.85,
+      "source": "scene_boundary"
+    }
+  ]
+}

@@ -6,6 +6,7 @@ const {
   resolveNichePolicy,
 } = require("../config/editorialPolicy");
 const { getCachedAudioIntelligence } = require("./audioIntelligence");
+const { buildMicroVisualPlan } = require("./microMomentPlannerService");
 const {
   buildNarrativeBlocks,
   detectLocation,
@@ -17,6 +18,15 @@ const {
 } = require("./narrativeBlockPlanner");
 const { isPublishableAsset } = require("./assetReadinessService");
 const { rankCandidates, registerClipUsage, buildVisualSignature } = require("./timelineScoringService");
+const {
+  enrichCandidateIdentity,
+  filterCandidatesByHardDiversity,
+  buildTimelineDiversityAudit,
+} = require("./diversityGuardService");
+const {
+  findLocalRecutCandidate,
+  repairTimelineClipSequence,
+} = require("./timelineRepairExecutorService");
 
 const OUTPUT_WIDTH = Number(config.OUTPUT_WIDTH || 1920);
 const OUTPUT_HEIGHT = Number(config.OUTPUT_HEIGHT || 1080);
@@ -44,6 +54,17 @@ const SYNC_POLICIES = {
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
+const MICRO_NEED_KEYWORDS = {
+  market_stall: ["market", "mercado", "banca", "stall", "feira", "food hall"],
+  vendor_interaction: ["vendor", "vendedor", "atendente", "serving", "servindo", "atendimento"],
+  people_eating: ["people eating", "pessoas comendo", "comendo", "eating", "degustando", "tasting"],
+  pastry_closeup: ["pastry", "pastel", "doces", "dessert", "bakery", "confeitaria"],
+  food_closeup: ["food", "comida", "dish", "prato", "ingrediente", "fresh produce"],
+  wine_pouring: ["wine", "vinho", "pour", "pouring", "taça", "glass", "brinde"],
+  restaurant_table: ["restaurant", "restaurante", "table", "mesa", "cafe", "coffee shop"],
+  street_level: ["street", "rua", "bairro", "walking", "centro", "downtown"],
+  landmark: ["landmark", "ponte", "bridge", "tower", "torre", "rio", "river"],
+};
 const getSourceTierRank = (tier = "") => {
   const normalizedTier = String(tier || "free").toLowerCase();
   const index = SOURCE_TIER_PRIORITY.indexOf(normalizedTier);
@@ -70,6 +91,39 @@ const candidateHasThemeEvidence = ({ block = {}, candidate = {} } = {}) => {
   if (!requiredCategories.length) return true;
   const detectedCategories = getCandidateDetectedCategories(candidate);
   return requiredCategories.some((category) => detectedCategories.includes(String(category || "").toLowerCase()));
+};
+
+const extractCandidateLandmarkCity = (candidate = {}) => {
+  const landmarks = Array.isArray(candidate.landmarks) ? candidate.landmarks : [];
+  const withCity = landmarks.find((item) => item && typeof item === "object" && item.city);
+  return String(withCity?.city || "").trim();
+};
+
+const resolveCandidateCity = ({ candidate = {}, expectedLocation = "" } = {}) => {
+  const locationCity = String(candidate.location?.city || "").trim();
+  if (locationCity) return locationCity;
+  const landmarkCity = extractCandidateLandmarkCity(candidate);
+  if (landmarkCity) return landmarkCity;
+  const landmarkNames = (Array.isArray(candidate.landmarks) ? candidate.landmarks : [])
+    .map((item) => String(item?.name || item || "").trim())
+    .filter(Boolean);
+  if (expectedLocation && landmarkNames.some((name) => isSameLocation(name, expectedLocation))) {
+    return String(expectedLocation || "").trim();
+  }
+  return "";
+};
+
+const resolveCandidateLocation = ({ candidate = {}, expectedLocation = "" } = {}) => {
+  const city = resolveCandidateCity({ candidate, expectedLocation });
+  if (city) {
+    return {
+      ...(candidate.location || {}),
+      city,
+      confidence: Number(candidate.location?.confidence || 0.7),
+      source: candidate.location?.source || "inferred_landmark",
+    };
+  }
+  return candidate.location || {};
 };
 
 const isVideoFile = (filePath = "") => /\.(mp4|mov|webm|mkv|avi)$/i.test(filePath);
@@ -217,6 +271,18 @@ const flattenAssetWindows = (assets = []) => {
         editorial_approved: window.editorial_approved !== false,
         approved_window_id: window.approved_window_id || "",
         source_tier: window.source_tier || "free",
+        micro_need_match_score: Number(window.micro_need_match_score || 0),
+        micro_need_match_scores: window.micro_need_match_scores || {},
+        micro_needs_supported: window.micro_needs_supported || [],
+        action_tokens_detected: window.action_tokens_detected || [],
+        temporal_match_hints: window.temporal_match_hints || {},
+        visual_family: window.visual_family || "",
+        landmark_id: window.landmark_id || "",
+        shot_scale: window.shot_scale || "",
+        human_presence: window.human_presence === true,
+        provider_signature: window.provider_signature || "",
+        scene_function: window.scene_function || "",
+        source_url: asset.source_url || "",
       });
     });
   });
@@ -243,6 +309,7 @@ const buildApprovedWindowCandidates = ({ approvedWindows = [], assets = [] }) =>
       id: contract.id || contract.approved_window_id || `approved_window_${index + 1}`,
       asset_id: contract.asset_id || `asset_${index + 1}`,
       asset,
+      block_id: String(contract.block_id || ""),
       source: asset?.provider || contract.provider_metadata?.provider || "unknown",
       scene_index: Number(contract.scene_index || 0),
       start_sec: Number(contract.window?.start_seconds || 0),
@@ -284,6 +351,22 @@ const buildApprovedWindowCandidates = ({ approvedWindows = [], assets = [] }) =>
       source_tier: contract.source_tier || "free",
       rejection_reasons: contract.rejection_reasons || [],
       reason_codes: contract.reason_codes || [],
+      content_slot_type: contract.content_slot_type || "",
+      content_slot_id: contract.content_slot_id || "",
+      slot_match_score: Number(contract.slot_match_score || 0),
+      slot_coverage_contribution: Number(contract.slot_coverage_contribution || 0),
+      micro_need_match_score: Number(contract.micro_need_match_score || 0),
+      micro_need_match_scores: contract.micro_need_match_scores || {},
+      micro_needs_supported: contract.micro_needs_supported || [],
+      action_tokens_detected: contract.action_tokens_detected || [],
+      temporal_match_hints: contract.temporal_match_hints || {},
+      visual_family: contract.visual_family || "",
+      landmark_id: contract.landmark_id || "",
+      shot_scale: contract.shot_scale || "",
+      human_presence: contract.human_presence === true,
+      provider_signature: contract.provider_signature || "",
+      scene_function: contract.scene_function || "",
+      source_url: asset?.source_url || "",
     };
   });
 };
@@ -320,9 +403,9 @@ const buildChapterCardCandidate = ({ block, fallbackAsset }) => {
 const isCandidateAllowedByHardRules = ({ block, candidate, previousMacroTopic }) => {
   if (candidate.quality?.usable === false) return false;
 
-  const candidateCity = candidate.location?.city || "";
-  const candidateLandmarks = candidate.landmarks || [];
   const expectedCity = block.location?.city || (block.topic_type === "city" ? block.macro_topic : "");
+  const candidateCity = resolveCandidateCity({ candidate, expectedLocation: expectedCity });
+  const candidateLandmarks = candidate.landmarks || [];
 
   if (previousMacroTopic && block.hard_boundary) {
     if (candidateCity && belongsToTopic(candidateCity, previousMacroTopic)) return false;
@@ -361,7 +444,7 @@ const filterCandidatesByHardRules = ({
 
   if (isBoundaryFirstSlot && hardBoundaryPolicy.require_location_on_hard_boundary && expectedLocation) {
     strict = strict.filter((candidate) => {
-      const candidateCity = candidate.location?.city || "";
+      const candidateCity = resolveCandidateCity({ candidate, expectedLocation });
       return candidateCity && isSameLocation(candidateCity, expectedLocation);
     });
   }
@@ -419,6 +502,25 @@ const filterCandidatesByHardRules = ({
 
   if (strict.length) return strict;
 
+  if (isBoundaryFirstSlot && hardBoundaryPolicy.require_location_on_hard_boundary && expectedLocation) {
+    const boundaryLocationCandidates = assetWindows
+      .filter((candidate) => {
+        const candidateCity = resolveCandidateCity({ candidate, expectedLocation });
+        return candidateCity && isSameLocation(candidateCity, expectedLocation);
+      })
+      .sort((left, right) => Number(right.editorial_confidence || right.confidence || 0) - Number(left.editorial_confidence || left.confidence || 0));
+    if (boundaryLocationCandidates.length) return boundaryLocationCandidates.slice(0, 12);
+  }
+
+  if (isBoundaryFirstSlot && block.chapter_card_required && allowPlaceholderFallback) {
+    const chapterCardCandidate = buildChapterCardCandidate({ block, fallbackAsset });
+    if (chapterCardCandidate) return [chapterCardCandidate];
+  }
+
+  if (isBoundaryFirstSlot && hardBoundaryPolicy.fail_on_missing_boundary_candidate && !allowPlaceholderFallback) {
+    return [];
+  }
+
   const neutral = assetWindows.filter((candidate) => candidate.neutral && candidate.scene_index === block.scene_index);
   if (neutral.length) return neutral;
 
@@ -434,11 +536,6 @@ const filterCandidatesByHardRules = ({
     return crossSceneFallback
       .sort((left, right) => Number(right.editorial_confidence || right.confidence || 0) - Number(left.editorial_confidence || left.confidence || 0))
       .slice(0, 12);
-  }
-
-  if (isBoundaryFirstSlot && block.chapter_card_required && allowPlaceholderFallback) {
-    const chapterCardCandidate = buildChapterCardCandidate({ block, fallbackAsset });
-    if (chapterCardCandidate) return [chapterCardCandidate];
   }
 
   return allowPlaceholderFallback ? [buildFallbackCandidate(fallbackAsset)] : [];
@@ -579,6 +676,64 @@ const selectWithDiversityQuota = ({
   return { selected: preselected || available[0], forced: false };
 };
 
+const isCandidateMicroProofSafe = ({ candidate = {}, microMoment = null, minScore = 0.55 }) => {
+  if (!candidate || !microMoment) return true;
+  const need = String(microMoment.visual_need || "").toLowerCase();
+  if (!need) return true;
+  const supported = (candidate.micro_needs_supported || []).map((item) => String(item || "").toLowerCase());
+  const slotType = String(candidate.content_slot_type || "").toLowerCase();
+  const keywordHints = MICRO_NEED_KEYWORDS[need] || [need.replace(/_/g, " ")];
+  const haystack = String([
+    candidate.description || "",
+    candidate.summary || "",
+    candidate.content_slot_type || "",
+    ...(candidate.tags || []),
+    ...(candidate.detected_visual_categories || []),
+    ...(candidate.detected_objects || []),
+  ].join(" ")).toLowerCase();
+  const keywordHit = keywordHints.some((keyword) => haystack.includes(String(keyword || "").toLowerCase()));
+  const supportsNeed = supported.includes(need) || slotType === need || keywordHit;
+  const status = String(candidate.visual_truth_status || "").toLowerCase();
+  const statusSafe = microMoment.needs_visual_proof === true ? ["exact", "regional"].includes(status) : true;
+  if (!supportsNeed) return false;
+  if (!statusSafe) return false;
+  const score = Number(candidate.micro_need_match_scores?.[need] || candidate.micro_need_match_score || 0);
+  if (!score) return true;
+  return score >= minScore;
+};
+
+const pickAdjacencyDiversityAlternative = ({
+  ranked = [],
+  selected = null,
+  block = {},
+  clips = [],
+  microMoment = null,
+}) => {
+  if (!selected?.candidate) return selected;
+  if (microMoment?.needs_visual_proof === true) {
+    return selected;
+  }
+  const blockId = String(block.block_id || block.id || block.scene_index || "");
+  const lastInBlock = [...(clips || [])]
+    .reverse()
+    .find((clip) => String(clip.block_id || clip.scene_index || "") === blockId);
+  if (!lastInBlock) return selected;
+
+  const selectedSignature = buildVisualSignature(selected.candidate);
+  const selectedAssetId = selected.candidate.asset_id;
+  const repeatedAdjacency = selectedSignature === String(lastInBlock.visual_signature || "")
+    || selectedAssetId === String(lastInBlock.asset?.asset_id || lastInBlock.asset_id || "");
+  if (!repeatedAdjacency) return selected;
+
+  const alternative = (ranked || []).find((entry) => {
+    if (!entry?.candidate || entry.hard_blocked) return false;
+    if (String(entry.candidate.asset_id || "") === String(selectedAssetId || "")) return false;
+    const signature = buildVisualSignature(entry.candidate);
+    return signature && signature !== selectedSignature;
+  });
+  return alternative || selected;
+};
+
 const splitBlockIntoTimelineSlots = ({ block, policy, pauseMarkers = [] }) => {
   const slots = [];
   let cursor = Number(block.start_sec || 0);
@@ -649,6 +804,47 @@ const splitBlockIntoTimelineSlots = ({ block, policy, pauseMarkers = [] }) => {
     slot_role: inferNarrativeSlotRole({ block, slotIndex, totalSlots: slots.length }),
     critical_slot: isCriticalSlotForBlock({ block, slotIndex, totalSlots: slots.length }),
   }));
+};
+
+const buildMicroSlotsForBlock = ({ block = {}, microVisualPlan = [], policy = {} }) => {
+  const microMoments = (microVisualPlan || [])
+    .filter((moment) => Number(moment.scene_index || 0) === Number(block.scene_index || 0))
+    .filter((moment) =>
+      Number(moment.start_sec || 0) < Number(block.end_sec || Number.MAX_SAFE_INTEGER)
+      && Number(moment.end_sec || 0) > Number(block.start_sec || 0)
+    )
+    .sort((left, right) => Number(left.start_sec || 0) - Number(right.start_sec || 0));
+
+  if (!microMoments.length) return [];
+
+  return microMoments.map((moment, index) => {
+    const rawStart = Math.max(Number(block.start_sec || 0), Number(moment.start_sec || 0));
+    const rawEnd = Math.min(Number(block.end_sec || rawStart + 0.5), Number(moment.end_sec || rawStart + 0.5));
+    const maxDur = Number(policy.max_clip_duration_sec || 7);
+    const duration = clamp(Math.max(0.2, rawEnd - rawStart), 0.2, maxDur);
+    const clippedMicroMoment = {
+      ...moment,
+      start_sec: round3(rawStart),
+      end_sec: round3(rawStart + duration),
+      duration_sec: round3(duration),
+    };
+    const slotRole = (moment.target_narrative_roles || [])[0] || inferNarrativeSlotRole({ block, slotIndex: index, totalSlots: microMoments.length });
+    const isCritical = moment.criticality === "high";
+    return {
+      start: round3(rawStart),
+      end: round3(rawStart + duration),
+      duration: round3(duration),
+      cutReason: "micro_moment_semantic_sync",
+      slot_role: slotRole,
+      critical_slot: isCritical,
+      micro_moment: clippedMicroMoment,
+    };
+  });
+};
+
+const buildMicroRepairQuery = ({ block = {}, microMoment = {} }) => {
+  const location = block.expected_location || block.location?.city || block.macro_topic || "";
+  return `${location} ${microMoment.visual_need || "authentic scene"} real action`;
 };
 
 const buildVideoSourceWindow = ({ asset, clipDuration, preferredWindow = null, assetReuseIndex = 0, clipIndex = 1, draftVersion = 1 }) => {
@@ -846,6 +1042,20 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
   const hardBoundaryPolicy = getHardBoundaryPolicy();
   const audioIntelligence = await getCachedAudioIntelligence({ videoId }).catch(() => null);
   const { macroBlocks, microBlocks } = buildNarrativeBlocks({ state, audioIntelligence, audioDuration });
+  const blockCoverageById = (Array.isArray(state.assets_json?.block_coverage_by_block) ? state.assets_json.block_coverage_by_block : [])
+    .reduce((acc, item) => {
+      const key = String(item.block_id || "").trim();
+      if (!key) return acc;
+      acc[key] = item;
+      return acc;
+    }, {});
+  const blockRepairStateById = (Array.isArray(state.assets_json?.block_repair_states) ? state.assets_json.block_repair_states : [])
+    .reduce((acc, item) => {
+      const key = String(item.block_id || "").trim();
+      if (!key) return acc;
+      acc[key] = String(item.block_state || "").trim().toLowerCase();
+      return acc;
+    }, {});
   const rawAssets = Array.isArray(state.assets_json?.raw_items)
     ? state.assets_json.raw_items
     : (Array.isArray(state.assets_json?.items) ? state.assets_json.items : []);
@@ -884,7 +1094,23 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
       source_tier: candidate.source_tier || "free",
       visual_truth_status: candidate.visual_truth_status || "regional",
     }));
-  const assetWindows = approvedWindowCandidates.filter((candidate) => candidate.editorial_approved === true);
+  const sceneBlockIdByIndex = (Array.isArray(state.visual_plan) ? state.visual_plan : []).reduce((acc, scene) => {
+    const sceneIndex = Number(scene.scene_index || 0);
+    if (!sceneIndex) return acc;
+    acc[sceneIndex] = String(scene.block_id || `scene_${sceneIndex}`);
+    return acc;
+  }, {});
+  const assetWindows = approvedWindowCandidates
+    .filter((candidate) => candidate.editorial_approved === true)
+    .map((candidate) => {
+      const blockId = String(candidate.block_id || sceneBlockIdByIndex[Number(candidate.scene_index || 0)] || "").trim();
+      return {
+        ...candidate,
+        block_id: blockId,
+        block_repair_state: blockRepairStateById[blockId] || "",
+        block_coverage_status: blockCoverageById[blockId]?.coverage_status || "",
+      };
+    });
   const fallbackCandidate = allowPlaceholderFallback ? buildFallbackCandidate(fallbackAsset) : null;
   const providerReliability = state.assets_json?.provider_reliability || state.render_validation?.provider_reliability || {};
 
@@ -907,12 +1133,24 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
   const clips = [];
   const freeCriticalUsageByBlock = new Map();
   const pauseMarkers = Array.isArray(audioIntelligence?.pause_markers) ? audioIntelligence.pause_markers : [];
+  const microVisualPlan = Array.isArray(state.assets_json?.micro_visual_plan) && state.assets_json.micro_visual_plan.length
+    ? state.assets_json.micro_visual_plan
+    : buildMicroVisualPlan({
+        audioIntelligence,
+        visualPlan: Array.isArray(state.visual_plan) ? state.visual_plan : [],
+        durationSeconds: Number(audioDuration || state.duration_seconds || 0),
+      });
+  const microCoverageGaps = [];
+  let microRepairRoundsUsed = 0;
 
   for (let blockIndex = 0; blockIndex < microBlocks.length; blockIndex += 1) {
     const block = microBlocks[blockIndex];
     const previousBlock = microBlocks[blockIndex - 1] || null;
     const previousMacroTopic = block.hard_boundary ? previousBlock?.macro_topic || "" : "";
-    const slots = splitBlockIntoTimelineSlots({ block, policy, pauseMarkers });
+    const microSlots = buildMicroSlotsForBlock({ block, microVisualPlan, policy });
+    const slots = microSlots.length
+      ? microSlots
+      : splitBlockIntoTimelineSlots({ block, policy, pauseMarkers });
 
     for (let slotIndex = 0; slotIndex < slots.length; slotIndex += 1) {
       const slot = slots[slotIndex];
@@ -937,13 +1175,23 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         slotRole,
         hardBoundaryPolicy,
       });
+      const diversityFilter = filterCandidatesByHardDiversity({
+        candidates,
+        clips,
+        block,
+        slotRole,
+        criticalSlot,
+      });
+      const candidatesForRanking = diversityFilter.allowed_candidates.length
+        ? diversityFilter.allowed_candidates
+        : (candidates || []).map((candidate) => enrichCandidateIdentity({ candidate, slotRole, block }));
       const ranked = await rankCandidates({
         block: {
           ...block,
           is_boundary_first_slot: isBoundaryFirstSlot,
         },
         narrationText,
-        candidates,
+        candidates: candidatesForRanking,
         previousMacroTopic,
         usage,
         videoId,
@@ -953,6 +1201,9 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         slotRole,
         criticalSlot,
         providerReliability,
+        microMoment: slot.micro_moment || null,
+        slotStartSec: slot.start,
+        slotEndSec: slot.end,
       });
       const approvedDegradeCandidate = assetWindows.find((item) => item.editorial_approved === true)
         ? {
@@ -969,7 +1220,23 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         block,
         freeCriticalUsageByBlock,
       });
+      const microMoment = slot.micro_moment || null;
+      const microNeed = String(microMoment?.visual_need || "").toLowerCase();
+      const microNeedsProof = microMoment?.needs_visual_proof === true;
+      const minMicroScore = microNeedsProof ? 0.55 : 0.35;
+      const microProofPreferred = microMoment
+        ? ranked.find((entry) => {
+            if (!entry?.candidate || entry.hard_blocked) return false;
+            if (!microNeed) return false;
+            if (!isCandidateMicroProofSafe({ candidate: entry.candidate, microMoment, minScore: 0 })) return false;
+            if (!microNeedsProof) return true;
+            const status = String(entry.candidate.visual_truth_status || "").toLowerCase();
+            const score = Number(entry.features?.microNeedExactMatchScore || 0);
+            return ["exact", "regional"].includes(status) && score >= minMicroScore;
+          })
+        : null;
       const policySelected = selectedFromPolicy
+        || microProofPreferred
         || ranked.find((item) => !item.hard_blocked)
         || ranked[0]
         || approvedDegradeCandidate
@@ -983,13 +1250,72 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         usage,
         criticalSlot,
       });
-      const selected = diversitySelection.selected;
+      const adjacencySelection = pickAdjacencyDiversityAlternative({
+        ranked,
+        selected: diversitySelection.selected,
+        block,
+        clips,
+        microMoment: slot.micro_moment || null,
+      });
+      const selected = adjacencySelection;
 
       if (!selected?.candidate) {
         throw new Error(`Timeline blocked: no publishable candidate available for scene ${block.scene_index}.`);
       }
 
       let candidate = selected.candidate || fallbackCandidate;
+      const timelineRepairActions = [];
+      const selectedMicroScore = Number(selected?.features?.microNeedExactMatchScore || 0);
+      const candidateMicroProofSafe = isCandidateMicroProofSafe({
+        candidate,
+        microMoment,
+        minScore: minMicroScore,
+      });
+      const weakMicroMatch = Boolean(
+        microMoment
+        && (
+          (microNeedsProof && !candidateMicroProofSafe)
+          || (!microNeedsProof && selectedMicroScore < minMicroScore)
+        )
+      );
+      if (weakMicroMatch) {
+        const localRecutCandidate = findLocalRecutCandidate({
+          currentCandidate: candidate,
+          ranked,
+          assetWindows,
+          microMoment,
+          minScore: minMicroScore,
+        });
+        if (localRecutCandidate?.candidate) {
+          candidate = localRecutCandidate.candidate;
+          timelineRepairActions.push(localRecutCandidate.action);
+          microRepairRoundsUsed += 1;
+        } else {
+          const repairCandidate = ranked.find((entry) => {
+            const status = String(entry.candidate?.visual_truth_status || "").toLowerCase();
+            if (!isCandidateMicroProofSafe({ candidate: entry.candidate, microMoment, minScore: 0 })) return false;
+            if (!microNeedsProof) return true;
+            const score = Number(entry.features?.microNeedExactMatchScore || 0);
+            return ["exact", "regional"].includes(status) && score >= minMicroScore;
+          });
+          if (repairCandidate?.candidate) {
+            candidate = repairCandidate.candidate;
+            timelineRepairActions.push("ranked_micro_window_swap");
+            microRepairRoundsUsed += 1;
+          } else if (microMoment) {
+            microCoverageGaps.push({
+              micro_id: microMoment.micro_id,
+              scene_index: Number(block.scene_index || 0),
+              block_id: block.block_id || "",
+              visual_need: microMoment.visual_need || "",
+              criticality: microMoment.criticality || "medium",
+              repair_query: buildMicroRepairQuery({ block, microMoment }),
+              decision: microNeedsProof ? "degraded" : "degraded",
+              reason: microNeedsProof ? "NO_MICRO_PROOF_FOR_PROMISE" : "MICRO_NEED_WEAK_MATCH",
+            });
+          }
+        }
+      }
       if (criticalSlot) {
         const criticalUnsafe = !candidate
           || candidate.critical_slot_allowed === false
@@ -1024,9 +1350,27 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
           }
         }
       }
+      const expectedLocation = block.expected_location || block.location?.city || (block.topic_type === "city" ? block.macro_topic : "");
+      if (isBoundaryFirstSlot && hardBoundaryPolicy.require_location_on_hard_boundary && expectedLocation) {
+        const candidateCity = resolveCandidateCity({ candidate, expectedLocation });
+        if (!candidateCity || !isSameLocation(candidateCity, expectedLocation)) {
+          const boundaryExactCandidate = assetWindows
+            .filter((item) => {
+              if (item.editorial_approved !== true) return false;
+              const city = resolveCandidateCity({ candidate: item, expectedLocation });
+              if (!city || !isSameLocation(city, expectedLocation)) return false;
+              const status = String(item.visual_truth_status || "").toLowerCase();
+              return status === "exact" || status === "regional";
+            })
+            .sort((left, right) => Number(right.editorial_confidence || right.confidence || 0) - Number(left.editorial_confidence || left.confidence || 0))[0];
+          if (boundaryExactCandidate) {
+            candidate = boundaryExactCandidate;
+          }
+        }
+      }
       const themeEvidenceMatched = candidateHasThemeEvidence({ block, candidate });
       const boundaryForcedViolationCodes = [];
-      const expectedLocation = block.expected_location || block.location?.city || (block.topic_type === "city" ? block.macro_topic : "");
+      const resolvedCandidateLocation = resolveCandidateLocation({ candidate, expectedLocation });
       if (
         isBoundaryFirstSlot
         && hardBoundaryPolicy.forbid_neutral_first_clip
@@ -1038,7 +1382,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         isBoundaryFirstSlot
         && hardBoundaryPolicy.require_location_on_hard_boundary
         && expectedLocation
-        && !candidate.location?.city
+        && !resolvedCandidateLocation?.city
       ) {
         boundaryForcedViolationCodes.push("missing_location_on_first_clip");
       }
@@ -1051,9 +1395,35 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         clipIndex: clips.length + 1,
         draftVersion,
       });
+      const chosenEntry = ranked.find((entry) => entry?.candidate?.id === candidate.id);
+      const chosenFeatures = chosenEntry?.features || selected.features || {};
+      const candidateNeeds = (candidate.micro_needs_supported || []).map((item) => String(item || "").toLowerCase());
+      const microNeedExactScore = microMoment
+        ? (candidateNeeds.includes(String(microMoment.visual_need || "").toLowerCase()) ? 1 : Number(chosenFeatures?.microNeedExactMatchScore || 0))
+        : 0;
+      const candidateActions = (candidate.action_tokens_detected || []).map((item) => String(item || "").toLowerCase());
+      const microActions = (microMoment?.action_tokens || []).map((item) => String(item || "").toLowerCase());
+      const microActionScore = microMoment
+        ? (microActions.length
+          ? (microActions.filter((token) => candidateActions.includes(token)).length / microActions.length)
+          : Number(chosenFeatures?.microActionMatchScore || 0.5))
+        : 0;
+      const microTimingDriftSec = microMoment
+        ? Math.abs(((slot.start + slot.end) / 2) - ((microMoment.start_sec + microMoment.end_sec) / 2))
+        : 0;
+      const microTimingScore = microMoment
+        ? Number(chosenFeatures?.microTemporalPrecisionScore || Math.max(0, Math.min(1, 1 - (microTimingDriftSec / 1.2))))
+        : 0;
+      const microCompositeScore = microMoment
+        ? round3(
+          (Number(microNeedExactScore || 0) * 0.65)
+          + (Number(microActionScore || 0) * 0.25)
+          + (Number(microTimingScore || 0) * 0.1)
+        )
+        : 0;
       const detectedVisualCategories = unique([
         ...(candidate.detected_visual_categories || []),
-        ...((selected.features?.detectedVisualCategories) || []),
+        ...((chosenFeatures?.detectedVisualCategories) || []),
       ]);
       registerClipUsage({ usage, block, candidate, clipIndex: clips.length + 1 });
       if (criticalSlot && ["free", "generated"].includes(String(candidate.source_tier || "free").toLowerCase())) {
@@ -1070,6 +1440,19 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         narration_excerpt: block.narration_excerpt,
         clip_script_excerpt: narrationText.slice(0, 240),
         clip_script_source: (audioIntelligence?.words || []).length ? "audio_word_timestamps" : "scene_fallback",
+        micro_id: microMoment?.micro_id || "",
+        micro_visual_need: microMoment?.visual_need || "",
+        micro_timing_score: round3(microTimingScore),
+        micro_timing_drift_sec: round3(microTimingDriftSec),
+        micro_match_score: round3(microNeedExactScore),
+        micro_action_match_score: round3(microActionScore),
+        micro_composite_score: round3(microCompositeScore),
+        micro_slot_ok: microMoment
+          ? ((microNeedsProof
+            && ["exact", "regional"].includes(String(candidate.visual_truth_status || "").toLowerCase())
+            && Number(microCompositeScore || 0) >= 0.52)
+            || (!microNeedsProof && Number(microCompositeScore || 0) >= 0.35))
+          : true,
         clip_duration_seconds: slot.duration,
         timeline_start_sec: round3(slot.start),
         timeline_end_sec: round3(slot.end),
@@ -1079,27 +1462,30 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         source_start_seconds: sourceWindow.source_start_seconds,
         source_end_seconds: sourceWindow.source_end_seconds,
         asset_duration_seconds: sourceWindow.asset_duration_seconds,
-        semantic_match_score: round3(selected.features?.semanticScore || 0),
-        block_match_score: round3(selected.features?.blockMatchScore || 0),
-        entity_match_score: round3(selected.features?.entityMatchScore || 0),
-        visual_specificity_score: round3(selected.features?.visualSpecificityScore || 0),
-        reuse_penalty: round3(selected.features?.reusePenalty || 0),
+        semantic_match_score: round3(chosenFeatures?.semanticScore || 0),
+        block_match_score: round3(chosenFeatures?.blockMatchScore || 0),
+        entity_match_score: round3(chosenFeatures?.entityMatchScore || 0),
+        visual_specificity_score: round3(chosenFeatures?.visualSpecificityScore || 0),
+        reuse_penalty: round3(chosenFeatures?.reusePenalty || 0),
         timeline_score: round3(selected.score || 0),
         composite_score: round3(selected.score || 0),
         semantic_match_method: selected.method || "keyword_fallback",
         semantic_match_terms: buildSemanticTerms([narrationText, candidate.semantic_text]).filter((term) => buildSemanticTerms([narrationText]).includes(term)).slice(0, 12),
-        selection_reason: selected.selection_reason || "best_candidate",
+        selection_reason: timelineRepairActions.length
+          ? unique([...(timelineRepairActions || []), selected.selection_reason || "best_candidate"]).join("+")
+          : selected.selection_reason || "best_candidate",
         rejected_candidates_count: Math.max(0, ranked.length - 1),
         candidate_debug: {
           top_rejected_reasons: summarizeRejectedReasons(ranked),
         },
-        score_features: selected.features || {},
+        score_features: chosenFeatures || {},
         visual_intent: block.visual_intent,
         required_visual_evidence: block.required_visual_evidence || [],
         allowed_visual_categories: block.allowed_visual_categories || [],
         forbidden_visual_categories: block.forbidden_visual_categories || [],
         asset_semantic_text: candidate.description || candidate.semantic_text || candidate.asset?.semantic_text || candidate.asset?.query || "",
         asset_window_id: candidate.id,
+        asset_id: candidate.asset_id,
         asset_window_key: `${candidate.asset_id}:${candidate.start_sec}:${candidate.end_sec}`,
         asset_window_summary: candidate.description || candidate.summary || "",
         asset_window_start_seconds: Number(candidate.start_sec || 0),
@@ -1107,7 +1493,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         asset_analysis_provider: candidate.analysis_provider,
         detected_visual_categories: detectedVisualCategories,
         detected_objects: candidate.detected_objects || [],
-        visual_intent_match: candidate.visual_intent_match === true || Number(selected.features?.visualIntentMatchScore || 0) > 0,
+        visual_intent_match: candidate.visual_intent_match === true || Number(chosenFeatures?.visualIntentMatchScore || 0) > 0,
         macro_block_id: block.parent_id,
         micro_block_id: block.id,
         block_id: block.block_id,
@@ -1115,6 +1501,9 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         micro_topic: block.topic,
         subtheme: block.subtheme,
         topic_type: block.topic_type,
+        block_coverage_status: blockCoverageById[String(block.block_id || "").trim()]?.coverage_status || "",
+        block_coverage_advance_mode: blockCoverageById[String(block.block_id || "").trim()]?.advance_mode || "",
+        block_repair_state: blockRepairStateById[String(block.block_id || "").trim()] || "",
         hard_boundary: Boolean(block.hard_boundary),
         hard_boundary_first_clip: isBoundaryFirstSlot,
         transition_type: block.transition_type || (block.hard_boundary ? "hard" : "soft"),
@@ -1126,9 +1515,16 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         block_intro_asset: block.block_intro_asset || null,
         chapter_card_clip: Boolean(candidate.chapter_card_clip),
         transition: isBoundaryFirstSlot ? (block.hard_boundary ? "hard_cut" : "soft_cut") : "none",
-        detected_location: candidate.location,
+        detected_location: resolvedCandidateLocation,
         detected_landmarks: candidate.landmarks,
         neutral_fallback: Boolean(candidate.neutral),
+        visual_family: candidate.visual_family || "",
+        landmark_id: candidate.landmark_id || "",
+        shot_scale: candidate.shot_scale || "",
+        human_presence: Boolean(candidate.human_presence),
+        provider_signature: candidate.provider_signature || "",
+        source_url: candidate.source_url || candidate.asset?.source_url || "",
+        scene_function: candidate.scene_function || "",
         visual_signature: buildVisualSignature(candidate),
         query_used: candidate.asset?.query_used || candidate.asset?.query || "",
         visual_truth_status: candidate.visual_truth_status || "regional",
@@ -1149,19 +1545,27 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
             || (String(candidate.source_tier || "free").toLowerCase() === "free" && !isStrongFreeCriticalCandidate(candidate))
           ) ? ["critical_slot_weak_source_tier"] : []),
           ...(FOOD_VISUAL_INTENTS.has(String(block.visual_intent || "").toLowerCase()) && !themeEvidenceMatched ? ["theme_evidence_missing_for_intent"] : []),
+          ...(microMoment?.needs_visual_proof === true && Number(microCompositeScore || 0) < 0.52 ? ["micro_proof_not_strong_enough"] : []),
+          ...(microMoment && Number(microTimingScore || 0) < 0.4 ? ["micro_timing_low_precision"] : []),
+          ...(diversityFilter.bypass_required ? ["diversity_hard_filter_bypassed"] : []),
+          ...(criticalSlot && diversityFilter.bypass_required ? ["diversity_bypass_on_critical_slot"] : []),
           ...(selected?.hard_blocked ? ["hard_boundary_candidate_forced"] : []),
           ...(diversitySelection.forced ? ["diversity_quota_enforced"] : []),
           ...boundaryForcedViolationCodes,
         ]),
+        timeline_repair_actions: unique(timelineRepairActions),
         source_tier: candidate.source_tier || "free",
         approved_window_id: candidate.approved_window_id || candidate.id,
-        visual_observation_origin: candidate.visual_observation_origin || "real_vision",
         theme_evidence_present: themeEvidenceMatched,
+        content_slot_type: candidate.content_slot_type || "",
+        content_slot_id: candidate.content_slot_id || "",
+        slot_coverage_ok: Number(candidate.slot_coverage_contribution || 0) > 0,
         asset: candidate.asset,
       });
     }
   }
 
+  const sequenceRepair = repairTimelineClipSequence({ clips });
   const plannedDuration = clips.reduce((acc, clip) => acc + Number(clip.clip_duration_seconds || 0), 0);
   const durationDiff = round3(Number(audioDuration || 0) - plannedDuration);
   if (clips.length && Math.abs(durationDiff) > 0.02) {
@@ -1184,6 +1588,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
       max_topic_switch_latency_sec: hardBoundaryPolicy.max_topic_switch_latency_sec,
     },
   });
+  const diversityAudit = buildTimelineDiversityAudit({ clips, microBlocks });
   const timelineSyncMetrics = {
     ...timelineSyncMetricsBase,
     hard_boundary_status: hardBoundaryValidation.status,
@@ -1195,6 +1600,29 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
     avg_visual_lag_sec: hardBoundaryValidation.avg_visual_lag_sec,
     hard_boundary_reports: hardBoundaryValidation.boundaries,
     hard_boundary_violations: hardBoundaryValidation.violations,
+    micro_critical_total: clips.filter((clip) => clip.micro_id && clip.critical_slot).length,
+    micro_critical_covered: clips.filter((clip) => clip.micro_id && clip.critical_slot && clip.micro_slot_ok).length,
+    micro_mismatch_rate: round3(
+      clips.filter((clip) => clip.micro_id && clip.micro_slot_ok === false).length / Math.max(1, clips.filter((clip) => clip.micro_id).length)
+    ),
+    micro_timing_drift_avg: round3(
+      clips
+        .filter((clip) => clip.micro_id)
+        .reduce((acc, clip) => acc + Number(clip.micro_timing_drift_sec || 0), 0)
+      / Math.max(1, clips.filter((clip) => clip.micro_id).length)
+    ),
+    micro_timing_drift_max: round3(
+      clips
+        .filter((clip) => clip.micro_id)
+        .reduce((maxDrift, clip) => Math.max(maxDrift, Number(clip.micro_timing_drift_sec || 0)), 0)
+    ),
+    micro_coverage_gaps: microCoverageGaps,
+    micro_repair_rounds_used: microRepairRoundsUsed,
+    timeline_repair_actions: sequenceRepair.actions || [],
+    diversity_blocks: diversityAudit.blocks,
+    low_diversity_block_count: Number(diversityAudit.low_diversity_block_count || 0),
+    low_diversity_blocks: diversityAudit.low_diversity_blocks || [],
+    adjacent_repeat_total: Number(diversityAudit.adjacent_repeat_total || 0),
   };
 
   return {
@@ -1225,6 +1653,21 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
       visual_observation_origin: window.visual_observation_origin || "real_vision",
       visual_truth_status: window.visual_truth_status || "regional",
       source_tier: window.source_tier || "free",
+      content_slot_type: window.content_slot_type || "",
+      content_slot_id: window.content_slot_id || "",
+      slot_coverage_contribution: Number(window.slot_coverage_contribution || 0),
+      block_repair_state: window.block_repair_state || "",
+      micro_needs_supported: window.micro_needs_supported || [],
+      action_tokens_detected: window.action_tokens_detected || [],
+      temporal_match_hints: window.temporal_match_hints || {},
+      micro_need_match_score: Number(window.micro_need_match_score || 0),
+      visual_family: window.visual_family || "",
+      landmark_id: window.landmark_id || "",
+      shot_scale: window.shot_scale || "",
+      human_presence: window.human_presence === true,
+      provider_signature: window.provider_signature || "",
+      scene_function: window.scene_function || "",
+      source_url: window.source_url || window.asset?.source_url || "",
     })),
     syncPolicy: policy,
     hardBoundaryPolicy,

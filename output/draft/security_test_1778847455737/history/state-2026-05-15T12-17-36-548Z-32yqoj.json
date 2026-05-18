@@ -1,0 +1,2169 @@
+{
+  "video_id": "security_test_1778847455737",
+  "idea_id": null,
+  "topic": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+  "angle": "guia narrativo focado em comida local, mercados, cafes e vinhos",
+  "status": "assets_searched",
+  "current_step": "assets_searched",
+  "approved": false,
+  "selected_idea": {
+    "topic": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+    "angle": "guia narrativo focado em comida local, mercados, cafes e vinhos"
+  },
+  "ideas": [],
+  "research_json": {},
+  "outline_json": {},
+  "script_text": "Portugal é um país que funciona muito bem quando o roteiro segue comida, cidade e atmosfera no tempo certo da narração. A abertura precisa vender essa promessa com imagens que pareçam uma viagem de sabores, não uma sequência aleatória de paisagens. Lisboa entra primeiro com cafés históricos, vitrines de pastelaria, mercados e cenas de rua onde a comida aparece como parte da cidade. Depois o Porto muda a energia com caves, vinho do Porto, restaurantes perto do Douro e planos mais densos de gastronomia local. No meio do vídeo, os mercados e os pratos servidos na hora ajudam a humanizar a narrativa e aproximam o espectador do cotidiano. Mais à frente, vinho, sobremesas, cafés e doçaria criam um bloco visual mais específico e memorável. A ideia deste teste é validar se a timeline acompanha exatamente o áudio e evita repetir costa, skyline ou cenas genéricas quando o texto fala de comida. Se a edição respeitar o tempo da fala e a ordem dos blocos, o resultado final deve parecer muito mais humano.",
+  "script_path": "",
+  "visual_plan": [
+    {
+      "scene_index": 1,
+      "title": "Portugal em sabores",
+      "narration_excerpt": "Portugal abre o roteiro com uma promessa simples: viajar pelo país através dos mercados, cafés, pratos e vinhos.",
+      "keywords": [
+        "portugal food travel",
+        "portugal market",
+        "travel overview",
+        "portugal cafe",
+        "food journey"
+      ],
+      "target_duration_seconds": 8,
+      "block_id": "introducao",
+      "block_index": 1,
+      "block_label": "Introducao",
+      "block_type": "general",
+      "block_keywords": [
+        "portugal food travel",
+        "portugal market",
+        "travel overview",
+        "portugal cafe",
+        "food journey",
+        "praia",
+        "portugal",
+        "sabores",
+        "abre",
+        "roteiro",
+        "promessa",
+        "simples"
+      ],
+      "negative_keywords": [
+        "Lisboa",
+        "lisboa",
+        "lisbon",
+        "Porto",
+        "porto",
+        "oporto"
+      ],
+      "overlay_title": "1. Introducao",
+      "visual_requirements": [
+        "establishing_shot",
+        "portugal food travel",
+        "portugal market",
+        "travel overview"
+      ],
+      "narrative_function": "hook",
+      "generic_tolerance": "low",
+      "requires_visual_proof": true,
+      "slot_criticality": "high",
+      "probable_shot_role": "hook_exact",
+      "role": "intro",
+      "scene_order": 1,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "beach",
+      "visual_intent": "gastronomy",
+      "visual_intent_source": "gastronomy",
+      "required_visual_evidence": [
+        "food",
+        "plate",
+        "market",
+        "restaurant",
+        "people eating"
+      ],
+      "allowed_visual_categories": [
+        "food",
+        "local_food",
+        "market",
+        "wine",
+        "pastry",
+        "restaurant",
+        "cafe",
+        "street_food",
+        "people_eating"
+      ],
+      "forbidden_visual_categories": [
+        "skyline",
+        "bridge",
+        "river",
+        "clouds",
+        "generic_street",
+        "coast",
+        "landscape"
+      ],
+      "generic_asset_allowed": true,
+      "generic_asset_allowed_reason": "establishing_shot",
+      "max_generic_establishing_seconds": 3,
+      "hard_boundary": true,
+      "boundary_id": "hb_001_introducao",
+      "transition_type": "hard",
+      "expected_location": "",
+      "expected_visual_start_sec": 0,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 0,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Introducao",
+        "query_hint": "Introducao praia intro"
+      }
+    },
+    {
+      "scene_index": 2,
+      "title": "Lisboa gastronómica",
+      "narration_excerpt": "Em Lisboa, confeitarias, cafés históricos e mercados dão o tom da primeira grande parada do vídeo.",
+      "keywords": [
+        "lisbon food market",
+        "lisbon pastry",
+        "lisbon cafe",
+        "portugal bakery",
+        "lisbon street food"
+      ],
+      "target_duration_seconds": 8,
+      "block_id": "lisboa",
+      "block_index": 2,
+      "block_label": "Lisboa",
+      "block_type": "city",
+      "block_keywords": [
+        "lisbon food market",
+        "lisbon pastry",
+        "lisbon cafe",
+        "portugal bakery",
+        "lisbon street food",
+        "Lisboa",
+        "praia",
+        "lisboa",
+        "gastronomica",
+        "confeitarias",
+        "cafes",
+        "historicos"
+      ],
+      "negative_keywords": [
+        "Porto",
+        "porto",
+        "oporto"
+      ],
+      "overlay_title": "2. Lisboa",
+      "visual_requirements": [
+        "location_specific",
+        "lisbon food market",
+        "lisbon pastry",
+        "lisbon cafe"
+      ],
+      "narrative_function": "detail",
+      "generic_tolerance": "medium",
+      "requires_visual_proof": false,
+      "slot_criticality": "medium",
+      "probable_shot_role": "proof_exact",
+      "role": "body",
+      "scene_order": 2,
+      "location": {
+        "city": "Lisboa",
+        "country": "Portugal",
+        "confidence": 0.9,
+        "matched_alias": "lisboa",
+        "source": "alias"
+      },
+      "landmarks": [],
+      "subtheme": "beach",
+      "visual_intent": "gastronomy",
+      "visual_intent_source": "gastronomy",
+      "required_visual_evidence": [
+        "food",
+        "plate",
+        "market",
+        "restaurant",
+        "people eating"
+      ],
+      "allowed_visual_categories": [
+        "food",
+        "local_food",
+        "market",
+        "wine",
+        "pastry",
+        "restaurant",
+        "cafe",
+        "street_food",
+        "people_eating"
+      ],
+      "forbidden_visual_categories": [
+        "skyline",
+        "aerial_city",
+        "bridge",
+        "river",
+        "clouds",
+        "generic_street",
+        "coast",
+        "landscape"
+      ],
+      "generic_asset_allowed": false,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 0,
+      "hard_boundary": true,
+      "boundary_id": "hb_002_lisboa",
+      "transition_type": "hard",
+      "expected_location": "Lisboa",
+      "expected_visual_start_sec": 15.833,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 15.833,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Lisboa",
+        "query_hint": "Lisboa praia intro"
+      }
+    },
+    {
+      "scene_index": 3,
+      "title": "Porto gastronómico",
+      "narration_excerpt": "No Porto, a narrativa muda para caves, vinho do Porto, restaurantes junto ao Douro e comida mais densa.",
+      "keywords": [
+        "porto wine cellar",
+        "porto food market",
+        "porto restaurant",
+        "douro food",
+        "porto gastronomy"
+      ],
+      "target_duration_seconds": 8,
+      "block_id": "porto",
+      "block_index": 3,
+      "block_label": "Porto",
+      "block_type": "city",
+      "block_keywords": [
+        "porto wine cellar",
+        "porto food market",
+        "porto restaurant",
+        "douro food",
+        "porto gastronomy",
+        "Porto",
+        "rio e margem",
+        "porto",
+        "gastronomico",
+        "narrativa",
+        "muda",
+        "caves"
+      ],
+      "negative_keywords": [
+        "Lisboa",
+        "lisboa",
+        "lisbon"
+      ],
+      "overlay_title": "3. Porto",
+      "visual_requirements": [
+        "location_specific",
+        "waterfront",
+        "boats",
+        "wide_city_view",
+        "porto wine cellar",
+        "porto food market",
+        "porto restaurant"
+      ],
+      "narrative_function": "detail",
+      "generic_tolerance": "medium",
+      "requires_visual_proof": false,
+      "slot_criticality": "medium",
+      "probable_shot_role": "proof_exact",
+      "role": "body",
+      "scene_order": 3,
+      "location": {
+        "city": "Porto",
+        "country": "Portugal",
+        "confidence": 0.86,
+        "matched_alias": "Douro",
+        "source": "landmark_city_hint"
+      },
+      "landmarks": [
+        {
+          "name": "Rio Douro",
+          "city": "Porto",
+          "confidence": 0.82,
+          "source": "alias"
+        }
+      ],
+      "subtheme": "riverfront",
+      "visual_intent": "gastronomy",
+      "visual_intent_source": "gastronomy",
+      "required_visual_evidence": [
+        "food",
+        "plate",
+        "market",
+        "restaurant",
+        "people eating"
+      ],
+      "allowed_visual_categories": [
+        "food",
+        "local_food",
+        "market",
+        "wine",
+        "pastry",
+        "restaurant",
+        "cafe",
+        "street_food",
+        "people_eating"
+      ],
+      "forbidden_visual_categories": [
+        "skyline",
+        "aerial_city",
+        "bridge",
+        "river",
+        "clouds",
+        "generic_street",
+        "coast",
+        "landscape"
+      ],
+      "generic_asset_allowed": false,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 0,
+      "hard_boundary": true,
+      "boundary_id": "hb_003_porto",
+      "transition_type": "hard",
+      "expected_location": "Porto",
+      "expected_visual_start_sec": 31.667,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 31.667,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Porto",
+        "query_hint": "Porto rio e margem intro"
+      }
+    },
+    {
+      "scene_index": 4,
+      "title": "Mercados e comida local",
+      "narration_excerpt": "Mercados, bancas, pratos servidos na hora e cenas de rua humanizam a montagem e trazem textura ao roteiro.",
+      "keywords": [
+        "portugal food market",
+        "street market food",
+        "local dishes",
+        "food hall portugal",
+        "market people"
+      ],
+      "target_duration_seconds": 8,
+      "block_id": "portugal-gastronomico-lisboa-porto-mercados-e-vinhos",
+      "block_index": 4,
+      "block_label": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "block_type": "general",
+      "block_keywords": [
+        "portugal food market",
+        "street market food",
+        "local dishes",
+        "food hall portugal",
+        "market people",
+        "praia",
+        "mercados",
+        "comida",
+        "bancas",
+        "pratos",
+        "servidos",
+        "hora"
+      ],
+      "negative_keywords": [
+        "Lisboa",
+        "lisboa",
+        "lisbon",
+        "Porto",
+        "porto",
+        "oporto"
+      ],
+      "overlay_title": "4. Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "visual_requirements": [
+        "portugal food market",
+        "street market food",
+        "local dishes"
+      ],
+      "narrative_function": "detail",
+      "generic_tolerance": "medium",
+      "requires_visual_proof": false,
+      "slot_criticality": "medium",
+      "probable_shot_role": "proof_exact",
+      "role": "body",
+      "scene_order": 4,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "beach",
+      "visual_intent": "gastronomy",
+      "visual_intent_source": "gastronomy",
+      "required_visual_evidence": [
+        "food",
+        "plate",
+        "market",
+        "restaurant",
+        "people eating"
+      ],
+      "allowed_visual_categories": [
+        "food",
+        "local_food",
+        "market",
+        "wine",
+        "pastry",
+        "restaurant",
+        "cafe",
+        "street_food",
+        "people_eating"
+      ],
+      "forbidden_visual_categories": [
+        "skyline",
+        "aerial_city",
+        "bridge",
+        "river",
+        "clouds",
+        "generic_street",
+        "coast",
+        "landscape"
+      ],
+      "generic_asset_allowed": false,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 0,
+      "hard_boundary": true,
+      "boundary_id": "hb_004_portugal-gastronomico-lisboa-porto-mercados-e-vinhos",
+      "transition_type": "hard",
+      "expected_location": "",
+      "expected_visual_start_sec": 47.5,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 47.5,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+        "query_hint": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos praia intro"
+      }
+    },
+    {
+      "scene_index": 5,
+      "title": "Vinhos e doçaria",
+      "narration_excerpt": "Vinho, pastelaria, sobremesas e cafés fecham a viagem com um bloco visual mais específico e memorável.",
+      "keywords": [
+        "portugal wine tasting",
+        "portugal pastry",
+        "bakery dessert",
+        "cafe dessert",
+        "sweet food portugal"
+      ],
+      "target_duration_seconds": 8,
+      "block_id": "portugal-gastronomico-lisboa-porto-mercados-e-vinhos",
+      "block_index": 4,
+      "block_label": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "block_type": "general",
+      "block_keywords": [
+        "portugal wine tasting",
+        "portugal pastry",
+        "bakery dessert",
+        "cafe dessert",
+        "sweet food portugal",
+        "gastronomia",
+        "vinhos",
+        "docaria",
+        "vinho",
+        "pastelaria",
+        "sobremesas",
+        "cafes"
+      ],
+      "negative_keywords": [
+        "Lisboa",
+        "lisboa",
+        "lisbon",
+        "Porto",
+        "porto",
+        "oporto"
+      ],
+      "overlay_title": "4. Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "visual_requirements": [
+        "food_closeups",
+        "market_life",
+        "people_eating",
+        "portugal wine tasting",
+        "portugal pastry",
+        "bakery dessert"
+      ],
+      "narrative_function": "detail",
+      "generic_tolerance": "medium",
+      "requires_visual_proof": false,
+      "slot_criticality": "medium",
+      "probable_shot_role": "proof_exact",
+      "role": "body",
+      "scene_order": 5,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "food",
+      "visual_intent": "gastronomy",
+      "visual_intent_source": "gastronomy",
+      "required_visual_evidence": [
+        "food",
+        "plate",
+        "market",
+        "restaurant",
+        "people eating"
+      ],
+      "allowed_visual_categories": [
+        "food",
+        "local_food",
+        "market",
+        "wine",
+        "pastry",
+        "restaurant",
+        "cafe",
+        "street_food",
+        "people_eating"
+      ],
+      "forbidden_visual_categories": [
+        "skyline",
+        "aerial_city",
+        "bridge",
+        "river",
+        "clouds",
+        "generic_street",
+        "coast",
+        "landscape"
+      ],
+      "generic_asset_allowed": false,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 0,
+      "hard_boundary": false,
+      "boundary_id": "",
+      "transition_type": "soft",
+      "expected_location": "",
+      "expected_visual_start_sec": 63.333,
+      "chapter_trigger": null,
+      "chapter_card_required": false,
+      "block_intro_asset": null
+    },
+    {
+      "scene_index": 6,
+      "title": "Fechamento",
+      "narration_excerpt": "No final, o vídeo resume por que Portugal funciona tão bem quando a narrativa segue o ritmo dos sabores e das cidades.",
+      "keywords": [
+        "portugal travel closing",
+        "food montage",
+        "city food summary",
+        "portugal cafe closing",
+        "travel lifestyle"
+      ],
+      "target_duration_seconds": 8,
+      "block_id": "fechamento",
+      "block_index": 5,
+      "block_label": "Fechamento",
+      "block_type": "general",
+      "block_keywords": [
+        "portugal travel closing",
+        "food montage",
+        "city food summary",
+        "portugal cafe closing",
+        "travel lifestyle",
+        "praia",
+        "fechamento",
+        "final",
+        "resume",
+        "portugal",
+        "funciona",
+        "tao"
+      ],
+      "negative_keywords": [
+        "Lisboa",
+        "lisboa",
+        "lisbon",
+        "Porto",
+        "porto",
+        "oporto"
+      ],
+      "overlay_title": "5. Fechamento",
+      "visual_requirements": [
+        "closing_summary",
+        "portugal travel closing",
+        "food montage",
+        "city food summary"
+      ],
+      "narrative_function": "closing",
+      "generic_tolerance": "low",
+      "requires_visual_proof": true,
+      "slot_criticality": "high",
+      "probable_shot_role": "closing_payoff",
+      "role": "outro",
+      "scene_order": 6,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "beach",
+      "visual_intent": "gastronomy",
+      "visual_intent_source": "gastronomy",
+      "required_visual_evidence": [
+        "food",
+        "plate",
+        "market",
+        "restaurant",
+        "people eating"
+      ],
+      "allowed_visual_categories": [
+        "food",
+        "local_food",
+        "market",
+        "wine",
+        "pastry",
+        "restaurant",
+        "cafe",
+        "street_food",
+        "people_eating"
+      ],
+      "forbidden_visual_categories": [
+        "skyline",
+        "bridge",
+        "river",
+        "clouds",
+        "generic_street",
+        "coast",
+        "landscape"
+      ],
+      "generic_asset_allowed": true,
+      "generic_asset_allowed_reason": "establishing_shot",
+      "max_generic_establishing_seconds": 3,
+      "hard_boundary": true,
+      "boundary_id": "hb_006_fechamento",
+      "transition_type": "hard",
+      "expected_location": "",
+      "expected_visual_start_sec": 79.167,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 79.167,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Fechamento",
+        "query_hint": "Fechamento praia intro"
+      }
+    }
+  ],
+  "audio_path": "C:\\Users\\HABILFIX\\Desktop\\Hubia\\Projetos\\youtube-video-pipeline\\automacao-youtube-n8n\\output\\draft\\security_test_1778847455737\\audio\\narration.mp3",
+  "duration_seconds": 95,
+  "audio_intelligence_path": "",
+  "audio_intelligence_provider": "",
+  "scene_boundaries": [],
+  "chapter_triggers": [],
+  "caption_path_srt": "",
+  "caption_path_vtt": "",
+  "assets_json": {
+    "visual_keywords": [
+      "portugal food travel",
+      "portugal market",
+      "travel overview",
+      "portugal cafe",
+      "food journey",
+      "lisbon food market",
+      "lisbon pastry",
+      "lisbon cafe",
+      "portugal bakery",
+      "lisbon street food",
+      "porto wine cellar",
+      "porto food market",
+      "porto restaurant",
+      "douro food",
+      "porto gastronomy",
+      "portugal food market",
+      "street market food",
+      "local dishes",
+      "food hall portugal",
+      "market people",
+      "portugal wine tasting",
+      "portugal pastry",
+      "bakery dessert",
+      "cafe dessert",
+      "sweet food portugal",
+      "portugal travel closing",
+      "food montage",
+      "city food summary",
+      "portugal cafe closing",
+      "travel lifestyle"
+    ],
+    "search_queries": [
+      "portugal portugal food travel",
+      "portugal portugal market",
+      "portugal portugal cafe",
+      "portugal food journey",
+      "portugal food market",
+      "portugal food travel",
+      "portugal market",
+      "portugal cafe",
+      "portugal portuguese food",
+      "lisbon lisbon food market",
+      "lisbon lisbon pastry",
+      "lisbon lisbon cafe",
+      "lisbon portugal bakery",
+      "lisbon lisbon street food",
+      "lisbon food market",
+      "lisbon traditional restaurant",
+      "lisbon pastel de nata cafe",
+      "lisboa lisbon food market",
+      "lisboa lisbon pastry",
+      "lisboa lisbon cafe",
+      "lisboa portugal bakery",
+      "lisboa lisbon street food",
+      "lisboa food market",
+      "lisboa traditional restaurant",
+      "lisboa pastel de nata cafe",
+      "portugal lisbon food market",
+      "portugal lisbon pastry",
+      "portugal lisbon cafe",
+      "portugal portugal bakery",
+      "portugal lisbon street food",
+      "porto wine cellar",
+      "oporto porto wine cellar",
+      "oporto porto food market",
+      "oporto porto restaurant",
+      "oporto douro food",
+      "oporto food market",
+      "oporto traditional restaurant",
+      "oporto pastel de nata cafe",
+      "porto porto wine cellar",
+      "porto porto food market",
+      "porto porto restaurant",
+      "porto douro food",
+      "porto food market",
+      "porto traditional restaurant",
+      "porto pastel de nata cafe",
+      "portugal porto wine cellar",
+      "portugal porto food market",
+      "portugal porto restaurant",
+      "portugal douro food",
+      "porto restaurant",
+      "portugal portugal food market",
+      "portugal street market food",
+      "portugal local dishes",
+      "portugal food hall portugal",
+      "portugal market people",
+      "street market food",
+      "local dishes",
+      "food hall portugal",
+      "portugal portugal wine tasting",
+      "portugal portugal pastry",
+      "portugal bakery dessert",
+      "portugal cafe dessert",
+      "portugal sweet food portugal",
+      "portugal wine tasting",
+      "portugal pastry",
+      "bakery dessert",
+      "cafe dessert",
+      "portugal food montage",
+      "portugal city food summary",
+      "portugal portugal cafe closing",
+      "food montage",
+      "city food summary",
+      "portugal cafe closing"
+    ],
+    "retrieval_budget": [
+      {
+        "scene_index": 1,
+        "visual_intent": "gastronomy",
+        "retrieval_budget": {
+          "max_queries": 22,
+          "max_downloads": 6,
+          "roles_targeted": [
+            "hook_exact",
+            "hook_role"
+          ],
+          "trimmed": false
+        },
+        "query_count": 9
+      },
+      {
+        "scene_index": 2,
+        "visual_intent": "gastronomy",
+        "retrieval_budget": {
+          "max_queries": 22,
+          "max_downloads": 6,
+          "roles_targeted": [
+            "proof_exact",
+            "detail_role"
+          ],
+          "trimmed": true
+        },
+        "query_count": 22
+      },
+      {
+        "scene_index": 3,
+        "visual_intent": "gastronomy",
+        "retrieval_budget": {
+          "max_queries": 22,
+          "max_downloads": 6,
+          "roles_targeted": [
+            "proof_exact",
+            "detail_role"
+          ],
+          "trimmed": false
+        },
+        "query_count": 22
+      },
+      {
+        "scene_index": 4,
+        "visual_intent": "gastronomy",
+        "retrieval_budget": {
+          "max_queries": 22,
+          "max_downloads": 6,
+          "roles_targeted": [
+            "proof_exact",
+            "detail_role"
+          ],
+          "trimmed": false
+        },
+        "query_count": 10
+      },
+      {
+        "scene_index": 5,
+        "visual_intent": "gastronomy",
+        "retrieval_budget": {
+          "max_queries": 20,
+          "max_downloads": 6,
+          "roles_targeted": [
+            "proof_exact",
+            "detail_role"
+          ],
+          "trimmed": false
+        },
+        "query_count": 11
+      },
+      {
+        "scene_index": 6,
+        "visual_intent": "gastronomy",
+        "retrieval_budget": {
+          "max_queries": 22,
+          "max_downloads": 6,
+          "roles_targeted": [
+            "closing_payoff",
+            "closing_role"
+          ],
+          "trimmed": false
+        },
+        "query_count": 8
+      }
+    ],
+    "raw_items": [],
+    "approved_items": [],
+    "approved_windows": [],
+    "rejected_windows": [],
+    "editorial_bins_by_scene": {},
+    "editorial_metrics": {
+      "approved_window_count": 0,
+      "rejected_window_count": 0,
+      "exact_ratio": 0,
+      "regional_ratio": 0,
+      "generic_ratio": 0,
+      "uncertain_ratio": 0,
+      "wrong_ratio": 0,
+      "critical_slots_covered_scenes": 0,
+      "critical_slots_total_scenes": 6,
+      "critical_slots_coverage_ratio": 0,
+      "scene_theme_coverage_ratio": 0,
+      "timeline_uses_approved_pool_only": true,
+      "false_positive_risk_categories": {},
+      "generic_exposure_by_scene": [
+        {
+          "scene_index": 1,
+          "generic_ratio": 0,
+          "editorial_niche": "gastronomy"
+        },
+        {
+          "scene_index": 2,
+          "generic_ratio": 0,
+          "editorial_niche": "gastronomy"
+        },
+        {
+          "scene_index": 3,
+          "generic_ratio": 0,
+          "editorial_niche": "gastronomy"
+        },
+        {
+          "scene_index": 4,
+          "generic_ratio": 0,
+          "editorial_niche": "gastronomy"
+        },
+        {
+          "scene_index": 5,
+          "generic_ratio": 0,
+          "editorial_niche": "gastronomy"
+        },
+        {
+          "scene_index": 6,
+          "generic_ratio": 0,
+          "editorial_niche": "gastronomy"
+        }
+      ]
+    },
+    "scene_editorial_readiness": [
+      {
+        "scene_index": 1,
+        "visual_intent": "gastronomy",
+        "editorial_niche": "gastronomy",
+        "total_approved_windows": 0,
+        "exact_windows": 0,
+        "regional_windows": 0,
+        "generic_windows": 0,
+        "uncertain_windows": 0,
+        "theme_required_categories": [
+          "food",
+          "local_food",
+          "market",
+          "restaurant",
+          "cafe",
+          "people_eating",
+          "street_food",
+          "pastry",
+          "wine"
+        ],
+        "theme_matched_windows": 0,
+        "critical_slots_required": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening",
+          "intro",
+          "hook"
+        ],
+        "critical_slots_missing": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening",
+          "intro",
+          "hook"
+        ],
+        "critical_slots_covered": 0,
+        "critical_slots_total": 5,
+        "max_generic_windows_by_policy": 1,
+        "ready": false,
+        "blocking": true,
+        "blocking_reasons": [
+          "missing_exact_for_required_proof",
+          "critical_slots_uncovered",
+          "no_proof_for_promise",
+          "missing_theme_visual_proof"
+        ]
+      },
+      {
+        "scene_index": 2,
+        "visual_intent": "gastronomy",
+        "editorial_niche": "gastronomy",
+        "total_approved_windows": 0,
+        "exact_windows": 0,
+        "regional_windows": 0,
+        "generic_windows": 0,
+        "uncertain_windows": 0,
+        "theme_required_categories": [
+          "food",
+          "local_food",
+          "market",
+          "restaurant",
+          "cafe",
+          "people_eating",
+          "street_food",
+          "pastry",
+          "wine"
+        ],
+        "theme_matched_windows": 0,
+        "critical_slots_required": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening"
+        ],
+        "critical_slots_missing": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening"
+        ],
+        "critical_slots_covered": 0,
+        "critical_slots_total": 3,
+        "max_generic_windows_by_policy": 1,
+        "ready": false,
+        "blocking": true,
+        "blocking_reasons": [
+          "missing_exact_for_required_proof",
+          "critical_slots_uncovered",
+          "no_proof_for_promise",
+          "missing_theme_visual_proof"
+        ]
+      },
+      {
+        "scene_index": 3,
+        "visual_intent": "gastronomy",
+        "editorial_niche": "gastronomy",
+        "total_approved_windows": 0,
+        "exact_windows": 0,
+        "regional_windows": 0,
+        "generic_windows": 0,
+        "uncertain_windows": 0,
+        "theme_required_categories": [
+          "food",
+          "local_food",
+          "market",
+          "restaurant",
+          "cafe",
+          "people_eating",
+          "street_food",
+          "pastry",
+          "wine"
+        ],
+        "theme_matched_windows": 0,
+        "critical_slots_required": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening"
+        ],
+        "critical_slots_missing": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening"
+        ],
+        "critical_slots_covered": 0,
+        "critical_slots_total": 3,
+        "max_generic_windows_by_policy": 1,
+        "ready": false,
+        "blocking": true,
+        "blocking_reasons": [
+          "missing_exact_for_required_proof",
+          "critical_slots_uncovered",
+          "no_proof_for_promise",
+          "missing_theme_visual_proof"
+        ]
+      },
+      {
+        "scene_index": 4,
+        "visual_intent": "gastronomy",
+        "editorial_niche": "gastronomy",
+        "total_approved_windows": 0,
+        "exact_windows": 0,
+        "regional_windows": 0,
+        "generic_windows": 0,
+        "uncertain_windows": 0,
+        "theme_required_categories": [
+          "food",
+          "local_food",
+          "market",
+          "restaurant",
+          "cafe",
+          "people_eating",
+          "street_food",
+          "pastry",
+          "wine"
+        ],
+        "theme_matched_windows": 0,
+        "critical_slots_required": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening"
+        ],
+        "critical_slots_missing": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening"
+        ],
+        "critical_slots_covered": 0,
+        "critical_slots_total": 3,
+        "max_generic_windows_by_policy": 1,
+        "ready": false,
+        "blocking": true,
+        "blocking_reasons": [
+          "missing_exact_for_required_proof",
+          "critical_slots_uncovered",
+          "no_proof_for_promise",
+          "missing_theme_visual_proof"
+        ]
+      },
+      {
+        "scene_index": 5,
+        "visual_intent": "gastronomy",
+        "editorial_niche": "gastronomy",
+        "total_approved_windows": 0,
+        "exact_windows": 0,
+        "regional_windows": 0,
+        "generic_windows": 0,
+        "uncertain_windows": 0,
+        "theme_required_categories": [
+          "food",
+          "local_food",
+          "market",
+          "restaurant",
+          "cafe",
+          "people_eating",
+          "street_food",
+          "pastry",
+          "wine"
+        ],
+        "theme_matched_windows": 0,
+        "critical_slots_required": [
+          "first_clip_of_block"
+        ],
+        "critical_slots_missing": [
+          "first_clip_of_block"
+        ],
+        "critical_slots_covered": 0,
+        "critical_slots_total": 1,
+        "max_generic_windows_by_policy": 1,
+        "ready": false,
+        "blocking": true,
+        "blocking_reasons": [
+          "missing_exact_for_required_proof",
+          "critical_slots_uncovered",
+          "no_proof_for_promise",
+          "missing_theme_visual_proof"
+        ]
+      },
+      {
+        "scene_index": 6,
+        "visual_intent": "gastronomy",
+        "editorial_niche": "gastronomy",
+        "total_approved_windows": 0,
+        "exact_windows": 0,
+        "regional_windows": 0,
+        "generic_windows": 0,
+        "uncertain_windows": 0,
+        "theme_required_categories": [
+          "food",
+          "local_food",
+          "market",
+          "restaurant",
+          "cafe",
+          "people_eating",
+          "street_food",
+          "pastry",
+          "wine"
+        ],
+        "theme_matched_windows": 0,
+        "critical_slots_required": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening",
+          "closing"
+        ],
+        "critical_slots_missing": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening",
+          "closing"
+        ],
+        "critical_slots_covered": 0,
+        "critical_slots_total": 4,
+        "max_generic_windows_by_policy": 1,
+        "ready": false,
+        "blocking": true,
+        "blocking_reasons": [
+          "missing_exact_for_required_proof",
+          "critical_slots_uncovered",
+          "no_proof_for_promise",
+          "missing_theme_visual_proof"
+        ]
+      }
+    ],
+    "provider_reliability": {},
+    "items": [],
+    "fallback_plan": [
+      "Cena 1: sem asset real disponivel para Portugal em sabores; render deve ser bloqueado.",
+      "Cena 2: asset_search_failed_specific_intent para Lisboa gastronómica.",
+      "Cena 2: sem asset real disponivel para Lisboa gastronómica; render deve ser bloqueado.",
+      "Cena 2: somente 0 asset(s) especifico(s) encontrado(s) para intent gastronomy.",
+      "Cena 3: asset_search_failed_specific_intent para Porto gastronómico.",
+      "Cena 3: sem asset real disponivel para Porto gastronómico; render deve ser bloqueado.",
+      "Cena 3: somente 0 asset(s) especifico(s) encontrado(s) para intent gastronomy.",
+      "Cena 4: asset_search_failed_specific_intent para Mercados e comida local.",
+      "Cena 4: sem asset real disponivel para Mercados e comida local; render deve ser bloqueado.",
+      "Cena 4: somente 0 asset(s) especifico(s) encontrado(s) para intent gastronomy.",
+      "Cena 5: asset_search_failed_specific_intent para Vinhos e doçaria.",
+      "Cena 5: sem asset real disponivel para Vinhos e doçaria; render deve ser bloqueado.",
+      "Cena 5: somente 0 asset(s) especifico(s) encontrado(s) para intent gastronomy.",
+      "Cena 6: sem asset real disponivel para Fechamento; render deve ser bloqueado."
+    ],
+    "missing_assets": true,
+    "blocking_scene_indexes": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "scene_asset_readiness": [
+      {
+        "scene_index": 1,
+        "title": "Portugal em sabores",
+        "visual_intent": "gastronomy",
+        "ready": false,
+        "blocking": true,
+        "total_assets": 0,
+        "publishable_assets": 0,
+        "approved_assets": 0,
+        "approved_publishable_assets": 0,
+        "approved_windows": 0,
+        "exact_windows": 0,
+        "regional_windows": 0,
+        "generic_windows": 0,
+        "theme_required_categories": [
+          "food",
+          "local_food",
+          "market",
+          "restaurant",
+          "cafe",
+          "people_eating",
+          "street_food",
+          "pastry",
+          "wine"
+        ],
+        "theme_matched_windows": 0,
+        "critical_slots_missing": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening",
+          "intro",
+          "hook"
+        ],
+        "placeholder_assets": 0,
+        "failure_reason": "scene_has_no_assets,scene_has_no_editorially_approved_assets,scene_missing_exact_visual_proof,critical_slots_uncovered,scene_missing_theme_visual_proof",
+        "blocking_reasons": [
+          "scene_has_no_assets",
+          "scene_has_no_editorially_approved_assets",
+          "scene_missing_exact_visual_proof",
+          "critical_slots_uncovered",
+          "scene_missing_theme_visual_proof"
+        ]
+      },
+      {
+        "scene_index": 2,
+        "title": "Lisboa gastronómica",
+        "visual_intent": "gastronomy",
+        "ready": false,
+        "blocking": true,
+        "total_assets": 0,
+        "publishable_assets": 0,
+        "approved_assets": 0,
+        "approved_publishable_assets": 0,
+        "approved_windows": 0,
+        "exact_windows": 0,
+        "regional_windows": 0,
+        "generic_windows": 0,
+        "theme_required_categories": [
+          "food",
+          "local_food",
+          "market",
+          "restaurant",
+          "cafe",
+          "people_eating",
+          "street_food",
+          "pastry",
+          "wine"
+        ],
+        "theme_matched_windows": 0,
+        "critical_slots_missing": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening"
+        ],
+        "placeholder_assets": 0,
+        "failure_reason": "scene_has_no_assets,scene_has_no_editorially_approved_assets,scene_missing_exact_visual_proof,critical_slots_uncovered,scene_missing_theme_visual_proof",
+        "blocking_reasons": [
+          "scene_has_no_assets",
+          "scene_has_no_editorially_approved_assets",
+          "scene_missing_exact_visual_proof",
+          "critical_slots_uncovered",
+          "scene_missing_theme_visual_proof"
+        ]
+      },
+      {
+        "scene_index": 3,
+        "title": "Porto gastronómico",
+        "visual_intent": "gastronomy",
+        "ready": false,
+        "blocking": true,
+        "total_assets": 0,
+        "publishable_assets": 0,
+        "approved_assets": 0,
+        "approved_publishable_assets": 0,
+        "approved_windows": 0,
+        "exact_windows": 0,
+        "regional_windows": 0,
+        "generic_windows": 0,
+        "theme_required_categories": [
+          "food",
+          "local_food",
+          "market",
+          "restaurant",
+          "cafe",
+          "people_eating",
+          "street_food",
+          "pastry",
+          "wine"
+        ],
+        "theme_matched_windows": 0,
+        "critical_slots_missing": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening"
+        ],
+        "placeholder_assets": 0,
+        "failure_reason": "scene_has_no_assets,scene_has_no_editorially_approved_assets,scene_missing_exact_visual_proof,critical_slots_uncovered,scene_missing_theme_visual_proof",
+        "blocking_reasons": [
+          "scene_has_no_assets",
+          "scene_has_no_editorially_approved_assets",
+          "scene_missing_exact_visual_proof",
+          "critical_slots_uncovered",
+          "scene_missing_theme_visual_proof"
+        ]
+      },
+      {
+        "scene_index": 4,
+        "title": "Mercados e comida local",
+        "visual_intent": "gastronomy",
+        "ready": false,
+        "blocking": true,
+        "total_assets": 0,
+        "publishable_assets": 0,
+        "approved_assets": 0,
+        "approved_publishable_assets": 0,
+        "approved_windows": 0,
+        "exact_windows": 0,
+        "regional_windows": 0,
+        "generic_windows": 0,
+        "theme_required_categories": [
+          "food",
+          "local_food",
+          "market",
+          "restaurant",
+          "cafe",
+          "people_eating",
+          "street_food",
+          "pastry",
+          "wine"
+        ],
+        "theme_matched_windows": 0,
+        "critical_slots_missing": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening"
+        ],
+        "placeholder_assets": 0,
+        "failure_reason": "scene_has_no_assets,scene_has_no_editorially_approved_assets,scene_missing_exact_visual_proof,critical_slots_uncovered,scene_missing_theme_visual_proof",
+        "blocking_reasons": [
+          "scene_has_no_assets",
+          "scene_has_no_editorially_approved_assets",
+          "scene_missing_exact_visual_proof",
+          "critical_slots_uncovered",
+          "scene_missing_theme_visual_proof"
+        ]
+      },
+      {
+        "scene_index": 5,
+        "title": "Vinhos e doçaria",
+        "visual_intent": "gastronomy",
+        "ready": false,
+        "blocking": true,
+        "total_assets": 0,
+        "publishable_assets": 0,
+        "approved_assets": 0,
+        "approved_publishable_assets": 0,
+        "approved_windows": 0,
+        "exact_windows": 0,
+        "regional_windows": 0,
+        "generic_windows": 0,
+        "theme_required_categories": [
+          "food",
+          "local_food",
+          "market",
+          "restaurant",
+          "cafe",
+          "people_eating",
+          "street_food",
+          "pastry",
+          "wine"
+        ],
+        "theme_matched_windows": 0,
+        "critical_slots_missing": [
+          "first_clip_of_block"
+        ],
+        "placeholder_assets": 0,
+        "failure_reason": "scene_has_no_assets,scene_has_no_editorially_approved_assets,scene_missing_exact_visual_proof,critical_slots_uncovered,scene_missing_theme_visual_proof",
+        "blocking_reasons": [
+          "scene_has_no_assets",
+          "scene_has_no_editorially_approved_assets",
+          "scene_missing_exact_visual_proof",
+          "critical_slots_uncovered",
+          "scene_missing_theme_visual_proof"
+        ]
+      },
+      {
+        "scene_index": 6,
+        "title": "Fechamento",
+        "visual_intent": "gastronomy",
+        "ready": false,
+        "blocking": true,
+        "total_assets": 0,
+        "publishable_assets": 0,
+        "approved_assets": 0,
+        "approved_publishable_assets": 0,
+        "approved_windows": 0,
+        "exact_windows": 0,
+        "regional_windows": 0,
+        "generic_windows": 0,
+        "theme_required_categories": [
+          "food",
+          "local_food",
+          "market",
+          "restaurant",
+          "cafe",
+          "people_eating",
+          "street_food",
+          "pastry",
+          "wine"
+        ],
+        "theme_matched_windows": 0,
+        "critical_slots_missing": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening",
+          "closing"
+        ],
+        "placeholder_assets": 0,
+        "failure_reason": "scene_has_no_assets,scene_has_no_editorially_approved_assets,scene_missing_exact_visual_proof,critical_slots_uncovered,scene_missing_theme_visual_proof",
+        "blocking_reasons": [
+          "scene_has_no_assets",
+          "scene_has_no_editorially_approved_assets",
+          "scene_missing_exact_visual_proof",
+          "critical_slots_uncovered",
+          "scene_missing_theme_visual_proof"
+        ]
+      }
+    ],
+    "last_repair_plan_by_scene": [],
+    "last_refresh_scene_indexes": [],
+    "last_refresh_reason": "full_refresh",
+    "last_refreshed_at": "2026-05-15T12:17:36.451Z",
+    "scene_queries": [
+      {
+        "scene_index": 1,
+        "block_id": "introducao",
+        "block_label": "Introducao",
+        "visual_intent": "gastronomy",
+        "queries": [
+          "portugal portugal food travel",
+          "portugal portugal market",
+          "portugal portugal cafe",
+          "portugal food journey",
+          "portugal food market",
+          "portugal food travel",
+          "portugal market",
+          "portugal cafe",
+          "portugal portuguese food"
+        ],
+        "query_details": [
+          {
+            "query": "portugal portugal food travel",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_portugal_food_travel"
+          },
+          {
+            "query": "portugal portugal market",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_portugal_market"
+          },
+          {
+            "query": "portugal portugal cafe",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_portugal_cafe"
+          },
+          {
+            "query": "portugal food journey",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_food_journey"
+          },
+          {
+            "query": "portugal food market",
+            "reason": "visual_intent_gastronomy + country_portugal + required_food_market"
+          },
+          {
+            "query": "portugal food travel",
+            "reason": "visual_intent_gastronomy + fallback_specific_scene_keyword_portugal_food_travel"
+          },
+          {
+            "query": "portugal market",
+            "reason": "visual_intent_gastronomy + fallback_specific_scene_keyword_portugal_market"
+          },
+          {
+            "query": "portugal cafe",
+            "reason": "visual_intent_gastronomy + fallback_specific_scene_keyword_portugal_cafe"
+          },
+          {
+            "query": "portugal portuguese food",
+            "reason": "visual_intent_gastronomy + country_portugal + required_portuguese_food"
+          }
+        ],
+        "retrieval_budget": {
+          "max_queries": 22,
+          "max_downloads": 6,
+          "roles_targeted": [
+            "hook_exact",
+            "hook_role"
+          ],
+          "trimmed": false
+        },
+        "negative_keywords": [
+          "Lisboa",
+          "lisboa",
+          "lisbon",
+          "Porto",
+          "porto",
+          "oporto"
+        ],
+        "search_reason": "visual_intent_gastronomy + required_visual_evidence",
+        "specific_intent_required": false,
+        "repair_hints": {}
+      },
+      {
+        "scene_index": 2,
+        "block_id": "lisboa",
+        "block_label": "Lisboa",
+        "visual_intent": "gastronomy",
+        "queries": [
+          "lisbon lisbon food market",
+          "lisbon lisbon pastry",
+          "lisbon lisbon cafe",
+          "lisbon portugal bakery",
+          "lisbon lisbon street food",
+          "lisbon food market",
+          "lisbon traditional restaurant",
+          "lisbon pastel de nata cafe",
+          "lisboa lisbon food market",
+          "lisboa lisbon pastry",
+          "lisboa lisbon cafe",
+          "lisboa portugal bakery",
+          "lisboa lisbon street food",
+          "lisboa food market",
+          "lisboa traditional restaurant",
+          "lisboa pastel de nata cafe",
+          "portugal lisbon food market",
+          "portugal lisbon pastry",
+          "portugal lisbon cafe",
+          "portugal portugal bakery",
+          "portugal lisbon street food",
+          "portugal portuguese food"
+        ],
+        "query_details": [
+          {
+            "query": "lisbon lisbon food market",
+            "reason": "visual_intent_gastronomy + city_lisbon + scene_keyword_lisbon_food_market"
+          },
+          {
+            "query": "lisbon lisbon pastry",
+            "reason": "visual_intent_gastronomy + city_lisbon + scene_keyword_lisbon_pastry"
+          },
+          {
+            "query": "lisbon lisbon cafe",
+            "reason": "visual_intent_gastronomy + city_lisbon + scene_keyword_lisbon_cafe"
+          },
+          {
+            "query": "lisbon portugal bakery",
+            "reason": "visual_intent_gastronomy + city_lisbon + scene_keyword_portugal_bakery"
+          },
+          {
+            "query": "lisbon lisbon street food",
+            "reason": "visual_intent_gastronomy + city_lisbon + scene_keyword_lisbon_street_food"
+          },
+          {
+            "query": "lisbon food market",
+            "reason": "visual_intent_gastronomy + city_lisbon + required_food_market"
+          },
+          {
+            "query": "lisbon traditional restaurant",
+            "reason": "visual_intent_gastronomy + city_lisbon + required_traditional_restaurant"
+          },
+          {
+            "query": "lisbon pastel de nata cafe",
+            "reason": "visual_intent_gastronomy + city_lisbon + required_pastel_de_nata_cafe"
+          },
+          {
+            "query": "lisboa lisbon food market",
+            "reason": "visual_intent_gastronomy + city_lisboa + scene_keyword_lisbon_food_market"
+          },
+          {
+            "query": "lisboa lisbon pastry",
+            "reason": "visual_intent_gastronomy + city_lisboa + scene_keyword_lisbon_pastry"
+          },
+          {
+            "query": "lisboa lisbon cafe",
+            "reason": "visual_intent_gastronomy + city_lisboa + scene_keyword_lisbon_cafe"
+          },
+          {
+            "query": "lisboa portugal bakery",
+            "reason": "visual_intent_gastronomy + city_lisboa + scene_keyword_portugal_bakery"
+          },
+          {
+            "query": "lisboa lisbon street food",
+            "reason": "visual_intent_gastronomy + city_lisboa + scene_keyword_lisbon_street_food"
+          },
+          {
+            "query": "lisboa food market",
+            "reason": "visual_intent_gastronomy + city_lisboa + required_food_market"
+          },
+          {
+            "query": "lisboa traditional restaurant",
+            "reason": "visual_intent_gastronomy + city_lisboa + required_traditional_restaurant"
+          },
+          {
+            "query": "lisboa pastel de nata cafe",
+            "reason": "visual_intent_gastronomy + city_lisboa + required_pastel_de_nata_cafe"
+          },
+          {
+            "query": "portugal lisbon food market",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_lisbon_food_market"
+          },
+          {
+            "query": "portugal lisbon pastry",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_lisbon_pastry"
+          },
+          {
+            "query": "portugal lisbon cafe",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_lisbon_cafe"
+          },
+          {
+            "query": "portugal portugal bakery",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_portugal_bakery"
+          },
+          {
+            "query": "portugal lisbon street food",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_lisbon_street_food"
+          },
+          {
+            "query": "portugal portuguese food",
+            "reason": "visual_intent_gastronomy + country_portugal + required_portuguese_food"
+          }
+        ],
+        "retrieval_budget": {
+          "max_queries": 22,
+          "max_downloads": 6,
+          "roles_targeted": [
+            "proof_exact",
+            "detail_role"
+          ],
+          "trimmed": true
+        },
+        "negative_keywords": [
+          "Porto",
+          "porto",
+          "oporto"
+        ],
+        "search_reason": "visual_intent_gastronomy + required_visual_evidence",
+        "specific_intent_required": true,
+        "repair_hints": {}
+      },
+      {
+        "scene_index": 3,
+        "block_id": "porto",
+        "block_label": "Porto",
+        "visual_intent": "gastronomy",
+        "queries": [
+          "porto wine cellar",
+          "oporto porto wine cellar",
+          "oporto porto food market",
+          "oporto porto restaurant",
+          "oporto douro food",
+          "oporto food market",
+          "oporto traditional restaurant",
+          "oporto pastel de nata cafe",
+          "porto porto wine cellar",
+          "porto porto food market",
+          "porto porto restaurant",
+          "porto douro food",
+          "porto food market",
+          "porto traditional restaurant",
+          "porto pastel de nata cafe",
+          "portugal porto wine cellar",
+          "portugal porto food market",
+          "portugal porto restaurant",
+          "portugal douro food",
+          "portugal food market",
+          "porto restaurant",
+          "portugal portuguese food"
+        ],
+        "query_details": [
+          {
+            "query": "porto wine cellar",
+            "reason": "city_preset_porto_4"
+          },
+          {
+            "query": "oporto porto wine cellar",
+            "reason": "visual_intent_gastronomy + city_oporto + scene_keyword_porto_wine_cellar"
+          },
+          {
+            "query": "oporto porto food market",
+            "reason": "visual_intent_gastronomy + city_oporto + scene_keyword_porto_food_market"
+          },
+          {
+            "query": "oporto porto restaurant",
+            "reason": "visual_intent_gastronomy + city_oporto + scene_keyword_porto_restaurant"
+          },
+          {
+            "query": "oporto douro food",
+            "reason": "visual_intent_gastronomy + city_oporto + scene_keyword_douro_food"
+          },
+          {
+            "query": "oporto food market",
+            "reason": "visual_intent_gastronomy + city_oporto + required_food_market"
+          },
+          {
+            "query": "oporto traditional restaurant",
+            "reason": "visual_intent_gastronomy + city_oporto + required_traditional_restaurant"
+          },
+          {
+            "query": "oporto pastel de nata cafe",
+            "reason": "visual_intent_gastronomy + city_oporto + required_pastel_de_nata_cafe"
+          },
+          {
+            "query": "porto porto wine cellar",
+            "reason": "visual_intent_gastronomy + city_porto + scene_keyword_porto_wine_cellar"
+          },
+          {
+            "query": "porto porto food market",
+            "reason": "visual_intent_gastronomy + city_porto + scene_keyword_porto_food_market"
+          },
+          {
+            "query": "porto porto restaurant",
+            "reason": "visual_intent_gastronomy + city_porto + scene_keyword_porto_restaurant"
+          },
+          {
+            "query": "porto douro food",
+            "reason": "visual_intent_gastronomy + city_porto + scene_keyword_douro_food"
+          },
+          {
+            "query": "porto food market",
+            "reason": "visual_intent_gastronomy + city_porto + required_food_market"
+          },
+          {
+            "query": "porto traditional restaurant",
+            "reason": "visual_intent_gastronomy + city_porto + required_traditional_restaurant"
+          },
+          {
+            "query": "porto pastel de nata cafe",
+            "reason": "visual_intent_gastronomy + city_porto + required_pastel_de_nata_cafe"
+          },
+          {
+            "query": "portugal porto wine cellar",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_porto_wine_cellar"
+          },
+          {
+            "query": "portugal porto food market",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_porto_food_market"
+          },
+          {
+            "query": "portugal porto restaurant",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_porto_restaurant"
+          },
+          {
+            "query": "portugal douro food",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_douro_food"
+          },
+          {
+            "query": "portugal food market",
+            "reason": "visual_intent_gastronomy + country_portugal + required_food_market"
+          },
+          {
+            "query": "porto restaurant",
+            "reason": "visual_intent_gastronomy + fallback_specific_scene_keyword_porto_restaurant"
+          },
+          {
+            "query": "portugal portuguese food",
+            "reason": "visual_intent_gastronomy + country_portugal + required_portuguese_food"
+          }
+        ],
+        "retrieval_budget": {
+          "max_queries": 22,
+          "max_downloads": 6,
+          "roles_targeted": [
+            "proof_exact",
+            "detail_role"
+          ],
+          "trimmed": false
+        },
+        "negative_keywords": [
+          "Lisboa",
+          "lisboa",
+          "lisbon"
+        ],
+        "search_reason": "visual_intent_gastronomy + required_visual_evidence",
+        "specific_intent_required": true,
+        "repair_hints": {}
+      },
+      {
+        "scene_index": 4,
+        "block_id": "portugal-gastronomico-lisboa-porto-mercados-e-vinhos",
+        "block_label": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+        "visual_intent": "gastronomy",
+        "queries": [
+          "portugal portugal food market",
+          "portugal street market food",
+          "portugal local dishes",
+          "portugal food hall portugal",
+          "portugal market people",
+          "portugal food market",
+          "street market food",
+          "local dishes",
+          "food hall portugal",
+          "portugal portuguese food"
+        ],
+        "query_details": [
+          {
+            "query": "portugal portugal food market",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_portugal_food_market"
+          },
+          {
+            "query": "portugal street market food",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_street_market_food"
+          },
+          {
+            "query": "portugal local dishes",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_local_dishes"
+          },
+          {
+            "query": "portugal food hall portugal",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_food_hall_portugal"
+          },
+          {
+            "query": "portugal market people",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_market_people"
+          },
+          {
+            "query": "portugal food market",
+            "reason": "visual_intent_gastronomy + country_portugal + required_food_market"
+          },
+          {
+            "query": "street market food",
+            "reason": "visual_intent_gastronomy + fallback_specific_scene_keyword_street_market_food"
+          },
+          {
+            "query": "local dishes",
+            "reason": "visual_intent_gastronomy + fallback_specific_scene_keyword_local_dishes"
+          },
+          {
+            "query": "food hall portugal",
+            "reason": "visual_intent_gastronomy + fallback_specific_scene_keyword_food_hall_portugal"
+          },
+          {
+            "query": "portugal portuguese food",
+            "reason": "visual_intent_gastronomy + country_portugal + required_portuguese_food"
+          }
+        ],
+        "retrieval_budget": {
+          "max_queries": 22,
+          "max_downloads": 6,
+          "roles_targeted": [
+            "proof_exact",
+            "detail_role"
+          ],
+          "trimmed": false
+        },
+        "negative_keywords": [
+          "Lisboa",
+          "lisboa",
+          "lisbon",
+          "Porto",
+          "porto",
+          "oporto"
+        ],
+        "search_reason": "visual_intent_gastronomy + required_visual_evidence",
+        "specific_intent_required": true,
+        "repair_hints": {}
+      },
+      {
+        "scene_index": 5,
+        "block_id": "portugal-gastronomico-lisboa-porto-mercados-e-vinhos",
+        "block_label": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+        "visual_intent": "gastronomy",
+        "queries": [
+          "portugal portugal wine tasting",
+          "portugal portugal pastry",
+          "portugal bakery dessert",
+          "portugal cafe dessert",
+          "portugal sweet food portugal",
+          "portugal food market",
+          "portugal wine tasting",
+          "portugal pastry",
+          "bakery dessert",
+          "cafe dessert",
+          "portugal portuguese food"
+        ],
+        "query_details": [
+          {
+            "query": "portugal portugal wine tasting",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_portugal_wine_tasting"
+          },
+          {
+            "query": "portugal portugal pastry",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_portugal_pastry"
+          },
+          {
+            "query": "portugal bakery dessert",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_bakery_dessert"
+          },
+          {
+            "query": "portugal cafe dessert",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_cafe_dessert"
+          },
+          {
+            "query": "portugal sweet food portugal",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_sweet_food_portugal"
+          },
+          {
+            "query": "portugal food market",
+            "reason": "visual_intent_gastronomy + country_portugal + required_food_market"
+          },
+          {
+            "query": "portugal wine tasting",
+            "reason": "visual_intent_gastronomy + fallback_specific_scene_keyword_portugal_wine_tasting"
+          },
+          {
+            "query": "portugal pastry",
+            "reason": "visual_intent_gastronomy + fallback_specific_scene_keyword_portugal_pastry"
+          },
+          {
+            "query": "bakery dessert",
+            "reason": "visual_intent_gastronomy + fallback_specific_scene_keyword_bakery_dessert"
+          },
+          {
+            "query": "cafe dessert",
+            "reason": "visual_intent_gastronomy + fallback_specific_scene_keyword_cafe_dessert"
+          },
+          {
+            "query": "portugal portuguese food",
+            "reason": "visual_intent_gastronomy + country_portugal + required_portuguese_food"
+          }
+        ],
+        "retrieval_budget": {
+          "max_queries": 20,
+          "max_downloads": 6,
+          "roles_targeted": [
+            "proof_exact",
+            "detail_role"
+          ],
+          "trimmed": false
+        },
+        "negative_keywords": [
+          "Lisboa",
+          "lisboa",
+          "lisbon",
+          "Porto",
+          "porto",
+          "oporto"
+        ],
+        "search_reason": "visual_intent_gastronomy + required_visual_evidence",
+        "specific_intent_required": true,
+        "repair_hints": {}
+      },
+      {
+        "scene_index": 6,
+        "block_id": "fechamento",
+        "block_label": "Fechamento",
+        "visual_intent": "gastronomy",
+        "queries": [
+          "portugal food montage",
+          "portugal city food summary",
+          "portugal portugal cafe closing",
+          "portugal food market",
+          "food montage",
+          "city food summary",
+          "portugal cafe closing",
+          "portugal portuguese food"
+        ],
+        "query_details": [
+          {
+            "query": "portugal food montage",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_food_montage"
+          },
+          {
+            "query": "portugal city food summary",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_city_food_summary"
+          },
+          {
+            "query": "portugal portugal cafe closing",
+            "reason": "visual_intent_gastronomy + country_portugal + scene_keyword_portugal_cafe_closing"
+          },
+          {
+            "query": "portugal food market",
+            "reason": "visual_intent_gastronomy + country_portugal + required_food_market"
+          },
+          {
+            "query": "food montage",
+            "reason": "visual_intent_gastronomy + fallback_specific_scene_keyword_food_montage"
+          },
+          {
+            "query": "city food summary",
+            "reason": "visual_intent_gastronomy + fallback_specific_scene_keyword_city_food_summary"
+          },
+          {
+            "query": "portugal cafe closing",
+            "reason": "visual_intent_gastronomy + fallback_specific_scene_keyword_portugal_cafe_closing"
+          },
+          {
+            "query": "portugal portuguese food",
+            "reason": "visual_intent_gastronomy + country_portugal + required_portuguese_food"
+          }
+        ],
+        "retrieval_budget": {
+          "max_queries": 22,
+          "max_downloads": 6,
+          "roles_targeted": [
+            "closing_payoff",
+            "closing_role"
+          ],
+          "trimmed": false
+        },
+        "negative_keywords": [
+          "Lisboa",
+          "lisboa",
+          "lisbon",
+          "Porto",
+          "porto",
+          "oporto"
+        ],
+        "search_reason": "visual_intent_gastronomy + required_visual_evidence",
+        "specific_intent_required": false,
+        "repair_hints": {}
+      }
+    ]
+  },
+  "render_path": "",
+  "thumbnail_path": "",
+  "review": {
+    "draft_version": 1,
+    "last_rejection_note": "",
+    "last_rejected_at": "",
+    "last_published_at": "",
+    "last_refreshed_scene_indexes": [],
+    "last_refresh_reason": "",
+    "last_refreshed_at": "",
+    "drive_file_id": "",
+    "drive_view_url": "",
+    "drive_download_url": "",
+    "sheet_url": "",
+    "sheet_name": ""
+  },
+  "youtube_title": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+  "youtube_description": "Uma viagem guiada por comida local, mercados, cafés históricos e vinhos em Portugal.",
+  "youtube_tags": [
+    "portugal gastronomia",
+    "lisboa comida",
+    "porto vinho",
+    "mercados portugal",
+    "travel food"
+  ],
+  "youtube_chapters": [],
+  "youtube_video_id": "",
+  "youtube_url": "",
+  "youtube_privacy_status": "",
+  "youtube_caption_track_id": "",
+  "youtube_caption_language": "",
+  "youtube_caption_format": "",
+  "youtube_caption_status": "",
+  "youtube_caption_error_message": "",
+  "render_timeline": {
+    "strategy": "",
+    "transition": "",
+    "output_resolution": "",
+    "output_duration_seconds": 0,
+    "total_clips": 0,
+    "unique_asset_count": 0,
+    "semantic_alignment_score_average": 0,
+    "low_confidence_clip_count": 0,
+    "clips": []
+  },
+  "render_validation": {
+    "is_publishable": false,
+    "needs_regeneration": false,
+    "needs_manual_review": false,
+    "quality_score": 0,
+    "alignment_score": 0,
+    "diversity_score": 0,
+    "technical_score": 0,
+    "hard_boundary_status": "unknown",
+    "max_visual_lag_sec": 0,
+    "hard_boundary_report": {
+      "status": "unknown",
+      "max_visual_lag_sec": 0,
+      "avg_visual_lag_sec": 0,
+      "boundaries": [],
+      "violations": []
+    },
+    "editorial_metrics": {},
+    "qa_profile": "strict",
+    "qa_runtime_profile": "prod_strict",
+    "editorial_failure_codes": [],
+    "publish_blocked": false,
+    "publish_blocked_codes": [],
+    "provider_reliability": {},
+    "regeneration_plan": {
+      "scene_indexes_to_refresh": [],
+      "failure_codes": [],
+      "repair_by_scene": []
+    },
+    "editorial_observability": {},
+    "critical_slot_audit": [],
+    "issues": [],
+    "scene_indexes_to_refresh": [],
+    "clip_indexes_to_replace": []
+  },
+  "editorial_observability_history": [],
+  "telegram": {
+    "chat_id": "",
+    "ideas_message_id": null,
+    "ideas_message_sent_at": "",
+    "final_review_message_id": null,
+    "final_review_version": null,
+    "final_review_message_sent_at": "",
+    "last_inbound_message_id": null,
+    "last_inbound_text": "",
+    "last_inbound_at": "",
+    "sent_status_keys": []
+  },
+  "error_message": "Assets insuficientes para render: cenas bloqueadas 1, 2, 3, 4, 5, 6.",
+  "state_path": "C:\\Users\\HABILFIX\\Desktop\\Hubia\\Projetos\\youtube-video-pipeline\\automacao-youtube-n8n\\output\\draft\\security_test_1778847455737\\state.json",
+  "created_at": "2026-05-15T12:17:35.745Z",
+  "updated_at": "2026-05-15T12:17:36.455Z",
+  "asset_failure": true,
+  "failure_reason": "1:scene_has_no_assets,scene_has_no_editorially_approved_assets,scene_missing_exact_visual_proof,critical_slots_uncovered,scene_missing_theme_visual_proof,2:scene_has_no_assets,scene_has_no_editorially_approved_assets,scene_missing_exact_visual_proof,critical_slots_uncovered,scene_missing_theme_visual_proof,3:scene_has_no_assets,scene_has_no_editorially_approved_assets,scene_missing_exact_visual_proof,critical_slots_uncovered,scene_missing_theme_visual_proof,4:scene_has_no_assets,scene_has_no_editorially_approved_assets,scene_missing_exact_visual_proof,critical_slots_uncovered,scene_missing_theme_visual_proof,5:scene_has_no_assets,scene_has_no_editorially_approved_assets,scene_missing_exact_visual_proof,critical_slots_uncovered,scene_missing_theme_visual_proof,6:scene_has_no_assets,scene_has_no_editorially_approved_assets,scene_missing_exact_visual_proof,critical_slots_uncovered,scene_missing_theme_visual_proof"
+}

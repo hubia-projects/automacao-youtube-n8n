@@ -28,6 +28,12 @@ const PRE_RENDER_CRITICAL_BLOCKING_REASONS = new Set([
   "no_proof_for_promise",
   "missing_theme_visual_proof",
   "scene_missing_theme_visual_proof",
+  "block_coverage_insufficient",
+  "scene_block_coverage_insufficient",
+  "block_coverage_partial",
+  "scene_block_coverage_partial",
+  "critical_slot_only_generic",
+  "diversity_bypass_on_critical_slot",
 ]);
 const SCRIPT_TERM_STOPWORDS = new Set([
   "a",
@@ -1604,12 +1610,58 @@ const evaluateRenderPreflightGate = ({ state = {}, mockMode = false, allowRuntim
 
   const approvedWindows = Array.isArray(state.assets_json?.approved_windows) ? state.assets_json.approved_windows : [];
   const sceneReadiness = Array.isArray(state.assets_json?.scene_editorial_readiness) ? state.assets_json.scene_editorial_readiness : [];
+  const blockCoverage = Array.isArray(state.assets_json?.block_coverage_by_block) ? state.assets_json.block_coverage_by_block : [];
+  const blockPackages = Array.isArray(state.assets_json?.block_packages) ? state.assets_json.block_packages : [];
+  const timelineClips = Array.isArray(state.render_timeline?.clips) ? state.render_timeline.clips : [];
+  const strictStrongOnly = Boolean(config.EDITORIAL_STRONG_ONLY_PRE_RENDER);
+  const allowPartialCoverage = Boolean(config.COVERAGE_GATE_ALLOW_PARTIAL);
   const blockedCriticalScenes = sceneReadiness
     .filter((scene) => (scene.blocking_reasons || []).some((reason) => PRE_RENDER_CRITICAL_BLOCKING_REASONS.has(String(reason || ""))))
     .map((scene) => Number(scene.scene_index || 0))
     .filter((sceneIndex) => sceneIndex > 0);
+  const insufficientCoverageScenes = sceneReadiness
+    .filter((scene) => String(scene.coverage_status || "").toLowerCase() === "insufficient")
+    .map((scene) => Number(scene.scene_index || 0))
+    .filter((sceneIndex) => sceneIndex > 0);
+  const partialReadinessScenes = sceneReadiness
+    .filter((scene) => String(scene.coverage_status || "").toLowerCase() === "partial")
+    .map((scene) => Number(scene.scene_index || 0))
+    .filter((sceneIndex) => sceneIndex > 0);
+  const sceneIndexesByBlockId = blockPackages.reduce((acc, blockPackage) => {
+    const blockId = String(blockPackage.block_id || "").trim();
+    if (!blockId) return acc;
+    acc[blockId] = (blockPackage.scene_indexes || [])
+      .map((sceneIndex) => Number(sceneIndex || 0))
+      .filter((sceneIndex) => sceneIndex > 0);
+    return acc;
+  }, {});
+  const partialBlockScenes = blockCoverage
+    .filter((block) => String(block.coverage_status || "").toLowerCase() === "partial")
+    .flatMap((block) => sceneIndexesByBlockId[String(block.block_id || "").trim()] || []);
+  const criticalSlotOnlyGenericScenes = sceneReadiness
+    .filter((scene) => (scene.blocking_reasons || []).includes("critical_slot_only_generic"))
+    .map((scene) => Number(scene.scene_index || 0))
+    .filter((sceneIndex) => sceneIndex > 0);
+  const diversityBypassCriticalClips = timelineClips.filter((clip) =>
+    clip.critical_slot === true
+    && (clip.editorial_slot_violation_codes || []).includes("diversity_bypass_on_critical_slot")
+  );
+  const criticalGenericClips = timelineClips.filter((clip) =>
+    clip.critical_slot === true
+    && String(clip.visual_truth_status || "").toLowerCase() === "generic"
+  );
   const failureCodes = [];
   if (!approvedWindows.length) failureCodes.push("NO_APPROVED_WINDOWS");
+  if (insufficientCoverageScenes.length) failureCodes.push("INSUFFICIENT_BLOCK_COVERAGE");
+  if (strictStrongOnly && !allowPartialCoverage && (partialReadinessScenes.length || partialBlockScenes.length)) {
+    failureCodes.push("PARTIAL_BLOCK_COVERAGE");
+  }
+  if (criticalSlotOnlyGenericScenes.length || criticalGenericClips.length) {
+    failureCodes.push("CRITICAL_SLOT_ONLY_GENERIC");
+  }
+  if (diversityBypassCriticalClips.length) {
+    failureCodes.push("DIVERSITY_BYPASS_ON_CRITICAL_SLOT");
+  }
   if (sceneReadiness.length && blockedCriticalScenes.length === sceneReadiness.length) {
     failureCodes.push("ALL_SCENES_EDITORIALLY_BLOCKED");
   }
@@ -1622,7 +1674,17 @@ const evaluateRenderPreflightGate = ({ state = {}, mockMode = false, allowRuntim
     shouldAbort: failureCodes.length > 0,
     failure_codes: unique(failureCodes),
     approved_windows_count: approvedWindows.length,
-    blocked_scene_indexes: unique(blockedCriticalScenes),
+    blocked_scene_indexes: unique([
+      ...blockedCriticalScenes,
+      ...insufficientCoverageScenes,
+      ...partialReadinessScenes,
+      ...partialBlockScenes,
+      ...criticalSlotOnlyGenericScenes,
+      ...diversityBypassCriticalClips.map((clip) => Number(clip.scene_index || 0)).filter((sceneIndex) => sceneIndex > 0),
+      ...criticalGenericClips.map((clip) => Number(clip.scene_index || 0)).filter((sceneIndex) => sceneIndex > 0),
+    ]),
+    partial_scene_indexes: unique([...partialReadinessScenes, ...partialBlockScenes]),
+    strict_strong_only: strictStrongOnly,
   };
 };
 
@@ -1884,6 +1946,14 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
         runtime_degradation_enabled: allowRuntimeFallback,
         narrative_blocks: timelineResult.narrativeBlocks || [],
         timeline_sync_metrics: timelineResult.timelineSyncMetrics || {},
+        micro_sync_metrics: {
+          micro_critical_total: Number(timelineResult.timelineSyncMetrics?.micro_critical_total || 0),
+          micro_critical_covered: Number(timelineResult.timelineSyncMetrics?.micro_critical_covered || 0),
+          micro_mismatch_rate: Number(timelineResult.timelineSyncMetrics?.micro_mismatch_rate || 0),
+          micro_timing_drift_avg: Number(timelineResult.timelineSyncMetrics?.micro_timing_drift_avg || 0),
+          micro_timing_drift_max: Number(timelineResult.timelineSyncMetrics?.micro_timing_drift_max || 0),
+          micro_coverage_gaps: timelineResult.timelineSyncMetrics?.micro_coverage_gaps || [],
+        },
         hard_boundary_status: timelineResult.timelineSyncMetrics?.hard_boundary_status || "unknown",
         max_visual_lag_sec: Number(timelineResult.timelineSyncMetrics?.max_visual_lag_sec || 0),
         asset_windows_count: Array.isArray(timelineResult.assetWindows) ? timelineResult.assetWindows.length : 0,
@@ -1900,6 +1970,14 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
           clip_end_narrated_at: clip.clip_end_narrated_at,
           clip_script_excerpt: clip.clip_script_excerpt,
           clip_script_source: clip.clip_script_source,
+          micro_id: clip.micro_id || "",
+          micro_visual_need: clip.micro_visual_need || "",
+          micro_timing_score: Number(clip.micro_timing_score || 0),
+          micro_timing_drift_sec: Number(clip.micro_timing_drift_sec || 0),
+          micro_match_score: Number(clip.micro_match_score || 0),
+          micro_action_match_score: Number(clip.micro_action_match_score || 0),
+          micro_composite_score: Number(clip.micro_composite_score || 0),
+          micro_slot_ok: clip.micro_slot_ok !== false,
           cut_reason: clip.cut_reason,
           source_start_seconds: clip.source_start_seconds,
           source_end_seconds: clip.source_end_seconds,
@@ -1933,6 +2011,13 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
           visual_intent_match: clip.visual_intent_match,
           visual_truth_status: clip.visual_truth_status || "regional",
           visual_observation_origin: clip.visual_observation_origin || "real_vision",
+          visual_family: clip.visual_family || "",
+          landmark_id: clip.landmark_id || "",
+          shot_scale: clip.shot_scale || "",
+          human_presence: clip.human_presence === true,
+          provider_signature: clip.provider_signature || "",
+          source_url: clip.source_url || clip.asset?.source_url || "",
+          scene_function: clip.scene_function || "",
           narrative_role_selected: clip.narrative_role_selected || "",
           critical_slot: Boolean(clip.critical_slot),
           editorial_slot_ok: clip.editorial_slot_ok !== false,
@@ -1940,6 +2025,9 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
           theme_evidence_present: clip.theme_evidence_present !== false,
           source_tier: clip.source_tier || "free",
           approved_window_id: clip.approved_window_id || clip.asset_window_id,
+          content_slot_type: clip.content_slot_type || "",
+          content_slot_id: clip.content_slot_id || "",
+          slot_coverage_ok: clip.slot_coverage_ok !== false,
           query_used: clip.query_used,
           macro_block_id: clip.macro_block_id,
           micro_block_id: clip.micro_block_id,
@@ -1948,6 +2036,8 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
           micro_topic: clip.micro_topic,
           subtheme: clip.subtheme,
           topic_type: clip.topic_type,
+          block_coverage_status: clip.block_coverage_status || "",
+          block_coverage_advance_mode: clip.block_coverage_advance_mode || "",
           hard_boundary: clip.hard_boundary,
           detected_location: clip.detected_location,
           detected_landmarks: clip.detected_landmarks,

@@ -1,0 +1,3277 @@
+{
+  "video_id": "03724515-a982-4cfa-9bd7-a712def3f574",
+  "provider": "fallback_estimation",
+  "analyzed_at": "2026-05-15T12:21:55.066Z",
+  "audio_path": "C:\\Users\\HABILFIX\\Desktop\\Hubia\\Projetos\\youtube-video-pipeline\\automacao-youtube-n8n\\output\\draft\\03724515-a982-4cfa-9bd7-a712def3f574\\audio\\narration.mp3",
+  "words": [
+    {
+      "word": "#",
+      "start": 0,
+      "end": 0.207,
+      "synthetic": true
+    },
+    {
+      "word": "Melhores",
+      "start": 0.501,
+      "end": 0.701,
+      "synthetic": true
+    },
+    {
+      "word": "cidades",
+      "start": 1.034,
+      "end": 1.217,
+      "synthetic": true
+    },
+    {
+      "word": "para",
+      "start": 1.562,
+      "end": 1.761,
+      "synthetic": true
+    },
+    {
+      "word": "nômades",
+      "start": 2.093,
+      "end": 2.291,
+      "synthetic": true
+    },
+    {
+      "word": "digitais",
+      "start": 2.627,
+      "end": 2.805,
+      "synthetic": true
+    },
+    {
+      "word": "iniciantes",
+      "start": 3.153,
+      "end": 3.36,
+      "synthetic": true
+    },
+    {
+      "word": "##",
+      "start": 3.688,
+      "end": 3.871,
+      "synthetic": true
+    },
+    {
+      "word": "Intro",
+      "start": 4.219,
+      "end": 4.4,
+      "synthetic": true
+    },
+    {
+      "word": "Hook",
+      "start": 4.748,
+      "end": 4.938,
+      "synthetic": true
+    },
+    {
+      "word": "Se",
+      "start": 5.278,
+      "end": 5.472,
+      "synthetic": true
+    },
+    {
+      "word": "você",
+      "start": 5.81,
+      "end": 5.994,
+      "synthetic": true
+    },
+    {
+      "word": "quer",
+      "start": 6.34,
+      "end": 6.53,
+      "synthetic": true
+    },
+    {
+      "word": "viajar",
+      "start": 6.871,
+      "end": 7.061,
+      "synthetic": true
+    },
+    {
+      "word": "melhor",
+      "start": 7.401,
+      "end": 7.595,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 7.931,
+      "end": 8.131,
+      "synthetic": true
+    },
+    {
+      "word": "gastar",
+      "start": 8.46,
+      "end": 8.673,
+      "synthetic": true
+    },
+    {
+      "word": "menos,",
+      "start": 8.994,
+      "end": 9.182,
+      "synthetic": true
+    },
+    {
+      "word": "este",
+      "start": 9.524,
+      "end": 9.716,
+      "synthetic": true
+    },
+    {
+      "word": "vídeo",
+      "start": 10.052,
+      "end": 10.266,
+      "synthetic": true
+    },
+    {
+      "word": "sobre",
+      "start": 10.585,
+      "end": 10.783,
+      "synthetic": true
+    },
+    {
+      "word": "Melhores",
+      "start": 11.113,
+      "end": 11.33,
+      "synthetic": true
+    },
+    {
+      "word": "cidades",
+      "start": 11.645,
+      "end": 11.852,
+      "synthetic": true
+    },
+    {
+      "word": "para",
+      "start": 12.179,
+      "end": 12.362,
+      "synthetic": true
+    },
+    {
+      "word": "nômades",
+      "start": 12.705,
+      "end": 12.922,
+      "synthetic": true
+    },
+    {
+      "word": "digitais",
+      "start": 13.24,
+      "end": 13.427,
+      "synthetic": true
+    },
+    {
+      "word": "iniciantes",
+      "start": 13.769,
+      "end": 13.97,
+      "synthetic": true
+    },
+    {
+      "word": "vai",
+      "start": 14.298,
+      "end": 14.509,
+      "synthetic": true
+    },
+    {
+      "word": "te",
+      "start": 14.832,
+      "end": 15.023,
+      "synthetic": true
+    },
+    {
+      "word": "poupar",
+      "start": 15.363,
+      "end": 15.553,
+      "synthetic": true
+    },
+    {
+      "word": "tempo",
+      "start": 15.892,
+      "end": 16.091,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 16.42,
+      "end": 16.637,
+      "synthetic": true
+    },
+    {
+      "word": "dinheiro.",
+      "start": 16.951,
+      "end": 17.165,
+      "synthetic": true
+    },
+    {
+      "word": "##",
+      "start": 17.485,
+      "end": 17.679,
+      "synthetic": true
+    },
+    {
+      "word": "1.",
+      "start": 18.014,
+      "end": 18.22,
+      "synthetic": true
+    },
+    {
+      "word": "Abertura",
+      "start": 18.546,
+      "end": 18.743,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 19.078,
+      "end": 19.268,
+      "synthetic": true
+    },
+    {
+      "word": "contexto",
+      "start": 19.609,
+      "end": 19.792,
+      "synthetic": true
+    },
+    {
+      "word": "Hoje",
+      "start": 20.139,
+      "end": 20.33,
+      "synthetic": true
+    },
+    {
+      "word": "você",
+      "start": 20.67,
+      "end": 20.861,
+      "synthetic": true
+    },
+    {
+      "word": "vai",
+      "start": 21.199,
+      "end": 21.397,
+      "synthetic": true
+    },
+    {
+      "word": "descobrir",
+      "start": 21.732,
+      "end": 21.918,
+      "synthetic": true
+    },
+    {
+      "word": "por",
+      "start": 22.262,
+      "end": 22.453,
+      "synthetic": true
+    },
+    {
+      "word": "que",
+      "start": 22.795,
+      "end": 22.971,
+      "synthetic": true
+    },
+    {
+      "word": "Melhores",
+      "start": 23.322,
+      "end": 23.521,
+      "synthetic": true
+    },
+    {
+      "word": "cidades",
+      "start": 23.852,
+      "end": 24.058,
+      "synthetic": true
+    },
+    {
+      "word": "para",
+      "start": 24.381,
+      "end": 24.597,
+      "synthetic": true
+    },
+    {
+      "word": "nômades",
+      "start": 24.912,
+      "end": 25.128,
+      "synthetic": true
+    },
+    {
+      "word": "digitais",
+      "start": 25.448,
+      "end": 25.625,
+      "synthetic": true
+    },
+    {
+      "word": "iniciantes",
+      "start": 25.976,
+      "end": 26.176,
+      "synthetic": true
+    },
+    {
+      "word": "está",
+      "start": 26.508,
+      "end": 26.694,
+      "synthetic": true
+    },
+    {
+      "word": "chamando",
+      "start": 27.039,
+      "end": 27.225,
+      "synthetic": true
+    },
+    {
+      "word": "tanta",
+      "start": 27.566,
+      "end": 27.778,
+      "synthetic": true
+    },
+    {
+      "word": "atenção",
+      "start": 28.1,
+      "end": 28.287,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 28.631,
+      "end": 28.82,
+      "synthetic": true
+    },
+    {
+      "word": "como",
+      "start": 29.16,
+      "end": 29.358,
+      "synthetic": true
+    },
+    {
+      "word": "isso",
+      "start": 29.689,
+      "end": 29.902,
+      "synthetic": true
+    },
+    {
+      "word": "pode",
+      "start": 30.221,
+      "end": 30.424,
+      "synthetic": true
+    },
+    {
+      "word": "transformar",
+      "start": 30.755,
+      "end": 30.937,
+      "synthetic": true
+    },
+    {
+      "word": "sua",
+      "start": 31.286,
+      "end": 31.465,
+      "synthetic": true
+    },
+    {
+      "word": "próxima",
+      "start": 31.812,
+      "end": 32.022,
+      "synthetic": true
+    },
+    {
+      "word": "viagem.",
+      "start": 32.346,
+      "end": 32.532,
+      "synthetic": true
+    },
+    {
+      "word": "Transição:",
+      "start": 32.874,
+      "end": 33.083,
+      "synthetic": true
+    },
+    {
+      "word": "Vamos",
+      "start": 33.404,
+      "end": 33.617,
+      "synthetic": true
+    },
+    {
+      "word": "avançar",
+      "start": 33.936,
+      "end": 34.137,
+      "synthetic": true
+    },
+    {
+      "word": "para",
+      "start": 34.469,
+      "end": 34.655,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 34.997,
+      "end": 35.205,
+      "synthetic": true
+    },
+    {
+      "word": "próximo",
+      "start": 35.53,
+      "end": 35.718,
+      "synthetic": true
+    },
+    {
+      "word": "ponto",
+      "start": 36.058,
+      "end": 36.268,
+      "synthetic": true
+    },
+    {
+      "word": "com",
+      "start": 36.591,
+      "end": 36.786,
+      "synthetic": true
+    },
+    {
+      "word": "foco",
+      "start": 37.12,
+      "end": 37.327,
+      "synthetic": true
+    },
+    {
+      "word": "prático.",
+      "start": 37.652,
+      "end": 37.849,
+      "synthetic": true
+    },
+    {
+      "word": "##",
+      "start": 38.184,
+      "end": 38.371,
+      "synthetic": true
+    },
+    {
+      "word": "2.",
+      "start": 38.712,
+      "end": 38.918,
+      "synthetic": true
+    },
+    {
+      "word": "Panorama",
+      "start": 39.245,
+      "end": 39.438,
+      "synthetic": true
+    },
+    {
+      "word": "prático",
+      "start": 39.777,
+      "end": 39.958,
+      "synthetic": true
+    },
+    {
+      "word": "Vamos",
+      "start": 40.303,
+      "end": 40.518,
+      "synthetic": true
+    },
+    {
+      "word": "analisar",
+      "start": 40.84,
+      "end": 41.015,
+      "synthetic": true
+    },
+    {
+      "word": "custos,",
+      "start": 41.364,
+      "end": 41.582,
+      "synthetic": true
+    },
+    {
+      "word": "melhor",
+      "start": 41.898,
+      "end": 42.094,
+      "synthetic": true
+    },
+    {
+      "word": "época,",
+      "start": 42.428,
+      "end": 42.628,
+      "synthetic": true
+    },
+    {
+      "word": "logística",
+      "start": 42.958,
+      "end": 43.164,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 43.49,
+      "end": 43.684,
+      "synthetic": true
+    },
+    {
+      "word": "riscos",
+      "start": 44.018,
+      "end": 44.235,
+      "synthetic": true
+    },
+    {
+      "word": "para",
+      "start": 44.549,
+      "end": 44.761,
+      "synthetic": true
+    },
+    {
+      "word": "você",
+      "start": 45.083,
+      "end": 45.275,
+      "synthetic": true
+    },
+    {
+      "word": "planejar",
+      "start": 45.61,
+      "end": 45.826,
+      "synthetic": true
+    },
+    {
+      "word": "com",
+      "start": 46.144,
+      "end": 46.34,
+      "synthetic": true
+    },
+    {
+      "word": "confiança.",
+      "start": 46.673,
+      "end": 46.881,
+      "synthetic": true
+    },
+    {
+      "word": "Transição:",
+      "start": 47.206,
+      "end": 47.396,
+      "synthetic": true
+    },
+    {
+      "word": "Vamos",
+      "start": 47.738,
+      "end": 47.922,
+      "synthetic": true
+    },
+    {
+      "word": "avançar",
+      "start": 48.267,
+      "end": 48.458,
+      "synthetic": true
+    },
+    {
+      "word": "para",
+      "start": 48.8,
+      "end": 48.98,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 49.325,
+      "end": 49.541,
+      "synthetic": true
+    },
+    {
+      "word": "próximo",
+      "start": 49.86,
+      "end": 50.049,
+      "synthetic": true
+    },
+    {
+      "word": "ponto",
+      "start": 50.389,
+      "end": 50.587,
+      "synthetic": true
+    },
+    {
+      "word": "com",
+      "start": 50.919,
+      "end": 51.125,
+      "synthetic": true
+    },
+    {
+      "word": "foco",
+      "start": 51.45,
+      "end": 51.65,
+      "synthetic": true
+    },
+    {
+      "word": "prático.",
+      "start": 51.981,
+      "end": 52.184,
+      "synthetic": true
+    },
+    {
+      "word": "##",
+      "start": 52.51,
+      "end": 52.725,
+      "synthetic": true
+    },
+    {
+      "word": "3.",
+      "start": 53.046,
+      "end": 53.224,
+      "synthetic": true
+    },
+    {
+      "word": "Top",
+      "start": 53.576,
+      "end": 53.761,
+      "synthetic": true
+    },
+    {
+      "word": "pontos",
+      "start": 54.107,
+      "end": 54.286,
+      "synthetic": true
+    },
+    {
+      "word": "imperdíveis",
+      "start": 54.635,
+      "end": 54.835,
+      "synthetic": true
+    },
+    {
+      "word": "Agora",
+      "start": 55.167,
+      "end": 55.359,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 55.699,
+      "end": 55.881,
+      "synthetic": true
+    },
+    {
+      "word": "ranking",
+      "start": 56.23,
+      "end": 56.412,
+      "synthetic": true
+    },
+    {
+      "word": "que",
+      "start": 56.76,
+      "end": 56.945,
+      "synthetic": true
+    },
+    {
+      "word": "você",
+      "start": 57.289,
+      "end": 57.488,
+      "synthetic": true
+    },
+    {
+      "word": "realmente",
+      "start": 57.82,
+      "end": 58.015,
+      "synthetic": true
+    },
+    {
+      "word": "quer",
+      "start": 58.353,
+      "end": 58.534,
+      "synthetic": true
+    },
+    {
+      "word": "ver:",
+      "start": 58.883,
+      "end": 59.07,
+      "synthetic": true
+    },
+    {
+      "word": "os",
+      "start": 59.409,
+      "end": 59.624,
+      "synthetic": true
+    },
+    {
+      "word": "lugares",
+      "start": 59.941,
+      "end": 60.148,
+      "synthetic": true
+    },
+    {
+      "word": "que",
+      "start": 60.475,
+      "end": 60.66,
+      "synthetic": true
+    },
+    {
+      "word": "entregam",
+      "start": 61.002,
+      "end": 61.212,
+      "synthetic": true
+    },
+    {
+      "word": "experiência",
+      "start": 61.533,
+      "end": 61.743,
+      "synthetic": true
+    },
+    {
+      "word": "memorável",
+      "start": 62.068,
+      "end": 62.245,
+      "synthetic": true
+    },
+    {
+      "word": "sem",
+      "start": 62.595,
+      "end": 62.797,
+      "synthetic": true
+    },
+    {
+      "word": "estourar",
+      "start": 63.125,
+      "end": 63.335,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 63.655,
+      "end": 63.867,
+      "synthetic": true
+    },
+    {
+      "word": "orçamento.",
+      "start": 64.19,
+      "end": 64.373,
+      "synthetic": true
+    },
+    {
+      "word": "Transição:",
+      "start": 64.72,
+      "end": 64.912,
+      "synthetic": true
+    },
+    {
+      "word": "Vamos",
+      "start": 65.248,
+      "end": 65.457,
+      "synthetic": true
+    },
+    {
+      "word": "avançar",
+      "start": 65.777,
+      "end": 65.995,
+      "synthetic": true
+    },
+    {
+      "word": "para",
+      "start": 66.313,
+      "end": 66.498,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 66.84,
+      "end": 67.051,
+      "synthetic": true
+    },
+    {
+      "word": "próximo",
+      "start": 67.371,
+      "end": 67.578,
+      "synthetic": true
+    },
+    {
+      "word": "ponto",
+      "start": 67.904,
+      "end": 68.096,
+      "synthetic": true
+    },
+    {
+      "word": "com",
+      "start": 68.436,
+      "end": 68.622,
+      "synthetic": true
+    },
+    {
+      "word": "foco",
+      "start": 68.965,
+      "end": 69.162,
+      "synthetic": true
+    },
+    {
+      "word": "prático.",
+      "start": 69.495,
+      "end": 69.697,
+      "synthetic": true
+    },
+    {
+      "word": "##",
+      "start": 70.024,
+      "end": 70.235,
+      "synthetic": true
+    },
+    {
+      "word": "4.",
+      "start": 70.557,
+      "end": 70.757,
+      "synthetic": true
+    },
+    {
+      "word": "Fechamento",
+      "start": 71.09,
+      "end": 71.273,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 71.618,
+      "end": 71.816,
+      "synthetic": true
+    },
+    {
+      "word": "CTA",
+      "start": 72.151,
+      "end": 72.337,
+      "synthetic": true
+    },
+    {
+      "word": "Se",
+      "start": 72.68,
+      "end": 72.876,
+      "synthetic": true
+    },
+    {
+      "word": "este",
+      "start": 73.209,
+      "end": 73.415,
+      "synthetic": true
+    },
+    {
+      "word": "guia",
+      "start": 73.739,
+      "end": 73.953,
+      "synthetic": true
+    },
+    {
+      "word": "te",
+      "start": 74.271,
+      "end": 74.476,
+      "synthetic": true
+    },
+    {
+      "word": "ajudou,",
+      "start": 74.801,
+      "end": 75.01,
+      "synthetic": true
+    },
+    {
+      "word": "salve",
+      "start": 75.335,
+      "end": 75.52,
+      "synthetic": true
+    },
+    {
+      "word": "para",
+      "start": 75.863,
+      "end": 76.071,
+      "synthetic": true
+    },
+    {
+      "word": "usar",
+      "start": 76.392,
+      "end": 76.607,
+      "synthetic": true
+    },
+    {
+      "word": "no",
+      "start": 76.929,
+      "end": 77.104,
+      "synthetic": true
+    },
+    {
+      "word": "planejamento",
+      "start": 77.46,
+      "end": 77.636,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 77.987,
+      "end": 78.186,
+      "synthetic": true
+    },
+    {
+      "word": "compartilhe",
+      "start": 78.519,
+      "end": 78.708,
+      "synthetic": true
+    },
+    {
+      "word": "com",
+      "start": 79.049,
+      "end": 79.243,
+      "synthetic": true
+    },
+    {
+      "word": "quem",
+      "start": 79.581,
+      "end": 79.765,
+      "synthetic": true
+    },
+    {
+      "word": "vai",
+      "start": 80.108,
+      "end": 80.317,
+      "synthetic": true
+    },
+    {
+      "word": "viajar",
+      "start": 80.638,
+      "end": 80.852,
+      "synthetic": true
+    },
+    {
+      "word": "com",
+      "start": 81.175,
+      "end": 81.351,
+      "synthetic": true
+    },
+    {
+      "word": "você.",
+      "start": 81.705,
+      "end": 81.886,
+      "synthetic": true
+    },
+    {
+      "word": "Transição:",
+      "start": 82.23,
+      "end": 82.445,
+      "synthetic": true
+    },
+    {
+      "word": "Vamos",
+      "start": 82.764,
+      "end": 82.957,
+      "synthetic": true
+    },
+    {
+      "word": "avançar",
+      "start": 83.292,
+      "end": 83.504,
+      "synthetic": true
+    },
+    {
+      "word": "para",
+      "start": 83.826,
+      "end": 84.016,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 84.357,
+      "end": 84.549,
+      "synthetic": true
+    },
+    {
+      "word": "próximo",
+      "start": 84.884,
+      "end": 85.096,
+      "synthetic": true
+    },
+    {
+      "word": "ponto",
+      "start": 85.415,
+      "end": 85.627,
+      "synthetic": true
+    },
+    {
+      "word": "com",
+      "start": 85.946,
+      "end": 86.157,
+      "synthetic": true
+    },
+    {
+      "word": "foco",
+      "start": 86.478,
+      "end": 86.68,
+      "synthetic": true
+    },
+    {
+      "word": "prático.",
+      "start": 87.007,
+      "end": 87.221,
+      "synthetic": true
+    },
+    {
+      "word": "##",
+      "start": 87.538,
+      "end": 87.751,
+      "synthetic": true
+    },
+    {
+      "word": "Encerramento",
+      "start": 88.068,
+      "end": 88.283,
+      "synthetic": true
+    },
+    {
+      "word": "Obrigado",
+      "start": 88.601,
+      "end": 88.804,
+      "synthetic": true
+    },
+    {
+      "word": "por",
+      "start": 89.13,
+      "end": 89.343,
+      "synthetic": true
+    },
+    {
+      "word": "assistir.",
+      "start": 89.665,
+      "end": 89.852,
+      "synthetic": true
+    },
+    {
+      "word": "Comente",
+      "start": 90.191,
+      "end": 90.407,
+      "synthetic": true
+    },
+    {
+      "word": "qual",
+      "start": 90.727,
+      "end": 90.911,
+      "synthetic": true
+    },
+    {
+      "word": "destino",
+      "start": 91.254,
+      "end": 91.458,
+      "synthetic": true
+    },
+    {
+      "word": "você",
+      "start": 91.788,
+      "end": 91.971,
+      "synthetic": true
+    },
+    {
+      "word": "quer",
+      "start": 92.314,
+      "end": 92.529,
+      "synthetic": true
+    },
+    {
+      "word": "ver",
+      "start": 92.847,
+      "end": 93.05,
+      "synthetic": true
+    },
+    {
+      "word": "no",
+      "start": 93.379,
+      "end": 93.57,
+      "synthetic": true
+    },
+    {
+      "word": "próximo",
+      "start": 93.908,
+      "end": 94.112,
+      "synthetic": true
+    },
+    {
+      "word": "vídeo.",
+      "start": 94.438,
+      "end": 94.644,
+      "synthetic": true
+    }
+  ],
+  "segments": [
+    {
+      "text": "# Melhores cidades para nômades digitais iniciantes ## Intro Hook Se você quer viajar melhor e gastar menos, este vídeo sobre Melhores cidades",
+      "start": 0,
+      "end": 11.852,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "#",
+          "start": 0,
+          "end": 0.207,
+          "synthetic": true
+        },
+        {
+          "word": "Melhores",
+          "start": 0.501,
+          "end": 0.701,
+          "synthetic": true
+        },
+        {
+          "word": "cidades",
+          "start": 1.034,
+          "end": 1.217,
+          "synthetic": true
+        },
+        {
+          "word": "para",
+          "start": 1.562,
+          "end": 1.761,
+          "synthetic": true
+        },
+        {
+          "word": "nômades",
+          "start": 2.093,
+          "end": 2.291,
+          "synthetic": true
+        },
+        {
+          "word": "digitais",
+          "start": 2.627,
+          "end": 2.805,
+          "synthetic": true
+        },
+        {
+          "word": "iniciantes",
+          "start": 3.153,
+          "end": 3.36,
+          "synthetic": true
+        },
+        {
+          "word": "##",
+          "start": 3.688,
+          "end": 3.871,
+          "synthetic": true
+        },
+        {
+          "word": "Intro",
+          "start": 4.219,
+          "end": 4.4,
+          "synthetic": true
+        },
+        {
+          "word": "Hook",
+          "start": 4.748,
+          "end": 4.938,
+          "synthetic": true
+        },
+        {
+          "word": "Se",
+          "start": 5.278,
+          "end": 5.472,
+          "synthetic": true
+        },
+        {
+          "word": "você",
+          "start": 5.81,
+          "end": 5.994,
+          "synthetic": true
+        },
+        {
+          "word": "quer",
+          "start": 6.34,
+          "end": 6.53,
+          "synthetic": true
+        },
+        {
+          "word": "viajar",
+          "start": 6.871,
+          "end": 7.061,
+          "synthetic": true
+        },
+        {
+          "word": "melhor",
+          "start": 7.401,
+          "end": 7.595,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 7.931,
+          "end": 8.131,
+          "synthetic": true
+        },
+        {
+          "word": "gastar",
+          "start": 8.46,
+          "end": 8.673,
+          "synthetic": true
+        },
+        {
+          "word": "menos,",
+          "start": 8.994,
+          "end": 9.182,
+          "synthetic": true
+        },
+        {
+          "word": "este",
+          "start": 9.524,
+          "end": 9.716,
+          "synthetic": true
+        },
+        {
+          "word": "vídeo",
+          "start": 10.052,
+          "end": 10.266,
+          "synthetic": true
+        },
+        {
+          "word": "sobre",
+          "start": 10.585,
+          "end": 10.783,
+          "synthetic": true
+        },
+        {
+          "word": "Melhores",
+          "start": 11.113,
+          "end": 11.33,
+          "synthetic": true
+        },
+        {
+          "word": "cidades",
+          "start": 11.645,
+          "end": 11.852,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "para nômades digitais iniciantes vai te poupar tempo e dinheiro. ## 1. Abertura e contexto Hoje você vai descobrir por que Melhores cidades",
+      "start": 12.179,
+      "end": 24.058,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "para",
+          "start": 12.179,
+          "end": 12.362,
+          "synthetic": true
+        },
+        {
+          "word": "nômades",
+          "start": 12.705,
+          "end": 12.922,
+          "synthetic": true
+        },
+        {
+          "word": "digitais",
+          "start": 13.24,
+          "end": 13.427,
+          "synthetic": true
+        },
+        {
+          "word": "iniciantes",
+          "start": 13.769,
+          "end": 13.97,
+          "synthetic": true
+        },
+        {
+          "word": "vai",
+          "start": 14.298,
+          "end": 14.509,
+          "synthetic": true
+        },
+        {
+          "word": "te",
+          "start": 14.832,
+          "end": 15.023,
+          "synthetic": true
+        },
+        {
+          "word": "poupar",
+          "start": 15.363,
+          "end": 15.553,
+          "synthetic": true
+        },
+        {
+          "word": "tempo",
+          "start": 15.892,
+          "end": 16.091,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 16.42,
+          "end": 16.637,
+          "synthetic": true
+        },
+        {
+          "word": "dinheiro.",
+          "start": 16.951,
+          "end": 17.165,
+          "synthetic": true
+        },
+        {
+          "word": "##",
+          "start": 17.485,
+          "end": 17.679,
+          "synthetic": true
+        },
+        {
+          "word": "1.",
+          "start": 18.014,
+          "end": 18.22,
+          "synthetic": true
+        },
+        {
+          "word": "Abertura",
+          "start": 18.546,
+          "end": 18.743,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 19.078,
+          "end": 19.268,
+          "synthetic": true
+        },
+        {
+          "word": "contexto",
+          "start": 19.609,
+          "end": 19.792,
+          "synthetic": true
+        },
+        {
+          "word": "Hoje",
+          "start": 20.139,
+          "end": 20.33,
+          "synthetic": true
+        },
+        {
+          "word": "você",
+          "start": 20.67,
+          "end": 20.861,
+          "synthetic": true
+        },
+        {
+          "word": "vai",
+          "start": 21.199,
+          "end": 21.397,
+          "synthetic": true
+        },
+        {
+          "word": "descobrir",
+          "start": 21.732,
+          "end": 21.918,
+          "synthetic": true
+        },
+        {
+          "word": "por",
+          "start": 22.262,
+          "end": 22.453,
+          "synthetic": true
+        },
+        {
+          "word": "que",
+          "start": 22.795,
+          "end": 22.971,
+          "synthetic": true
+        },
+        {
+          "word": "Melhores",
+          "start": 23.322,
+          "end": 23.521,
+          "synthetic": true
+        },
+        {
+          "word": "cidades",
+          "start": 23.852,
+          "end": 24.058,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "para nômades digitais iniciantes está chamando tanta atenção e como isso pode transformar sua próxima viagem. Transição: Vamos avançar para o próximo ponto",
+      "start": 24.381,
+      "end": 36.268,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "para",
+          "start": 24.381,
+          "end": 24.597,
+          "synthetic": true
+        },
+        {
+          "word": "nômades",
+          "start": 24.912,
+          "end": 25.128,
+          "synthetic": true
+        },
+        {
+          "word": "digitais",
+          "start": 25.448,
+          "end": 25.625,
+          "synthetic": true
+        },
+        {
+          "word": "iniciantes",
+          "start": 25.976,
+          "end": 26.176,
+          "synthetic": true
+        },
+        {
+          "word": "está",
+          "start": 26.508,
+          "end": 26.694,
+          "synthetic": true
+        },
+        {
+          "word": "chamando",
+          "start": 27.039,
+          "end": 27.225,
+          "synthetic": true
+        },
+        {
+          "word": "tanta",
+          "start": 27.566,
+          "end": 27.778,
+          "synthetic": true
+        },
+        {
+          "word": "atenção",
+          "start": 28.1,
+          "end": 28.287,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 28.631,
+          "end": 28.82,
+          "synthetic": true
+        },
+        {
+          "word": "como",
+          "start": 29.16,
+          "end": 29.358,
+          "synthetic": true
+        },
+        {
+          "word": "isso",
+          "start": 29.689,
+          "end": 29.902,
+          "synthetic": true
+        },
+        {
+          "word": "pode",
+          "start": 30.221,
+          "end": 30.424,
+          "synthetic": true
+        },
+        {
+          "word": "transformar",
+          "start": 30.755,
+          "end": 30.937,
+          "synthetic": true
+        },
+        {
+          "word": "sua",
+          "start": 31.286,
+          "end": 31.465,
+          "synthetic": true
+        },
+        {
+          "word": "próxima",
+          "start": 31.812,
+          "end": 32.022,
+          "synthetic": true
+        },
+        {
+          "word": "viagem.",
+          "start": 32.346,
+          "end": 32.532,
+          "synthetic": true
+        },
+        {
+          "word": "Transição:",
+          "start": 32.874,
+          "end": 33.083,
+          "synthetic": true
+        },
+        {
+          "word": "Vamos",
+          "start": 33.404,
+          "end": 33.617,
+          "synthetic": true
+        },
+        {
+          "word": "avançar",
+          "start": 33.936,
+          "end": 34.137,
+          "synthetic": true
+        },
+        {
+          "word": "para",
+          "start": 34.469,
+          "end": 34.655,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 34.997,
+          "end": 35.205,
+          "synthetic": true
+        },
+        {
+          "word": "próximo",
+          "start": 35.53,
+          "end": 35.718,
+          "synthetic": true
+        },
+        {
+          "word": "ponto",
+          "start": 36.058,
+          "end": 36.268,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "com foco prático. ## 2. Panorama prático Vamos analisar custos, melhor época, logística e riscos para você planejar com confiança. Transição: Vamos avançar",
+      "start": 36.591,
+      "end": 48.458,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "com",
+          "start": 36.591,
+          "end": 36.786,
+          "synthetic": true
+        },
+        {
+          "word": "foco",
+          "start": 37.12,
+          "end": 37.327,
+          "synthetic": true
+        },
+        {
+          "word": "prático.",
+          "start": 37.652,
+          "end": 37.849,
+          "synthetic": true
+        },
+        {
+          "word": "##",
+          "start": 38.184,
+          "end": 38.371,
+          "synthetic": true
+        },
+        {
+          "word": "2.",
+          "start": 38.712,
+          "end": 38.918,
+          "synthetic": true
+        },
+        {
+          "word": "Panorama",
+          "start": 39.245,
+          "end": 39.438,
+          "synthetic": true
+        },
+        {
+          "word": "prático",
+          "start": 39.777,
+          "end": 39.958,
+          "synthetic": true
+        },
+        {
+          "word": "Vamos",
+          "start": 40.303,
+          "end": 40.518,
+          "synthetic": true
+        },
+        {
+          "word": "analisar",
+          "start": 40.84,
+          "end": 41.015,
+          "synthetic": true
+        },
+        {
+          "word": "custos,",
+          "start": 41.364,
+          "end": 41.582,
+          "synthetic": true
+        },
+        {
+          "word": "melhor",
+          "start": 41.898,
+          "end": 42.094,
+          "synthetic": true
+        },
+        {
+          "word": "época,",
+          "start": 42.428,
+          "end": 42.628,
+          "synthetic": true
+        },
+        {
+          "word": "logística",
+          "start": 42.958,
+          "end": 43.164,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 43.49,
+          "end": 43.684,
+          "synthetic": true
+        },
+        {
+          "word": "riscos",
+          "start": 44.018,
+          "end": 44.235,
+          "synthetic": true
+        },
+        {
+          "word": "para",
+          "start": 44.549,
+          "end": 44.761,
+          "synthetic": true
+        },
+        {
+          "word": "você",
+          "start": 45.083,
+          "end": 45.275,
+          "synthetic": true
+        },
+        {
+          "word": "planejar",
+          "start": 45.61,
+          "end": 45.826,
+          "synthetic": true
+        },
+        {
+          "word": "com",
+          "start": 46.144,
+          "end": 46.34,
+          "synthetic": true
+        },
+        {
+          "word": "confiança.",
+          "start": 46.673,
+          "end": 46.881,
+          "synthetic": true
+        },
+        {
+          "word": "Transição:",
+          "start": 47.206,
+          "end": 47.396,
+          "synthetic": true
+        },
+        {
+          "word": "Vamos",
+          "start": 47.738,
+          "end": 47.922,
+          "synthetic": true
+        },
+        {
+          "word": "avançar",
+          "start": 48.267,
+          "end": 48.458,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "para o próximo ponto com foco prático. ## 3. Top pontos imperdíveis Agora o ranking que você realmente quer ver: os lugares que",
+      "start": 48.8,
+      "end": 60.66,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "para",
+          "start": 48.8,
+          "end": 48.98,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 49.325,
+          "end": 49.541,
+          "synthetic": true
+        },
+        {
+          "word": "próximo",
+          "start": 49.86,
+          "end": 50.049,
+          "synthetic": true
+        },
+        {
+          "word": "ponto",
+          "start": 50.389,
+          "end": 50.587,
+          "synthetic": true
+        },
+        {
+          "word": "com",
+          "start": 50.919,
+          "end": 51.125,
+          "synthetic": true
+        },
+        {
+          "word": "foco",
+          "start": 51.45,
+          "end": 51.65,
+          "synthetic": true
+        },
+        {
+          "word": "prático.",
+          "start": 51.981,
+          "end": 52.184,
+          "synthetic": true
+        },
+        {
+          "word": "##",
+          "start": 52.51,
+          "end": 52.725,
+          "synthetic": true
+        },
+        {
+          "word": "3.",
+          "start": 53.046,
+          "end": 53.224,
+          "synthetic": true
+        },
+        {
+          "word": "Top",
+          "start": 53.576,
+          "end": 53.761,
+          "synthetic": true
+        },
+        {
+          "word": "pontos",
+          "start": 54.107,
+          "end": 54.286,
+          "synthetic": true
+        },
+        {
+          "word": "imperdíveis",
+          "start": 54.635,
+          "end": 54.835,
+          "synthetic": true
+        },
+        {
+          "word": "Agora",
+          "start": 55.167,
+          "end": 55.359,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 55.699,
+          "end": 55.881,
+          "synthetic": true
+        },
+        {
+          "word": "ranking",
+          "start": 56.23,
+          "end": 56.412,
+          "synthetic": true
+        },
+        {
+          "word": "que",
+          "start": 56.76,
+          "end": 56.945,
+          "synthetic": true
+        },
+        {
+          "word": "você",
+          "start": 57.289,
+          "end": 57.488,
+          "synthetic": true
+        },
+        {
+          "word": "realmente",
+          "start": 57.82,
+          "end": 58.015,
+          "synthetic": true
+        },
+        {
+          "word": "quer",
+          "start": 58.353,
+          "end": 58.534,
+          "synthetic": true
+        },
+        {
+          "word": "ver:",
+          "start": 58.883,
+          "end": 59.07,
+          "synthetic": true
+        },
+        {
+          "word": "os",
+          "start": 59.409,
+          "end": 59.624,
+          "synthetic": true
+        },
+        {
+          "word": "lugares",
+          "start": 59.941,
+          "end": 60.148,
+          "synthetic": true
+        },
+        {
+          "word": "que",
+          "start": 60.475,
+          "end": 60.66,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "entregam experiência memorável sem estourar o orçamento. Transição: Vamos avançar para o próximo ponto com foco prático. ## 4. Fechamento e CTA Se",
+      "start": 61.002,
+      "end": 72.876,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "entregam",
+          "start": 61.002,
+          "end": 61.212,
+          "synthetic": true
+        },
+        {
+          "word": "experiência",
+          "start": 61.533,
+          "end": 61.743,
+          "synthetic": true
+        },
+        {
+          "word": "memorável",
+          "start": 62.068,
+          "end": 62.245,
+          "synthetic": true
+        },
+        {
+          "word": "sem",
+          "start": 62.595,
+          "end": 62.797,
+          "synthetic": true
+        },
+        {
+          "word": "estourar",
+          "start": 63.125,
+          "end": 63.335,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 63.655,
+          "end": 63.867,
+          "synthetic": true
+        },
+        {
+          "word": "orçamento.",
+          "start": 64.19,
+          "end": 64.373,
+          "synthetic": true
+        },
+        {
+          "word": "Transição:",
+          "start": 64.72,
+          "end": 64.912,
+          "synthetic": true
+        },
+        {
+          "word": "Vamos",
+          "start": 65.248,
+          "end": 65.457,
+          "synthetic": true
+        },
+        {
+          "word": "avançar",
+          "start": 65.777,
+          "end": 65.995,
+          "synthetic": true
+        },
+        {
+          "word": "para",
+          "start": 66.313,
+          "end": 66.498,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 66.84,
+          "end": 67.051,
+          "synthetic": true
+        },
+        {
+          "word": "próximo",
+          "start": 67.371,
+          "end": 67.578,
+          "synthetic": true
+        },
+        {
+          "word": "ponto",
+          "start": 67.904,
+          "end": 68.096,
+          "synthetic": true
+        },
+        {
+          "word": "com",
+          "start": 68.436,
+          "end": 68.622,
+          "synthetic": true
+        },
+        {
+          "word": "foco",
+          "start": 68.965,
+          "end": 69.162,
+          "synthetic": true
+        },
+        {
+          "word": "prático.",
+          "start": 69.495,
+          "end": 69.697,
+          "synthetic": true
+        },
+        {
+          "word": "##",
+          "start": 70.024,
+          "end": 70.235,
+          "synthetic": true
+        },
+        {
+          "word": "4.",
+          "start": 70.557,
+          "end": 70.757,
+          "synthetic": true
+        },
+        {
+          "word": "Fechamento",
+          "start": 71.09,
+          "end": 71.273,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 71.618,
+          "end": 71.816,
+          "synthetic": true
+        },
+        {
+          "word": "CTA",
+          "start": 72.151,
+          "end": 72.337,
+          "synthetic": true
+        },
+        {
+          "word": "Se",
+          "start": 72.68,
+          "end": 72.876,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "este guia te ajudou, salve para usar no planejamento e compartilhe com quem vai viajar com você. Transição: Vamos avançar para o próximo",
+      "start": 73.209,
+      "end": 85.096,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "este",
+          "start": 73.209,
+          "end": 73.415,
+          "synthetic": true
+        },
+        {
+          "word": "guia",
+          "start": 73.739,
+          "end": 73.953,
+          "synthetic": true
+        },
+        {
+          "word": "te",
+          "start": 74.271,
+          "end": 74.476,
+          "synthetic": true
+        },
+        {
+          "word": "ajudou,",
+          "start": 74.801,
+          "end": 75.01,
+          "synthetic": true
+        },
+        {
+          "word": "salve",
+          "start": 75.335,
+          "end": 75.52,
+          "synthetic": true
+        },
+        {
+          "word": "para",
+          "start": 75.863,
+          "end": 76.071,
+          "synthetic": true
+        },
+        {
+          "word": "usar",
+          "start": 76.392,
+          "end": 76.607,
+          "synthetic": true
+        },
+        {
+          "word": "no",
+          "start": 76.929,
+          "end": 77.104,
+          "synthetic": true
+        },
+        {
+          "word": "planejamento",
+          "start": 77.46,
+          "end": 77.636,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 77.987,
+          "end": 78.186,
+          "synthetic": true
+        },
+        {
+          "word": "compartilhe",
+          "start": 78.519,
+          "end": 78.708,
+          "synthetic": true
+        },
+        {
+          "word": "com",
+          "start": 79.049,
+          "end": 79.243,
+          "synthetic": true
+        },
+        {
+          "word": "quem",
+          "start": 79.581,
+          "end": 79.765,
+          "synthetic": true
+        },
+        {
+          "word": "vai",
+          "start": 80.108,
+          "end": 80.317,
+          "synthetic": true
+        },
+        {
+          "word": "viajar",
+          "start": 80.638,
+          "end": 80.852,
+          "synthetic": true
+        },
+        {
+          "word": "com",
+          "start": 81.175,
+          "end": 81.351,
+          "synthetic": true
+        },
+        {
+          "word": "você.",
+          "start": 81.705,
+          "end": 81.886,
+          "synthetic": true
+        },
+        {
+          "word": "Transição:",
+          "start": 82.23,
+          "end": 82.445,
+          "synthetic": true
+        },
+        {
+          "word": "Vamos",
+          "start": 82.764,
+          "end": 82.957,
+          "synthetic": true
+        },
+        {
+          "word": "avançar",
+          "start": 83.292,
+          "end": 83.504,
+          "synthetic": true
+        },
+        {
+          "word": "para",
+          "start": 83.826,
+          "end": 84.016,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 84.357,
+          "end": 84.549,
+          "synthetic": true
+        },
+        {
+          "word": "próximo",
+          "start": 84.884,
+          "end": 85.096,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "ponto com foco prático. ## Encerramento Obrigado por assistir. Comente qual destino você quer ver no próximo vídeo.",
+      "start": 85.415,
+      "end": 94.644,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "ponto",
+          "start": 85.415,
+          "end": 85.627,
+          "synthetic": true
+        },
+        {
+          "word": "com",
+          "start": 85.946,
+          "end": 86.157,
+          "synthetic": true
+        },
+        {
+          "word": "foco",
+          "start": 86.478,
+          "end": 86.68,
+          "synthetic": true
+        },
+        {
+          "word": "prático.",
+          "start": 87.007,
+          "end": 87.221,
+          "synthetic": true
+        },
+        {
+          "word": "##",
+          "start": 87.538,
+          "end": 87.751,
+          "synthetic": true
+        },
+        {
+          "word": "Encerramento",
+          "start": 88.068,
+          "end": 88.283,
+          "synthetic": true
+        },
+        {
+          "word": "Obrigado",
+          "start": 88.601,
+          "end": 88.804,
+          "synthetic": true
+        },
+        {
+          "word": "por",
+          "start": 89.13,
+          "end": 89.343,
+          "synthetic": true
+        },
+        {
+          "word": "assistir.",
+          "start": 89.665,
+          "end": 89.852,
+          "synthetic": true
+        },
+        {
+          "word": "Comente",
+          "start": 90.191,
+          "end": 90.407,
+          "synthetic": true
+        },
+        {
+          "word": "qual",
+          "start": 90.727,
+          "end": 90.911,
+          "synthetic": true
+        },
+        {
+          "word": "destino",
+          "start": 91.254,
+          "end": 91.458,
+          "synthetic": true
+        },
+        {
+          "word": "você",
+          "start": 91.788,
+          "end": 91.971,
+          "synthetic": true
+        },
+        {
+          "word": "quer",
+          "start": 92.314,
+          "end": 92.529,
+          "synthetic": true
+        },
+        {
+          "word": "ver",
+          "start": 92.847,
+          "end": 93.05,
+          "synthetic": true
+        },
+        {
+          "word": "no",
+          "start": 93.379,
+          "end": 93.57,
+          "synthetic": true
+        },
+        {
+          "word": "próximo",
+          "start": 93.908,
+          "end": 94.112,
+          "synthetic": true
+        },
+        {
+          "word": "vídeo.",
+          "start": 94.438,
+          "end": 94.644,
+          "synthetic": true
+        }
+      ]
+    }
+  ],
+  "pause_markers": [
+    {
+      "start": 17.165,
+      "end": 17.465,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 18.22,
+      "end": 18.52,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 32.532,
+      "end": 32.831999999999994,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 37.849,
+      "end": 38.148999999999994,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 38.918,
+      "end": 39.217999999999996,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 46.881,
+      "end": 47.181,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 52.184,
+      "end": 52.483999999999995,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 53.224,
+      "end": 53.523999999999994,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 64.373,
+      "end": 64.673,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 69.697,
+      "end": 69.997,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 70.757,
+      "end": 71.057,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 81.886,
+      "end": 82.18599999999999,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 87.221,
+      "end": 87.521,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 89.852,
+      "end": 90.152,
+      "duration": 0.3,
+      "type": "sentence_break"
+    }
+  ],
+  "speaking_rate": {
+    "average_wps": 1.88,
+    "total_duration_seconds": 95,
+    "total_words": 179,
+    "total_segments": 8
+  },
+  "scene_boundaries": [
+    {
+      "scene_index": 1,
+      "title": "Intro Hook",
+      "narration_excerpt": "Se voce quer viajar melhor e gastar menos, este video sobre Melhores cidades para nomades digitais iniciantes vai te poupar tempo e dinheiro.",
+      "keywords": [
+        "melhores",
+        "city skyline",
+        "aerial view",
+        "travel destination",
+        "landscape"
+      ],
+      "target_duration_seconds": 8,
+      "narrative_function": "hook",
+      "generic_tolerance": "low",
+      "requires_visual_proof": true,
+      "slot_criticality": "critical",
+      "probable_shot_role": "hook_exact",
+      "block_id": "introducao",
+      "block_index": 1,
+      "block_label": "Introducao",
+      "block_type": "general",
+      "block_keywords": [
+        "melhores",
+        "city skyline",
+        "aerial view",
+        "travel destination",
+        "landscape",
+        "miradouro",
+        "intro",
+        "hook",
+        "voce",
+        "quer",
+        "viajar",
+        "melhor"
+      ],
+      "negative_keywords": [],
+      "overlay_title": "1. Introducao",
+      "visual_requirements": [
+        "establishing_shot",
+        "melhores",
+        "city skyline",
+        "aerial view"
+      ],
+      "role": "intro",
+      "scene_order": 1,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "viewpoint",
+      "visual_intent": "river",
+      "visual_intent_source": "river",
+      "required_visual_evidence": [
+        "river"
+      ],
+      "allowed_visual_categories": [
+        "river",
+        "bridge",
+        "city_landmark"
+      ],
+      "forbidden_visual_categories": [
+        "coast"
+      ],
+      "generic_asset_allowed": true,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 3,
+      "hard_boundary": true,
+      "boundary_id": "hb_001_introducao",
+      "transition_type": "hard",
+      "expected_location": "",
+      "expected_visual_start_sec": 0,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 0,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Introducao",
+        "query_hint": "Introducao miradouro intro"
+      },
+      "audio_start_seconds": 0.501,
+      "audio_end_seconds": 19.173,
+      "audio_span_seconds": 18.672,
+      "boundary_confidence": 0.85,
+      "anchor_word": "Melhores"
+    },
+    {
+      "scene_index": 2,
+      "title": "1. Abertura e contexto",
+      "narration_excerpt": "Hoje voce vai descobrir por que Melhores cidades para nomades digitais iniciantes esta chamando tanta atencao e como isso pode transformar sua proxima viagem.",
+      "keywords": [
+        "melhores",
+        "aerial view",
+        "travel map",
+        "city skyline",
+        "travel destination"
+      ],
+      "target_duration_seconds": 8,
+      "narrative_function": "hook",
+      "generic_tolerance": "low",
+      "requires_visual_proof": true,
+      "slot_criticality": "critical",
+      "probable_shot_role": "hook_exact",
+      "block_id": "introducao",
+      "block_index": 1,
+      "block_label": "Introducao",
+      "block_type": "general",
+      "block_keywords": [
+        "melhores",
+        "aerial view",
+        "travel map",
+        "city skyline",
+        "travel destination",
+        "praia",
+        "abertura",
+        "contexto",
+        "hoje",
+        "voce",
+        "vai",
+        "descobrir"
+      ],
+      "negative_keywords": [],
+      "overlay_title": "1. Introducao",
+      "visual_requirements": [
+        "establishing_shot",
+        "melhores",
+        "aerial view",
+        "travel map"
+      ],
+      "role": "intro",
+      "scene_order": 2,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "beach",
+      "visual_intent": "coast",
+      "visual_intent_source": "coast",
+      "required_visual_evidence": [
+        "coast"
+      ],
+      "allowed_visual_categories": [
+        "coast",
+        "landscape"
+      ],
+      "forbidden_visual_categories": [],
+      "generic_asset_allowed": true,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 3,
+      "hard_boundary": false,
+      "boundary_id": "",
+      "transition_type": "soft",
+      "expected_location": "",
+      "expected_visual_start_sec": 11.348,
+      "chapter_trigger": null,
+      "chapter_card_required": false,
+      "block_intro_asset": null,
+      "audio_start_seconds": 19.173,
+      "audio_end_seconds": 36.689,
+      "audio_span_seconds": 17.516,
+      "boundary_confidence": 0.85,
+      "anchor_word": "e"
+    },
+    {
+      "scene_index": 3,
+      "title": "1. Abertura e contexto",
+      "narration_excerpt": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+      "keywords": [
+        "melhores",
+        "aerial view",
+        "travel map",
+        "city skyline",
+        "travel destination"
+      ],
+      "target_duration_seconds": 5.38,
+      "narrative_function": "setup",
+      "generic_tolerance": "medium",
+      "requires_visual_proof": false,
+      "slot_criticality": "high",
+      "probable_shot_role": "opening_establishing",
+      "block_id": "introducao",
+      "block_index": 1,
+      "block_label": "Introducao",
+      "block_type": "general",
+      "block_keywords": [
+        "melhores",
+        "aerial view",
+        "travel map",
+        "city skyline",
+        "travel destination",
+        "miradouro",
+        "abertura",
+        "contexto",
+        "transicao",
+        "vamos",
+        "avancar",
+        "proximo"
+      ],
+      "negative_keywords": [],
+      "overlay_title": "1. Introducao",
+      "visual_requirements": [
+        "establishing_shot",
+        "melhores",
+        "aerial view",
+        "travel map"
+      ],
+      "role": "intro",
+      "scene_order": 3,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "viewpoint",
+      "visual_intent": "river",
+      "visual_intent_source": "river",
+      "required_visual_evidence": [
+        "river"
+      ],
+      "allowed_visual_categories": [
+        "river",
+        "bridge",
+        "city_landmark"
+      ],
+      "forbidden_visual_categories": [
+        "coast"
+      ],
+      "generic_asset_allowed": true,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 3,
+      "hard_boundary": false,
+      "boundary_id": "",
+      "transition_type": "soft",
+      "expected_location": "",
+      "expected_visual_start_sec": 22.697,
+      "chapter_trigger": null,
+      "chapter_card_required": false,
+      "block_intro_asset": null,
+      "audio_start_seconds": 36.689,
+      "audio_end_seconds": 54.286,
+      "audio_span_seconds": 17.597,
+      "boundary_confidence": 0.85,
+      "anchor_word": "com"
+    },
+    {
+      "scene_index": 4,
+      "title": "2. Panorama prático 1",
+      "narration_excerpt": "Vamos analisar custos, melhor epoca, logistica e riscos para voce planejar com confianca.",
+      "keywords": [
+        "melhores",
+        "city skyline",
+        "public transport",
+        "budget travel",
+        "travel destination"
+      ],
+      "target_duration_seconds": 7,
+      "narrative_function": "setup",
+      "generic_tolerance": "medium",
+      "requires_visual_proof": true,
+      "slot_criticality": "high",
+      "probable_shot_role": "context_regional",
+      "block_id": "introducao",
+      "block_index": 1,
+      "block_label": "Introducao",
+      "block_type": "general",
+      "block_keywords": [
+        "melhores",
+        "city skyline",
+        "public transport",
+        "budget travel",
+        "travel destination",
+        "miradouro",
+        "panorama",
+        "pratico",
+        "vamos",
+        "analisar",
+        "custos",
+        "melhor"
+      ],
+      "negative_keywords": [],
+      "overlay_title": "1. Introducao",
+      "visual_requirements": [
+        "establishing_shot",
+        "melhores",
+        "city skyline",
+        "public transport"
+      ],
+      "role": "intro",
+      "scene_order": 4,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "viewpoint",
+      "visual_intent": "river",
+      "visual_intent_source": "river",
+      "required_visual_evidence": [
+        "river"
+      ],
+      "allowed_visual_categories": [
+        "river",
+        "bridge",
+        "city_landmark"
+      ],
+      "forbidden_visual_categories": [
+        "coast"
+      ],
+      "generic_asset_allowed": true,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 3,
+      "hard_boundary": false,
+      "boundary_id": "",
+      "transition_type": "soft",
+      "expected_location": "",
+      "expected_visual_start_sec": 30.329,
+      "chapter_trigger": null,
+      "chapter_card_required": false,
+      "block_intro_asset": null,
+      "audio_start_seconds": 55.699,
+      "audio_end_seconds": 71.717,
+      "audio_span_seconds": 16.018,
+      "boundary_confidence": 0.85,
+      "anchor_word": "o"
+    },
+    {
+      "scene_index": 5,
+      "title": "2. Panorama prático 2",
+      "narration_excerpt": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+      "keywords": [
+        "melhores",
+        "city skyline",
+        "public transport",
+        "budget travel",
+        "travel destination"
+      ],
+      "target_duration_seconds": 5.38,
+      "narrative_function": "bridge",
+      "generic_tolerance": "high",
+      "requires_visual_proof": false,
+      "slot_criticality": "medium",
+      "probable_shot_role": "detail_cutaway",
+      "block_id": "melhores-cidades-para-nomades-digitais-iniciantes",
+      "block_index": 2,
+      "block_label": "Melhores cidades para nômades digitais iniciantes",
+      "block_type": "general",
+      "block_keywords": [
+        "melhores",
+        "city skyline",
+        "public transport",
+        "budget travel",
+        "travel destination",
+        "miradouro",
+        "panorama",
+        "pratico",
+        "transicao",
+        "vamos",
+        "avancar",
+        "proximo"
+      ],
+      "negative_keywords": [],
+      "overlay_title": "2. Melhores cidades para nômades digitais iniciantes",
+      "visual_requirements": [
+        "melhores",
+        "city skyline",
+        "public transport"
+      ],
+      "role": "body",
+      "scene_order": 5,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "viewpoint",
+      "visual_intent": "river",
+      "visual_intent_source": "river",
+      "required_visual_evidence": [
+        "river"
+      ],
+      "allowed_visual_categories": [
+        "river",
+        "bridge",
+        "city_landmark"
+      ],
+      "forbidden_visual_categories": [
+        "coast"
+      ],
+      "generic_asset_allowed": true,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 3,
+      "hard_boundary": true,
+      "boundary_id": "hb_005_melhores-cidades-para-nomades-digitais-iniciantes",
+      "transition_type": "hard",
+      "expected_location": "",
+      "expected_visual_start_sec": 40.258,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 40.258,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Melhores cidades para nômades digitais iniciantes",
+        "query_hint": "Melhores cidades para nômades digitais iniciantes miradouro intro"
+      },
+      "audio_start_seconds": 71.717,
+      "audio_end_seconds": 90.407,
+      "audio_span_seconds": 18.69,
+      "boundary_confidence": 0.85,
+      "anchor_word": "e"
+    },
+    {
+      "scene_index": 6,
+      "title": "3. Top pontos imperdíveis 1",
+      "narration_excerpt": "Agora o ranking que voce realmente quer ver: os lugares que entregam experiencia memoravel sem estourar o orcamento.",
+      "keywords": [
+        "melhores",
+        "city skyline",
+        "budget travel",
+        "tourist attraction",
+        "landmark"
+      ],
+      "target_duration_seconds": 8,
+      "narrative_function": "setup",
+      "generic_tolerance": "medium",
+      "requires_visual_proof": true,
+      "slot_criticality": "high",
+      "probable_shot_role": "context_regional",
+      "block_id": "introducao",
+      "block_index": 3,
+      "block_label": "Introducao",
+      "block_type": "general",
+      "block_keywords": [
+        "melhores",
+        "city skyline",
+        "budget travel",
+        "tourist attraction",
+        "landmark",
+        "praia",
+        "top",
+        "pontos",
+        "imperdiveis",
+        "agora",
+        "ranking",
+        "voce"
+      ],
+      "negative_keywords": [],
+      "overlay_title": "3. Introducao",
+      "visual_requirements": [
+        "establishing_shot",
+        "melhores",
+        "city skyline",
+        "budget travel"
+      ],
+      "role": "intro",
+      "scene_order": 6,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "beach",
+      "visual_intent": "city_landmark",
+      "visual_intent_source": "city_landmark",
+      "required_visual_evidence": [
+        "city_landmark"
+      ],
+      "allowed_visual_categories": [
+        "city_landmark",
+        "historic_street",
+        "aerial_city"
+      ],
+      "forbidden_visual_categories": [
+        "coast"
+      ],
+      "generic_asset_allowed": true,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 3,
+      "hard_boundary": true,
+      "boundary_id": "hb_006_introducao",
+      "transition_type": "hard",
+      "expected_location": "",
+      "expected_visual_start_sec": 47.89,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 47.89,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Introducao",
+        "query_hint": "Introducao praia intro"
+      },
+      "audio_start_seconds": 91.788,
+      "audio_end_seconds": 93.05,
+      "audio_span_seconds": 1.262,
+      "boundary_confidence": 0.85,
+      "anchor_word": "você"
+    },
+    {
+      "scene_index": 7,
+      "title": "3. Top pontos imperdíveis 2",
+      "narration_excerpt": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+      "keywords": [
+        "melhores",
+        "city skyline",
+        "tourist attraction",
+        "landmark",
+        "historic district"
+      ],
+      "target_duration_seconds": 5.38,
+      "narrative_function": "bridge",
+      "generic_tolerance": "high",
+      "requires_visual_proof": false,
+      "slot_criticality": "medium",
+      "probable_shot_role": "detail_cutaway",
+      "block_id": "melhores-cidades-para-nomades-digitais-iniciantes",
+      "block_index": 4,
+      "block_label": "Melhores cidades para nômades digitais iniciantes",
+      "block_type": "general",
+      "block_keywords": [
+        "melhores",
+        "city skyline",
+        "tourist attraction",
+        "landmark",
+        "historic district",
+        "centro historico",
+        "top",
+        "pontos",
+        "imperdiveis",
+        "transicao",
+        "vamos",
+        "avancar"
+      ],
+      "negative_keywords": [],
+      "overlay_title": "4. Melhores cidades para nômades digitais iniciantes",
+      "visual_requirements": [
+        "street_life",
+        "architecture",
+        "walkthrough",
+        "melhores",
+        "city skyline",
+        "tourist attraction"
+      ],
+      "role": "body",
+      "scene_order": 7,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "historic_center",
+      "visual_intent": "city_landmark",
+      "visual_intent_source": "city_landmark",
+      "required_visual_evidence": [
+        "city_landmark"
+      ],
+      "allowed_visual_categories": [
+        "city_landmark",
+        "historic_street",
+        "aerial_city"
+      ],
+      "forbidden_visual_categories": [
+        "coast"
+      ],
+      "generic_asset_allowed": true,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 3,
+      "hard_boundary": true,
+      "boundary_id": "hb_007_melhores-cidades-para-nomades-digitais-iniciantes",
+      "transition_type": "hard",
+      "expected_location": "",
+      "expected_visual_start_sec": 59.238,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 59.238,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Melhores cidades para nômades digitais iniciantes",
+        "query_hint": "Melhores cidades para nômades digitais iniciantes centro historico intro"
+      },
+      "audio_start_seconds": 93.908,
+      "audio_end_seconds": 94.112,
+      "audio_span_seconds": 0.204,
+      "boundary_confidence": 0.85,
+      "anchor_word": "próximo"
+    },
+    {
+      "scene_index": 8,
+      "title": "4. Fechamento e CTA",
+      "narration_excerpt": "Se este guia te ajudou, salve para usar no planejamento e compartilhe com quem vai viajar com voce.",
+      "keywords": [
+        "cta",
+        "melhores",
+        "city skyline",
+        "travel planning",
+        "sunset skyline"
+      ],
+      "target_duration_seconds": 8,
+      "narrative_function": "payoff",
+      "generic_tolerance": "low",
+      "requires_visual_proof": true,
+      "slot_criticality": "high",
+      "probable_shot_role": "proof_exact",
+      "block_id": "fechamento",
+      "block_index": 5,
+      "block_label": "Fechamento",
+      "block_type": "general",
+      "block_keywords": [
+        "cta",
+        "melhores",
+        "city skyline",
+        "travel planning",
+        "sunset skyline",
+        "miradouro",
+        "fechamento",
+        "este",
+        "guia",
+        "ajudou",
+        "salve",
+        "usar"
+      ],
+      "negative_keywords": [],
+      "overlay_title": "5. Fechamento",
+      "visual_requirements": [
+        "closing_summary",
+        "cta",
+        "melhores",
+        "city skyline"
+      ],
+      "role": "outro",
+      "scene_order": 8,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "viewpoint",
+      "visual_intent": "river",
+      "visual_intent_source": "river",
+      "required_visual_evidence": [
+        "river"
+      ],
+      "allowed_visual_categories": [
+        "river",
+        "bridge",
+        "city_landmark"
+      ],
+      "forbidden_visual_categories": [
+        "coast"
+      ],
+      "generic_asset_allowed": true,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 3,
+      "hard_boundary": true,
+      "boundary_id": "hb_008_fechamento",
+      "transition_type": "hard",
+      "expected_location": "",
+      "expected_visual_start_sec": 66.87,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 66.87,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Fechamento",
+        "query_hint": "Fechamento miradouro intro"
+      },
+      "audio_start_seconds": 94.438,
+      "audio_end_seconds": 76,
+      "audio_span_seconds": -18.438,
+      "boundary_confidence": 0.3,
+      "anchor_word": ""
+    },
+    {
+      "scene_index": 9,
+      "title": "4. Fechamento e CTA",
+      "narration_excerpt": "Transicao: Vamos avancar para o proximo ponto com foco pratico.",
+      "keywords": [
+        "cta",
+        "melhores",
+        "city skyline",
+        "sunset skyline",
+        "packing checklist"
+      ],
+      "target_duration_seconds": 5.38,
+      "narrative_function": "closing",
+      "generic_tolerance": "low",
+      "requires_visual_proof": true,
+      "slot_criticality": "critical",
+      "probable_shot_role": "closing_payoff",
+      "block_id": "fechamento",
+      "block_index": 5,
+      "block_label": "Fechamento",
+      "block_type": "general",
+      "block_keywords": [
+        "cta",
+        "melhores",
+        "city skyline",
+        "sunset skyline",
+        "packing checklist",
+        "miradouro",
+        "fechamento",
+        "transicao",
+        "vamos",
+        "avancar",
+        "proximo",
+        "ponto"
+      ],
+      "negative_keywords": [],
+      "overlay_title": "5. Fechamento",
+      "visual_requirements": [
+        "closing_summary",
+        "cta",
+        "melhores",
+        "city skyline"
+      ],
+      "role": "outro",
+      "scene_order": 9,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "viewpoint",
+      "visual_intent": "river",
+      "visual_intent_source": "river",
+      "required_visual_evidence": [
+        "river"
+      ],
+      "allowed_visual_categories": [
+        "river",
+        "bridge",
+        "city_landmark"
+      ],
+      "forbidden_visual_categories": [
+        "coast"
+      ],
+      "generic_asset_allowed": true,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 3,
+      "hard_boundary": false,
+      "boundary_id": "",
+      "transition_type": "soft",
+      "expected_location": "",
+      "expected_visual_start_sec": 78.219,
+      "chapter_trigger": null,
+      "chapter_card_required": false,
+      "block_intro_asset": null,
+      "audio_start_seconds": 76,
+      "audio_end_seconds": 85.5,
+      "audio_span_seconds": 9.5,
+      "boundary_confidence": 0.3,
+      "anchor_word": ""
+    },
+    {
+      "scene_index": 10,
+      "title": "Encerramento",
+      "narration_excerpt": "Obrigado por assistir. Comente qual destino voce quer ver no proximo video.",
+      "keywords": [
+        "melhores",
+        "city skyline",
+        "sunset skyline",
+        "packing checklist",
+        "travel planning"
+      ],
+      "target_duration_seconds": 6.45,
+      "narrative_function": "closing",
+      "generic_tolerance": "low",
+      "requires_visual_proof": true,
+      "slot_criticality": "critical",
+      "probable_shot_role": "closing_payoff",
+      "block_id": "fechamento",
+      "block_index": 5,
+      "block_label": "Fechamento",
+      "block_type": "general",
+      "block_keywords": [
+        "melhores",
+        "city skyline",
+        "sunset skyline",
+        "packing checklist",
+        "travel planning",
+        "miradouro",
+        "encerramento",
+        "obrigado",
+        "assistir",
+        "comente",
+        "qual",
+        "destino"
+      ],
+      "negative_keywords": [],
+      "overlay_title": "5. Fechamento",
+      "visual_requirements": [
+        "closing_summary",
+        "melhores",
+        "city skyline",
+        "sunset skyline"
+      ],
+      "role": "outro",
+      "scene_order": 10,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "viewpoint",
+      "visual_intent": "river",
+      "visual_intent_source": "river",
+      "required_visual_evidence": [
+        "river"
+      ],
+      "allowed_visual_categories": [
+        "river",
+        "bridge",
+        "city_landmark"
+      ],
+      "forbidden_visual_categories": [
+        "coast"
+      ],
+      "generic_asset_allowed": true,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 3,
+      "hard_boundary": false,
+      "boundary_id": "",
+      "transition_type": "soft",
+      "expected_location": "",
+      "expected_visual_start_sec": 85.85,
+      "chapter_trigger": null,
+      "chapter_card_required": false,
+      "block_intro_asset": null,
+      "audio_start_seconds": 85.5,
+      "audio_end_seconds": 95,
+      "audio_span_seconds": 9.5,
+      "boundary_confidence": 0.3,
+      "anchor_word": ""
+    }
+  ],
+  "chapter_triggers": [
+    {
+      "scene_index": 2,
+      "timestamp_sec": 19.173,
+      "anchor_word": "e",
+      "cue_text": "## 1. Abertura e contexto Hoje você",
+      "cue_detected": false,
+      "confidence": 0.85,
+      "source": "scene_boundary"
+    },
+    {
+      "scene_index": 3,
+      "timestamp_sec": 36.689,
+      "anchor_word": "com",
+      "cue_text": "o próximo ponto com foco prático. ##",
+      "cue_detected": false,
+      "confidence": 0.85,
+      "source": "scene_boundary"
+    },
+    {
+      "scene_index": 4,
+      "timestamp_sec": 55.699,
+      "anchor_word": "o",
+      "cue_text": "pontos imperdíveis Agora o ranking que você",
+      "cue_detected": true,
+      "confidence": 0.85,
+      "source": "word_level_transition_cue"
+    },
+    {
+      "scene_index": 5,
+      "timestamp_sec": 71.717,
+      "anchor_word": "e",
+      "cue_text": "## 4. Fechamento e CTA Se este",
+      "cue_detected": false,
+      "confidence": 0.85,
+      "source": "scene_boundary"
+    },
+    {
+      "scene_index": 6,
+      "timestamp_sec": 91.788,
+      "anchor_word": "você",
+      "cue_text": "Comente qual destino você quer ver no",
+      "cue_detected": false,
+      "confidence": 0.85,
+      "source": "scene_boundary"
+    },
+    {
+      "scene_index": 7,
+      "timestamp_sec": 93.908,
+      "anchor_word": "próximo",
+      "cue_text": "quer ver no próximo vídeo.",
+      "cue_detected": false,
+      "confidence": 0.85,
+      "source": "scene_boundary"
+    },
+    {
+      "scene_index": 8,
+      "timestamp_sec": 94.438,
+      "anchor_word": "vídeo.",
+      "cue_text": "ver no próximo vídeo.",
+      "cue_detected": false,
+      "confidence": 0.55,
+      "source": "scene_boundary"
+    },
+    {
+      "scene_index": 9,
+      "timestamp_sec": 76,
+      "anchor_word": "para",
+      "cue_text": "te ajudou, salve para usar no planejamento",
+      "cue_detected": false,
+      "confidence": 0.55,
+      "source": "scene_boundary"
+    },
+    {
+      "scene_index": 10,
+      "timestamp_sec": 85.5,
+      "anchor_word": "ponto",
+      "cue_text": "para o próximo ponto com foco prático.",
+      "cue_detected": false,
+      "confidence": 0.55,
+      "source": "scene_boundary"
+    }
+  ]
+}

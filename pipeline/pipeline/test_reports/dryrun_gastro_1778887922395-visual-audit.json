@@ -1,0 +1,570 @@
+{
+  "video_id": "dryrun_gastro_1778887922395",
+  "clip_audit": [
+    {
+      "clip_index": 1,
+      "expected_block": "Lisboa",
+      "expected_location": "",
+      "frame_timestamps": [
+        2.37
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\dryrun_gastro_1778887922395-visual-evidence\\clip-1-2_37.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "",
+      "vision_confidence": 0,
+      "visual_truth_status": "pass",
+      "visual_truth_reason": "editorial_contract_backstop_without_explicit_location",
+      "source_url": "",
+      "query_used": "porto people eating local food",
+      "provider": "pixabay",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": true,
+      "narrative_role_selected": "proof_exact",
+      "scene_index": 1,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\dryrun_gastro_1778887922395\\assets\\raw\\scene-03-08-pixabay.mp4:w01",
+      "micro_id": "mic_0001",
+      "micro_visual_need": "market_stall",
+      "micro_slot_ok": false,
+      "micro_match_score": 0.1,
+      "micro_timing_score": 1,
+      "micro_timing_drift_sec": 0
+    },
+    {
+      "clip_index": 2,
+      "expected_block": "Lisboa",
+      "expected_location": "",
+      "frame_timestamps": [
+        6.495
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\dryrun_gastro_1778887922395-visual-evidence\\clip-2-6_495.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "",
+      "vision_confidence": 0,
+      "visual_truth_status": "pass",
+      "visual_truth_reason": "editorial_contract_backstop_without_explicit_location",
+      "source_url": "",
+      "query_used": "fechamento food market people eating",
+      "provider": "pixabay",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": true,
+      "narrative_role_selected": "proof_exact",
+      "scene_index": 1,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\dryrun_gastro_1778887922395\\assets\\raw\\scene-04-01-pixabay.mp4:w04",
+      "micro_id": "mic_0002",
+      "micro_visual_need": "food_closeup",
+      "micro_slot_ok": true,
+      "micro_match_score": 1,
+      "micro_timing_score": 0.613,
+      "micro_timing_drift_sec": 0.465
+    },
+    {
+      "clip_index": 3,
+      "expected_block": "Lisboa",
+      "expected_location": "",
+      "frame_timestamps": [
+        10.313
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\dryrun_gastro_1778887922395-visual-evidence\\clip-3-10_313.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "",
+      "vision_confidence": 0.7,
+      "visual_truth_status": "pass",
+      "visual_truth_reason": "editorial_contract_backstop_without_explicit_location",
+      "source_url": "",
+      "query_used": "porto porto wine tasting",
+      "provider": "pixabay",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": true,
+      "narrative_role_selected": "proof_exact",
+      "scene_index": 2,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\dryrun_gastro_1778887922395\\assets\\raw\\scene-03-01-pixabay.mp4:w06",
+      "micro_id": "",
+      "micro_visual_need": "",
+      "micro_slot_ok": true,
+      "micro_match_score": 0,
+      "micro_timing_score": 0,
+      "micro_timing_drift_sec": 0
+    },
+    {
+      "clip_index": 4,
+      "expected_block": "Lisboa",
+      "expected_location": "",
+      "frame_timestamps": [
+        14.438
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\dryrun_gastro_1778887922395-visual-evidence\\clip-4-14_438.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "",
+      "vision_confidence": 0,
+      "visual_truth_status": "pass",
+      "visual_truth_reason": "editorial_contract_backstop_without_explicit_location",
+      "source_url": "",
+      "query_used": "fechamento food market",
+      "provider": "pixabay",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": false,
+      "narrative_role_selected": "bridge_neutral_short",
+      "scene_index": 2,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\dryrun_gastro_1778887922395\\assets\\raw\\scene-04-03-pixabay.mp4:w04",
+      "micro_id": "",
+      "micro_visual_need": "",
+      "micro_slot_ok": true,
+      "micro_match_score": 0,
+      "micro_timing_score": 0,
+      "micro_timing_drift_sec": 0
+    },
+    {
+      "clip_index": 5,
+      "expected_block": "Porto",
+      "expected_location": "",
+      "frame_timestamps": [
+        18.563
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\dryrun_gastro_1778887922395-visual-evidence\\clip-5-18_563.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "",
+      "vision_confidence": 0,
+      "visual_truth_status": "pass",
+      "visual_truth_reason": "editorial_contract_backstop_without_explicit_location",
+      "source_url": "",
+      "query_used": "porto people eating local food",
+      "provider": "pixabay",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": true,
+      "narrative_role_selected": "proof_exact",
+      "scene_index": 3,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\dryrun_gastro_1778887922395\\assets\\raw\\scene-03-08-pixabay.mp4:w01",
+      "micro_id": "",
+      "micro_visual_need": "",
+      "micro_slot_ok": true,
+      "micro_match_score": 0,
+      "micro_timing_score": 0,
+      "micro_timing_drift_sec": 0
+    },
+    {
+      "clip_index": 6,
+      "expected_block": "Porto",
+      "expected_location": "",
+      "frame_timestamps": [
+        22.688
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\dryrun_gastro_1778887922395-visual-evidence\\clip-6-22_688.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "",
+      "vision_confidence": 0,
+      "visual_truth_status": "pass",
+      "visual_truth_reason": "editorial_contract_backstop_without_explicit_location",
+      "source_url": "",
+      "query_used": "fechamento traditional restaurant",
+      "provider": "pixabay",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": false,
+      "narrative_role_selected": "bridge_neutral_short",
+      "scene_index": 3,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\dryrun_gastro_1778887922395\\assets\\raw\\scene-04-07-pixabay.mp4:w03",
+      "micro_id": "",
+      "micro_visual_need": "",
+      "micro_slot_ok": true,
+      "micro_match_score": 0,
+      "micro_timing_score": 0,
+      "micro_timing_drift_sec": 0
+    },
+    {
+      "clip_index": 7,
+      "expected_block": "Fechamento",
+      "expected_location": "",
+      "frame_timestamps": [
+        34.965,
+        31.34,
+        38.59
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\dryrun_gastro_1778887922395-visual-evidence\\clip-7-34_965.jpg",
+        "pipeline\\test_reports\\dryrun_gastro_1778887922395-visual-evidence\\clip-7-31_34.jpg",
+        "pipeline\\test_reports\\dryrun_gastro_1778887922395-visual-evidence\\clip-7-38_59.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "",
+      "vision_confidence": 0,
+      "visual_truth_status": "pass",
+      "visual_truth_reason": "editorial_contract_backstop_without_explicit_location",
+      "source_url": "",
+      "query_used": "fechamento food market people eating",
+      "provider": "pixabay",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": true,
+      "narrative_role_selected": "proof_exact",
+      "scene_index": 4,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\dryrun_gastro_1778887922395\\assets\\raw\\scene-04-01-pixabay.mp4:w05",
+      "micro_id": "mic_0008",
+      "micro_visual_need": "food_closeup",
+      "micro_slot_ok": true,
+      "micro_match_score": 1,
+      "micro_timing_score": 1,
+      "micro_timing_drift_sec": 0
+    }
+  ],
+  "boundary_audit": [
+    {
+      "boundary_id": "hb_003_porto",
+      "expected_location": "Porto",
+      "frame_timestamp": 16.6,
+      "vision_detected_location": "",
+      "vision_confidence": 0,
+      "metadata_location": "",
+      "visual_truth_status": "fail",
+      "frame_path": "pipeline\\test_reports\\dryrun_gastro_1778887922395-visual-evidence\\boundary-hb_003_porto-16_6.jpg"
+    },
+    {
+      "boundary_id": "hb_003_porto",
+      "expected_location": "Porto",
+      "frame_timestamp": 17,
+      "vision_detected_location": "",
+      "vision_confidence": 0,
+      "metadata_location": "",
+      "visual_truth_status": "fail",
+      "frame_path": "pipeline\\test_reports\\dryrun_gastro_1778887922395-visual-evidence\\boundary-hb_003_porto-17.jpg"
+    },
+    {
+      "boundary_id": "hb_003_porto",
+      "expected_location": "Porto",
+      "frame_timestamp": 17.5,
+      "vision_detected_location": "",
+      "vision_confidence": 0,
+      "metadata_location": "",
+      "visual_truth_status": "fail",
+      "frame_path": "pipeline\\test_reports\\dryrun_gastro_1778887922395-visual-evidence\\boundary-hb_003_porto-17_5.jpg"
+    },
+    {
+      "boundary_id": "hb_004_fechamento",
+      "expected_location": "Fechamento",
+      "frame_timestamp": 24.85,
+      "vision_detected_location": "",
+      "vision_confidence": 0,
+      "metadata_location": "",
+      "visual_truth_status": "pass",
+      "frame_path": "pipeline\\test_reports\\dryrun_gastro_1778887922395-visual-evidence\\boundary-hb_004_fechamento-24_85.jpg"
+    },
+    {
+      "boundary_id": "hb_004_fechamento",
+      "expected_location": "Fechamento",
+      "frame_timestamp": 25.25,
+      "vision_detected_location": "",
+      "vision_confidence": 0,
+      "metadata_location": "",
+      "visual_truth_status": "pass",
+      "frame_path": "pipeline\\test_reports\\dryrun_gastro_1778887922395-visual-evidence\\boundary-hb_004_fechamento-25_25.jpg"
+    },
+    {
+      "boundary_id": "hb_004_fechamento",
+      "expected_location": "Fechamento",
+      "frame_timestamp": 25.75,
+      "vision_detected_location": "",
+      "vision_confidence": 0.7,
+      "metadata_location": "",
+      "visual_truth_status": "pass",
+      "frame_path": "pipeline\\test_reports\\dryrun_gastro_1778887922395-visual-evidence\\boundary-hb_004_fechamento-25_75.jpg"
+    }
+  ],
+  "overlay_audit": [
+    {
+      "text": "1. Lisboa",
+      "timestamp": 0.5,
+      "state_overlay_exists": true,
+      "frame_overlay_detected": false,
+      "frame_path": "pipeline\\test_reports\\dryrun_gastro_1778887922395-visual-evidence\\overlay-block_title-0_5.jpg",
+      "status": "fail"
+    },
+    {
+      "text": "2. Porto",
+      "timestamp": 17,
+      "state_overlay_exists": true,
+      "frame_overlay_detected": false,
+      "frame_path": "pipeline\\test_reports\\dryrun_gastro_1778887922395-visual-evidence\\overlay-chapter_card_clip-17.jpg",
+      "status": "fail"
+    },
+    {
+      "text": "3. Fechamento",
+      "timestamp": 31.34,
+      "state_overlay_exists": true,
+      "frame_overlay_detected": false,
+      "frame_path": "pipeline\\test_reports\\dryrun_gastro_1778887922395-visual-evidence\\overlay-chapter_card_clip-31_34.jpg",
+      "status": "fail"
+    }
+  ],
+  "editorial_metrics": {
+    "exact_ratio": 0.714,
+    "regional_ratio": 0.286,
+    "generic_ratio": 0,
+    "uncertain_ratio": 0,
+    "uncertain_critical_ratio": 0,
+    "micro_critical_coverage_ratio": 0.667,
+    "micro_mismatch_rate": 0.333,
+    "critical_slots_covered": 3,
+    "critical_slots_total": 4,
+    "scene_theme_coverage_ratio": 0.75,
+    "scene_editorial_readiness": [
+      {
+        "scene_index": 1,
+        "visual_intent": "gastronomy",
+        "editorial_niche": "gastronomy",
+        "total_approved_windows": 0,
+        "exact_windows": 0,
+        "regional_windows": 0,
+        "generic_windows": 0,
+        "uncertain_windows": 0,
+        "theme_required_categories": [
+          "food",
+          "local_food",
+          "market",
+          "restaurant",
+          "cafe",
+          "people_eating",
+          "street_food",
+          "pastry",
+          "wine"
+        ],
+        "theme_matched_windows": 0,
+        "critical_slots_required": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening",
+          "intro",
+          "hook"
+        ],
+        "critical_slots_missing": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening",
+          "intro",
+          "hook"
+        ],
+        "critical_slots_covered": 0,
+        "critical_slots_total": 5,
+        "micro_total": 0,
+        "micro_covered": 0,
+        "micro_coverage_ratio": 0,
+        "micro_critical_missing": 0,
+        "max_generic_windows_by_policy": 1,
+        "ready": false,
+        "blocking": true,
+        "blocking_reasons": [
+          "missing_exact_for_required_proof",
+          "critical_slots_uncovered",
+          "no_proof_for_promise",
+          "missing_theme_visual_proof",
+          "missing_required_content_slots"
+        ],
+        "block_slot_coverage_missing": [
+          "market_stall",
+          "people_eating",
+          "chef_or_vendor"
+        ]
+      },
+      {
+        "scene_index": 2,
+        "visual_intent": "gastronomy",
+        "editorial_niche": "gastronomy",
+        "total_approved_windows": 18,
+        "exact_windows": 0,
+        "regional_windows": 18,
+        "generic_windows": 0,
+        "uncertain_windows": 20,
+        "theme_required_categories": [
+          "food",
+          "local_food",
+          "market",
+          "restaurant",
+          "cafe",
+          "people_eating",
+          "street_food",
+          "pastry",
+          "wine"
+        ],
+        "theme_matched_windows": 18,
+        "critical_slots_required": [
+          "first_clip_of_block"
+        ],
+        "critical_slots_missing": [],
+        "critical_slots_covered": 1,
+        "critical_slots_total": 1,
+        "micro_total": 0,
+        "micro_covered": 0,
+        "micro_coverage_ratio": 0,
+        "micro_critical_missing": 0,
+        "max_generic_windows_by_policy": 6,
+        "ready": false,
+        "blocking": true,
+        "blocking_reasons": [
+          "missing_required_content_slots"
+        ],
+        "block_slot_coverage_missing": [
+          "market_stall",
+          "people_eating",
+          "chef_or_vendor"
+        ]
+      },
+      {
+        "scene_index": 3,
+        "visual_intent": "gastronomy",
+        "editorial_niche": "gastronomy",
+        "total_approved_windows": 31,
+        "exact_windows": 9,
+        "regional_windows": 22,
+        "generic_windows": 0,
+        "uncertain_windows": 5,
+        "theme_required_categories": [
+          "food",
+          "local_food",
+          "market",
+          "restaurant",
+          "cafe",
+          "people_eating",
+          "street_food",
+          "pastry",
+          "wine"
+        ],
+        "theme_matched_windows": 31,
+        "critical_slots_required": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening"
+        ],
+        "critical_slots_missing": [],
+        "critical_slots_covered": 3,
+        "critical_slots_total": 3,
+        "micro_total": 0,
+        "micro_covered": 0,
+        "micro_coverage_ratio": 0,
+        "micro_critical_missing": 0,
+        "max_generic_windows_by_policy": 11,
+        "ready": false,
+        "blocking": true,
+        "blocking_reasons": [
+          "missing_required_content_slots"
+        ],
+        "block_slot_coverage_missing": [
+          "market_stall",
+          "people_eating",
+          "chef_or_vendor"
+        ]
+      },
+      {
+        "scene_index": 4,
+        "visual_intent": "gastronomy",
+        "editorial_niche": "gastronomy",
+        "total_approved_windows": 24,
+        "exact_windows": 6,
+        "regional_windows": 18,
+        "generic_windows": 0,
+        "uncertain_windows": 13,
+        "theme_required_categories": [
+          "food",
+          "local_food",
+          "market",
+          "restaurant",
+          "cafe",
+          "people_eating",
+          "street_food",
+          "pastry",
+          "wine"
+        ],
+        "theme_matched_windows": 24,
+        "critical_slots_required": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening",
+          "closing"
+        ],
+        "critical_slots_missing": [],
+        "critical_slots_covered": 4,
+        "critical_slots_total": 4,
+        "micro_total": 0,
+        "micro_covered": 0,
+        "micro_coverage_ratio": 0,
+        "micro_critical_missing": 0,
+        "max_generic_windows_by_policy": 8,
+        "ready": false,
+        "blocking": true,
+        "blocking_reasons": [
+          "missing_required_content_slots"
+        ],
+        "block_slot_coverage_missing": [
+          "market_stall",
+          "chef_or_vendor"
+        ]
+      }
+    ],
+    "micro_sync_metrics": {
+      "micro_total": 3,
+      "micro_critical_total": 3,
+      "micro_critical_covered": 2,
+      "micro_critical_coverage_ratio": 0.667,
+      "micro_mismatch_rate": 0.333,
+      "micro_timing_drift_avg": 0.155,
+      "micro_timing_drift_max": 0.465,
+      "critical_micro_missing_count": 1,
+      "critical_micro_drift_exceeded_count": 0,
+      "failed_micro_ids": [
+        "mic_0001"
+      ]
+    },
+    "timeline_uses_approved_pool_only": true,
+    "approved_pool_audit": {
+      "timeline_uses_approved_pool_only": true,
+      "invalid_clip_count": 0,
+      "missing_approved_window_id_count": 0,
+      "invalid_rows": [],
+      "approved_pool_size": 73
+    }
+  },
+  "approved_pool_audit": {
+    "timeline_uses_approved_pool_only": true,
+    "invalid_clip_count": 0,
+    "missing_approved_window_id_count": 0,
+    "invalid_rows": [],
+    "approved_pool_size": 73
+  },
+  "provider_reliability": {
+    "unknown": 0.625
+  },
+  "resolution_audit": {
+    "ffprobe_width": 1920,
+    "ffprobe_height": 1080,
+    "state_output_resolution": ""
+  },
+  "final_decision": {
+    "is_publishable": false,
+    "needs_manual_review": true,
+    "final_hard_boundary_status": "fail",
+    "editorial_failure_codes": [
+      "NO_MICRO_PROOF_FOR_PROMISE"
+    ]
+  }
+}

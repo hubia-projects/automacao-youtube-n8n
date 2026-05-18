@@ -1,0 +1,2934 @@
+{
+  "video_id": "security_test_1778847455737",
+  "provider": "fallback_estimation",
+  "analyzed_at": "2026-05-15T12:17:36.544Z",
+  "audio_path": "C:\\Users\\HABILFIX\\Desktop\\Hubia\\Projetos\\youtube-video-pipeline\\automacao-youtube-n8n\\output\\draft\\security_test_1778847455737\\audio\\narration.mp3",
+  "words": [
+    {
+      "word": "Portugal",
+      "start": 0,
+      "end": 0.201,
+      "synthetic": true
+    },
+    {
+      "word": "é",
+      "start": 0.524,
+      "end": 0.714,
+      "synthetic": true
+    },
+    {
+      "word": "um",
+      "start": 1.074,
+      "end": 1.276,
+      "synthetic": true
+    },
+    {
+      "word": "país",
+      "start": 1.626,
+      "end": 1.835,
+      "synthetic": true
+    },
+    {
+      "word": "que",
+      "start": 2.177,
+      "end": 2.392,
+      "synthetic": true
+    },
+    {
+      "word": "funciona",
+      "start": 2.733,
+      "end": 2.926,
+      "synthetic": true
+    },
+    {
+      "word": "muito",
+      "start": 3.283,
+      "end": 3.49,
+      "synthetic": true
+    },
+    {
+      "word": "bem",
+      "start": 3.833,
+      "end": 4.054,
+      "synthetic": true
+    },
+    {
+      "word": "quando",
+      "start": 4.386,
+      "end": 4.604,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 4.943,
+      "end": 5.132,
+      "synthetic": true
+    },
+    {
+      "word": "roteiro",
+      "start": 5.49,
+      "end": 5.713,
+      "synthetic": true
+    },
+    {
+      "word": "segue",
+      "start": 6.047,
+      "end": 6.238,
+      "synthetic": true
+    },
+    {
+      "word": "comida,",
+      "start": 6.595,
+      "end": 6.813,
+      "synthetic": true
+    },
+    {
+      "word": "cidade",
+      "start": 7.147,
+      "end": 7.371,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 7.701,
+      "end": 7.913,
+      "synthetic": true
+    },
+    {
+      "word": "atmosfera",
+      "start": 8.255,
+      "end": 8.454,
+      "synthetic": true
+    },
+    {
+      "word": "no",
+      "start": 8.81,
+      "end": 8.994,
+      "synthetic": true
+    },
+    {
+      "word": "tempo",
+      "start": 9.362,
+      "end": 9.547,
+      "synthetic": true
+    },
+    {
+      "word": "certo",
+      "start": 9.911,
+      "end": 10.115,
+      "synthetic": true
+    },
+    {
+      "word": "da",
+      "start": 10.462,
+      "end": 10.676,
+      "synthetic": true
+    },
+    {
+      "word": "narração.",
+      "start": 11.013,
+      "end": 11.236,
+      "synthetic": true
+    },
+    {
+      "word": "A",
+      "start": 11.568,
+      "end": 11.773,
+      "synthetic": true
+    },
+    {
+      "word": "abertura",
+      "start": 12.122,
+      "end": 12.319,
+      "synthetic": true
+    },
+    {
+      "word": "precisa",
+      "start": 12.67,
+      "end": 12.892,
+      "synthetic": true
+    },
+    {
+      "word": "vender",
+      "start": 13.226,
+      "end": 13.422,
+      "synthetic": true
+    },
+    {
+      "word": "essa",
+      "start": 13.778,
+      "end": 13.979,
+      "synthetic": true
+    },
+    {
+      "word": "promessa",
+      "start": 14.328,
+      "end": 14.547,
+      "synthetic": true
+    },
+    {
+      "word": "com",
+      "start": 14.885,
+      "end": 15.069,
+      "synthetic": true
+    },
+    {
+      "word": "imagens",
+      "start": 15.432,
+      "end": 15.653,
+      "synthetic": true
+    },
+    {
+      "word": "que",
+      "start": 15.985,
+      "end": 16.199,
+      "synthetic": true
+    },
+    {
+      "word": "pareçam",
+      "start": 16.539,
+      "end": 16.745,
+      "synthetic": true
+    },
+    {
+      "word": "uma",
+      "start": 17.092,
+      "end": 17.29,
+      "synthetic": true
+    },
+    {
+      "word": "viagem",
+      "start": 17.643,
+      "end": 17.852,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 18.193,
+      "end": 18.416,
+      "synthetic": true
+    },
+    {
+      "word": "sabores,",
+      "start": 18.751,
+      "end": 18.936,
+      "synthetic": true
+    },
+    {
+      "word": "não",
+      "start": 19.301,
+      "end": 19.504,
+      "synthetic": true
+    },
+    {
+      "word": "uma",
+      "start": 19.853,
+      "end": 20.059,
+      "synthetic": true
+    },
+    {
+      "word": "sequência",
+      "start": 20.405,
+      "end": 20.612,
+      "synthetic": true
+    },
+    {
+      "word": "aleatória",
+      "start": 20.959,
+      "end": 21.157,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 21.507,
+      "end": 21.729,
+      "synthetic": true
+    },
+    {
+      "word": "paisagens.",
+      "start": 22.061,
+      "end": 22.277,
+      "synthetic": true
+    },
+    {
+      "word": "Lisboa",
+      "start": 22.616,
+      "end": 22.812,
+      "synthetic": true
+    },
+    {
+      "word": "entra",
+      "start": 23.165,
+      "end": 23.384,
+      "synthetic": true
+    },
+    {
+      "word": "primeiro",
+      "start": 23.72,
+      "end": 23.917,
+      "synthetic": true
+    },
+    {
+      "word": "com",
+      "start": 24.273,
+      "end": 24.471,
+      "synthetic": true
+    },
+    {
+      "word": "cafés",
+      "start": 24.822,
+      "end": 25.04,
+      "synthetic": true
+    },
+    {
+      "word": "históricos,",
+      "start": 25.378,
+      "end": 25.574,
+      "synthetic": true
+    },
+    {
+      "word": "vitrines",
+      "start": 25.929,
+      "end": 26.132,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 26.48,
+      "end": 26.692,
+      "synthetic": true
+    },
+    {
+      "word": "pastelaria,",
+      "start": 27.03,
+      "end": 27.256,
+      "synthetic": true
+    },
+    {
+      "word": "mercados",
+      "start": 27.587,
+      "end": 27.782,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 28.137,
+      "end": 28.35,
+      "synthetic": true
+    },
+    {
+      "word": "cenas",
+      "start": 28.689,
+      "end": 28.903,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 29.241,
+      "end": 29.454,
+      "synthetic": true
+    },
+    {
+      "word": "rua",
+      "start": 29.792,
+      "end": 30.017,
+      "synthetic": true
+    },
+    {
+      "word": "onde",
+      "start": 30.344,
+      "end": 30.569,
+      "synthetic": true
+    },
+    {
+      "word": "a",
+      "start": 30.898,
+      "end": 31.11,
+      "synthetic": true
+    },
+    {
+      "word": "comida",
+      "start": 31.452,
+      "end": 31.655,
+      "synthetic": true
+    },
+    {
+      "word": "aparece",
+      "start": 32.004,
+      "end": 32.208,
+      "synthetic": true
+    },
+    {
+      "word": "como",
+      "start": 32.554,
+      "end": 32.775,
+      "synthetic": true
+    },
+    {
+      "word": "parte",
+      "start": 33.11,
+      "end": 33.309,
+      "synthetic": true
+    },
+    {
+      "word": "da",
+      "start": 33.66,
+      "end": 33.87,
+      "synthetic": true
+    },
+    {
+      "word": "cidade.",
+      "start": 34.215,
+      "end": 34.412,
+      "synthetic": true
+    },
+    {
+      "word": "Depois",
+      "start": 34.767,
+      "end": 34.966,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 35.319,
+      "end": 35.518,
+      "synthetic": true
+    },
+    {
+      "word": "Porto",
+      "start": 35.872,
+      "end": 36.067,
+      "synthetic": true
+    },
+    {
+      "word": "muda",
+      "start": 36.423,
+      "end": 36.625,
+      "synthetic": true
+    },
+    {
+      "word": "a",
+      "start": 36.974,
+      "end": 37.185,
+      "synthetic": true
+    },
+    {
+      "word": "energia",
+      "start": 37.524,
+      "end": 37.75,
+      "synthetic": true
+    },
+    {
+      "word": "com",
+      "start": 38.078,
+      "end": 38.294,
+      "synthetic": true
+    },
+    {
+      "word": "caves,",
+      "start": 38.629,
+      "end": 38.855,
+      "synthetic": true
+    },
+    {
+      "word": "vinho",
+      "start": 39.187,
+      "end": 39.373,
+      "synthetic": true
+    },
+    {
+      "word": "do",
+      "start": 39.738,
+      "end": 39.936,
+      "synthetic": true
+    },
+    {
+      "word": "Porto,",
+      "start": 40.288,
+      "end": 40.501,
+      "synthetic": true
+    },
+    {
+      "word": "restaurantes",
+      "start": 40.844,
+      "end": 41.029,
+      "synthetic": true
+    },
+    {
+      "word": "perto",
+      "start": 41.391,
+      "end": 41.612,
+      "synthetic": true
+    },
+    {
+      "word": "do",
+      "start": 41.948,
+      "end": 42.142,
+      "synthetic": true
+    },
+    {
+      "word": "Douro",
+      "start": 42.498,
+      "end": 42.703,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 43.052,
+      "end": 43.246,
+      "synthetic": true
+    },
+    {
+      "word": "planos",
+      "start": 43.605,
+      "end": 43.798,
+      "synthetic": true
+    },
+    {
+      "word": "mais",
+      "start": 44.158,
+      "end": 44.347,
+      "synthetic": true
+    },
+    {
+      "word": "densos",
+      "start": 44.709,
+      "end": 44.906,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 45.261,
+      "end": 45.461,
+      "synthetic": true
+    },
+    {
+      "word": "gastronomia",
+      "start": 45.813,
+      "end": 46.01,
+      "synthetic": true
+    },
+    {
+      "word": "local.",
+      "start": 46.367,
+      "end": 46.557,
+      "synthetic": true
+    },
+    {
+      "word": "No",
+      "start": 46.919,
+      "end": 47.11,
+      "synthetic": true
+    },
+    {
+      "word": "meio",
+      "start": 47.468,
+      "end": 47.684,
+      "synthetic": true
+    },
+    {
+      "word": "do",
+      "start": 48.021,
+      "end": 48.232,
+      "synthetic": true
+    },
+    {
+      "word": "vídeo,",
+      "start": 48.571,
+      "end": 48.794,
+      "synthetic": true
+    },
+    {
+      "word": "os",
+      "start": 49.127,
+      "end": 49.325,
+      "synthetic": true
+    },
+    {
+      "word": "mercados",
+      "start": 49.678,
+      "end": 49.886,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 50.232,
+      "end": 50.427,
+      "synthetic": true
+    },
+    {
+      "word": "os",
+      "start": 50.782,
+      "end": 50.994,
+      "synthetic": true
+    },
+    {
+      "word": "pratos",
+      "start": 51.334,
+      "end": 51.547,
+      "synthetic": true
+    },
+    {
+      "word": "servidos",
+      "start": 51.886,
+      "end": 52.105,
+      "synthetic": true
+    },
+    {
+      "word": "na",
+      "start": 52.44,
+      "end": 52.646,
+      "synthetic": true
+    },
+    {
+      "word": "hora",
+      "start": 52.992,
+      "end": 53.2,
+      "synthetic": true
+    },
+    {
+      "word": "ajudam",
+      "start": 53.548,
+      "end": 53.734,
+      "synthetic": true
+    },
+    {
+      "word": "a",
+      "start": 54.097,
+      "end": 54.302,
+      "synthetic": true
+    },
+    {
+      "word": "humanizar",
+      "start": 54.65,
+      "end": 54.851,
+      "synthetic": true
+    },
+    {
+      "word": "a",
+      "start": 55.202,
+      "end": 55.406,
+      "synthetic": true
+    },
+    {
+      "word": "narrativa",
+      "start": 55.756,
+      "end": 55.946,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 56.309,
+      "end": 56.495,
+      "synthetic": true
+    },
+    {
+      "word": "aproximam",
+      "start": 56.86,
+      "end": 57.055,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 57.413,
+      "end": 57.604,
+      "synthetic": true
+    },
+    {
+      "word": "espectador",
+      "start": 57.963,
+      "end": 58.17,
+      "synthetic": true
+    },
+    {
+      "word": "do",
+      "start": 58.516,
+      "end": 58.72,
+      "synthetic": true
+    },
+    {
+      "word": "cotidiano.",
+      "start": 59.069,
+      "end": 59.268,
+      "synthetic": true
+    },
+    {
+      "word": "Mais",
+      "start": 59.618,
+      "end": 59.839,
+      "synthetic": true
+    },
+    {
+      "word": "à",
+      "start": 60.17,
+      "end": 60.393,
+      "synthetic": true
+    },
+    {
+      "word": "frente,",
+      "start": 60.724,
+      "end": 60.938,
+      "synthetic": true
+    },
+    {
+      "word": "vinho,",
+      "start": 61.274,
+      "end": 61.5,
+      "synthetic": true
+    },
+    {
+      "word": "sobremesas,",
+      "start": 61.832,
+      "end": 62.023,
+      "synthetic": true
+    },
+    {
+      "word": "cafés",
+      "start": 62.379,
+      "end": 62.602,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 62.936,
+      "end": 63.131,
+      "synthetic": true
+    },
+    {
+      "word": "doçaria",
+      "start": 63.486,
+      "end": 63.698,
+      "synthetic": true
+    },
+    {
+      "word": "criam",
+      "start": 64.041,
+      "end": 64.233,
+      "synthetic": true
+    },
+    {
+      "word": "um",
+      "start": 64.588,
+      "end": 64.814,
+      "synthetic": true
+    },
+    {
+      "word": "bloco",
+      "start": 65.147,
+      "end": 65.332,
+      "synthetic": true
+    },
+    {
+      "word": "visual",
+      "start": 65.699,
+      "end": 65.885,
+      "synthetic": true
+    },
+    {
+      "word": "mais",
+      "start": 66.248,
+      "end": 66.452,
+      "synthetic": true
+    },
+    {
+      "word": "específico",
+      "start": 66.803,
+      "end": 66.991,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 67.355,
+      "end": 67.544,
+      "synthetic": true
+    },
+    {
+      "word": "memorável.",
+      "start": 67.905,
+      "end": 68.113,
+      "synthetic": true
+    },
+    {
+      "word": "A",
+      "start": 68.459,
+      "end": 68.654,
+      "synthetic": true
+    },
+    {
+      "word": "ideia",
+      "start": 69.007,
+      "end": 69.231,
+      "synthetic": true
+    },
+    {
+      "word": "deste",
+      "start": 69.565,
+      "end": 69.754,
+      "synthetic": true
+    },
+    {
+      "word": "teste",
+      "start": 70.115,
+      "end": 70.316,
+      "synthetic": true
+    },
+    {
+      "word": "é",
+      "start": 70.665,
+      "end": 70.884,
+      "synthetic": true
+    },
+    {
+      "word": "validar",
+      "start": 71.222,
+      "end": 71.408,
+      "synthetic": true
+    },
+    {
+      "word": "se",
+      "start": 71.774,
+      "end": 71.961,
+      "synthetic": true
+    },
+    {
+      "word": "a",
+      "start": 72.322,
+      "end": 72.542,
+      "synthetic": true
+    },
+    {
+      "word": "timeline",
+      "start": 72.879,
+      "end": 73.064,
+      "synthetic": true
+    },
+    {
+      "word": "acompanha",
+      "start": 73.429,
+      "end": 73.631,
+      "synthetic": true
+    },
+    {
+      "word": "exatamente",
+      "start": 73.982,
+      "end": 74.178,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 74.531,
+      "end": 74.753,
+      "synthetic": true
+    },
+    {
+      "word": "áudio",
+      "start": 75.083,
+      "end": 75.303,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 75.635,
+      "end": 75.86,
+      "synthetic": true
+    },
+    {
+      "word": "evita",
+      "start": 76.189,
+      "end": 76.403,
+      "synthetic": true
+    },
+    {
+      "word": "repetir",
+      "start": 76.74,
+      "end": 76.96,
+      "synthetic": true
+    },
+    {
+      "word": "costa,",
+      "start": 77.293,
+      "end": 77.511,
+      "synthetic": true
+    },
+    {
+      "word": "skyline",
+      "start": 77.85,
+      "end": 78.038,
+      "synthetic": true
+    },
+    {
+      "word": "ou",
+      "start": 78.402,
+      "end": 78.592,
+      "synthetic": true
+    },
+    {
+      "word": "cenas",
+      "start": 78.949,
+      "end": 79.172,
+      "synthetic": true
+    },
+    {
+      "word": "genéricas",
+      "start": 79.507,
+      "end": 79.691,
+      "synthetic": true
+    },
+    {
+      "word": "quando",
+      "start": 80.053,
+      "end": 80.279,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 80.611,
+      "end": 80.8,
+      "synthetic": true
+    },
+    {
+      "word": "texto",
+      "start": 81.163,
+      "end": 81.355,
+      "synthetic": true
+    },
+    {
+      "word": "fala",
+      "start": 81.715,
+      "end": 81.91,
+      "synthetic": true
+    },
+    {
+      "word": "de",
+      "start": 82.263,
+      "end": 82.486,
+      "synthetic": true
+    },
+    {
+      "word": "comida.",
+      "start": 82.82,
+      "end": 83.013,
+      "synthetic": true
+    },
+    {
+      "word": "Se",
+      "start": 83.368,
+      "end": 83.587,
+      "synthetic": true
+    },
+    {
+      "word": "a",
+      "start": 83.921,
+      "end": 84.14,
+      "synthetic": true
+    },
+    {
+      "word": "edição",
+      "start": 84.475,
+      "end": 84.683,
+      "synthetic": true
+    },
+    {
+      "word": "respeitar",
+      "start": 85.029,
+      "end": 85.225,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 85.578,
+      "end": 85.797,
+      "synthetic": true
+    },
+    {
+      "word": "tempo",
+      "start": 86.135,
+      "end": 86.319,
+      "synthetic": true
+    },
+    {
+      "word": "da",
+      "start": 86.682,
+      "end": 86.901,
+      "synthetic": true
+    },
+    {
+      "word": "fala",
+      "start": 87.235,
+      "end": 87.453,
+      "synthetic": true
+    },
+    {
+      "word": "e",
+      "start": 87.788,
+      "end": 88.001,
+      "synthetic": true
+    },
+    {
+      "word": "a",
+      "start": 88.338,
+      "end": 88.564,
+      "synthetic": true
+    },
+    {
+      "word": "ordem",
+      "start": 88.892,
+      "end": 89.109,
+      "synthetic": true
+    },
+    {
+      "word": "dos",
+      "start": 89.447,
+      "end": 89.645,
+      "synthetic": true
+    },
+    {
+      "word": "blocos,",
+      "start": 90,
+      "end": 90.194,
+      "synthetic": true
+    },
+    {
+      "word": "o",
+      "start": 90.551,
+      "end": 90.756,
+      "synthetic": true
+    },
+    {
+      "word": "resultado",
+      "start": 91.105,
+      "end": 91.295,
+      "synthetic": true
+    },
+    {
+      "word": "final",
+      "start": 91.655,
+      "end": 91.863,
+      "synthetic": true
+    },
+    {
+      "word": "deve",
+      "start": 92.208,
+      "end": 92.411,
+      "synthetic": true
+    },
+    {
+      "word": "parecer",
+      "start": 92.76,
+      "end": 92.962,
+      "synthetic": true
+    },
+    {
+      "word": "muito",
+      "start": 93.315,
+      "end": 93.503,
+      "synthetic": true
+    },
+    {
+      "word": "mais",
+      "start": 93.867,
+      "end": 94.057,
+      "synthetic": true
+    },
+    {
+      "word": "humano.",
+      "start": 94.419,
+      "end": 94.61,
+      "synthetic": true
+    }
+  ],
+  "segments": [
+    {
+      "text": "Portugal é um país que funciona muito bem quando o roteiro segue comida, cidade e atmosfera no tempo certo da narração. A",
+      "start": 0,
+      "end": 11.773,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "Portugal",
+          "start": 0,
+          "end": 0.201,
+          "synthetic": true
+        },
+        {
+          "word": "é",
+          "start": 0.524,
+          "end": 0.714,
+          "synthetic": true
+        },
+        {
+          "word": "um",
+          "start": 1.074,
+          "end": 1.276,
+          "synthetic": true
+        },
+        {
+          "word": "país",
+          "start": 1.626,
+          "end": 1.835,
+          "synthetic": true
+        },
+        {
+          "word": "que",
+          "start": 2.177,
+          "end": 2.392,
+          "synthetic": true
+        },
+        {
+          "word": "funciona",
+          "start": 2.733,
+          "end": 2.926,
+          "synthetic": true
+        },
+        {
+          "word": "muito",
+          "start": 3.283,
+          "end": 3.49,
+          "synthetic": true
+        },
+        {
+          "word": "bem",
+          "start": 3.833,
+          "end": 4.054,
+          "synthetic": true
+        },
+        {
+          "word": "quando",
+          "start": 4.386,
+          "end": 4.604,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 4.943,
+          "end": 5.132,
+          "synthetic": true
+        },
+        {
+          "word": "roteiro",
+          "start": 5.49,
+          "end": 5.713,
+          "synthetic": true
+        },
+        {
+          "word": "segue",
+          "start": 6.047,
+          "end": 6.238,
+          "synthetic": true
+        },
+        {
+          "word": "comida,",
+          "start": 6.595,
+          "end": 6.813,
+          "synthetic": true
+        },
+        {
+          "word": "cidade",
+          "start": 7.147,
+          "end": 7.371,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 7.701,
+          "end": 7.913,
+          "synthetic": true
+        },
+        {
+          "word": "atmosfera",
+          "start": 8.255,
+          "end": 8.454,
+          "synthetic": true
+        },
+        {
+          "word": "no",
+          "start": 8.81,
+          "end": 8.994,
+          "synthetic": true
+        },
+        {
+          "word": "tempo",
+          "start": 9.362,
+          "end": 9.547,
+          "synthetic": true
+        },
+        {
+          "word": "certo",
+          "start": 9.911,
+          "end": 10.115,
+          "synthetic": true
+        },
+        {
+          "word": "da",
+          "start": 10.462,
+          "end": 10.676,
+          "synthetic": true
+        },
+        {
+          "word": "narração.",
+          "start": 11.013,
+          "end": 11.236,
+          "synthetic": true
+        },
+        {
+          "word": "A",
+          "start": 11.568,
+          "end": 11.773,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "abertura precisa vender essa promessa com imagens que pareçam uma viagem de sabores, não uma sequência aleatória de paisagens. Lisboa entra primeiro",
+      "start": 12.122,
+      "end": 23.917,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "abertura",
+          "start": 12.122,
+          "end": 12.319,
+          "synthetic": true
+        },
+        {
+          "word": "precisa",
+          "start": 12.67,
+          "end": 12.892,
+          "synthetic": true
+        },
+        {
+          "word": "vender",
+          "start": 13.226,
+          "end": 13.422,
+          "synthetic": true
+        },
+        {
+          "word": "essa",
+          "start": 13.778,
+          "end": 13.979,
+          "synthetic": true
+        },
+        {
+          "word": "promessa",
+          "start": 14.328,
+          "end": 14.547,
+          "synthetic": true
+        },
+        {
+          "word": "com",
+          "start": 14.885,
+          "end": 15.069,
+          "synthetic": true
+        },
+        {
+          "word": "imagens",
+          "start": 15.432,
+          "end": 15.653,
+          "synthetic": true
+        },
+        {
+          "word": "que",
+          "start": 15.985,
+          "end": 16.199,
+          "synthetic": true
+        },
+        {
+          "word": "pareçam",
+          "start": 16.539,
+          "end": 16.745,
+          "synthetic": true
+        },
+        {
+          "word": "uma",
+          "start": 17.092,
+          "end": 17.29,
+          "synthetic": true
+        },
+        {
+          "word": "viagem",
+          "start": 17.643,
+          "end": 17.852,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 18.193,
+          "end": 18.416,
+          "synthetic": true
+        },
+        {
+          "word": "sabores,",
+          "start": 18.751,
+          "end": 18.936,
+          "synthetic": true
+        },
+        {
+          "word": "não",
+          "start": 19.301,
+          "end": 19.504,
+          "synthetic": true
+        },
+        {
+          "word": "uma",
+          "start": 19.853,
+          "end": 20.059,
+          "synthetic": true
+        },
+        {
+          "word": "sequência",
+          "start": 20.405,
+          "end": 20.612,
+          "synthetic": true
+        },
+        {
+          "word": "aleatória",
+          "start": 20.959,
+          "end": 21.157,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 21.507,
+          "end": 21.729,
+          "synthetic": true
+        },
+        {
+          "word": "paisagens.",
+          "start": 22.061,
+          "end": 22.277,
+          "synthetic": true
+        },
+        {
+          "word": "Lisboa",
+          "start": 22.616,
+          "end": 22.812,
+          "synthetic": true
+        },
+        {
+          "word": "entra",
+          "start": 23.165,
+          "end": 23.384,
+          "synthetic": true
+        },
+        {
+          "word": "primeiro",
+          "start": 23.72,
+          "end": 23.917,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "com cafés históricos, vitrines de pastelaria, mercados e cenas de rua onde a comida aparece como parte da cidade. Depois o Porto",
+      "start": 24.273,
+      "end": 36.067,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "com",
+          "start": 24.273,
+          "end": 24.471,
+          "synthetic": true
+        },
+        {
+          "word": "cafés",
+          "start": 24.822,
+          "end": 25.04,
+          "synthetic": true
+        },
+        {
+          "word": "históricos,",
+          "start": 25.378,
+          "end": 25.574,
+          "synthetic": true
+        },
+        {
+          "word": "vitrines",
+          "start": 25.929,
+          "end": 26.132,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 26.48,
+          "end": 26.692,
+          "synthetic": true
+        },
+        {
+          "word": "pastelaria,",
+          "start": 27.03,
+          "end": 27.256,
+          "synthetic": true
+        },
+        {
+          "word": "mercados",
+          "start": 27.587,
+          "end": 27.782,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 28.137,
+          "end": 28.35,
+          "synthetic": true
+        },
+        {
+          "word": "cenas",
+          "start": 28.689,
+          "end": 28.903,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 29.241,
+          "end": 29.454,
+          "synthetic": true
+        },
+        {
+          "word": "rua",
+          "start": 29.792,
+          "end": 30.017,
+          "synthetic": true
+        },
+        {
+          "word": "onde",
+          "start": 30.344,
+          "end": 30.569,
+          "synthetic": true
+        },
+        {
+          "word": "a",
+          "start": 30.898,
+          "end": 31.11,
+          "synthetic": true
+        },
+        {
+          "word": "comida",
+          "start": 31.452,
+          "end": 31.655,
+          "synthetic": true
+        },
+        {
+          "word": "aparece",
+          "start": 32.004,
+          "end": 32.208,
+          "synthetic": true
+        },
+        {
+          "word": "como",
+          "start": 32.554,
+          "end": 32.775,
+          "synthetic": true
+        },
+        {
+          "word": "parte",
+          "start": 33.11,
+          "end": 33.309,
+          "synthetic": true
+        },
+        {
+          "word": "da",
+          "start": 33.66,
+          "end": 33.87,
+          "synthetic": true
+        },
+        {
+          "word": "cidade.",
+          "start": 34.215,
+          "end": 34.412,
+          "synthetic": true
+        },
+        {
+          "word": "Depois",
+          "start": 34.767,
+          "end": 34.966,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 35.319,
+          "end": 35.518,
+          "synthetic": true
+        },
+        {
+          "word": "Porto",
+          "start": 35.872,
+          "end": 36.067,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "muda a energia com caves, vinho do Porto, restaurantes perto do Douro e planos mais densos de gastronomia local. No meio do",
+      "start": 36.423,
+      "end": 48.232,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "muda",
+          "start": 36.423,
+          "end": 36.625,
+          "synthetic": true
+        },
+        {
+          "word": "a",
+          "start": 36.974,
+          "end": 37.185,
+          "synthetic": true
+        },
+        {
+          "word": "energia",
+          "start": 37.524,
+          "end": 37.75,
+          "synthetic": true
+        },
+        {
+          "word": "com",
+          "start": 38.078,
+          "end": 38.294,
+          "synthetic": true
+        },
+        {
+          "word": "caves,",
+          "start": 38.629,
+          "end": 38.855,
+          "synthetic": true
+        },
+        {
+          "word": "vinho",
+          "start": 39.187,
+          "end": 39.373,
+          "synthetic": true
+        },
+        {
+          "word": "do",
+          "start": 39.738,
+          "end": 39.936,
+          "synthetic": true
+        },
+        {
+          "word": "Porto,",
+          "start": 40.288,
+          "end": 40.501,
+          "synthetic": true
+        },
+        {
+          "word": "restaurantes",
+          "start": 40.844,
+          "end": 41.029,
+          "synthetic": true
+        },
+        {
+          "word": "perto",
+          "start": 41.391,
+          "end": 41.612,
+          "synthetic": true
+        },
+        {
+          "word": "do",
+          "start": 41.948,
+          "end": 42.142,
+          "synthetic": true
+        },
+        {
+          "word": "Douro",
+          "start": 42.498,
+          "end": 42.703,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 43.052,
+          "end": 43.246,
+          "synthetic": true
+        },
+        {
+          "word": "planos",
+          "start": 43.605,
+          "end": 43.798,
+          "synthetic": true
+        },
+        {
+          "word": "mais",
+          "start": 44.158,
+          "end": 44.347,
+          "synthetic": true
+        },
+        {
+          "word": "densos",
+          "start": 44.709,
+          "end": 44.906,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 45.261,
+          "end": 45.461,
+          "synthetic": true
+        },
+        {
+          "word": "gastronomia",
+          "start": 45.813,
+          "end": 46.01,
+          "synthetic": true
+        },
+        {
+          "word": "local.",
+          "start": 46.367,
+          "end": 46.557,
+          "synthetic": true
+        },
+        {
+          "word": "No",
+          "start": 46.919,
+          "end": 47.11,
+          "synthetic": true
+        },
+        {
+          "word": "meio",
+          "start": 47.468,
+          "end": 47.684,
+          "synthetic": true
+        },
+        {
+          "word": "do",
+          "start": 48.021,
+          "end": 48.232,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "vídeo, os mercados e os pratos servidos na hora ajudam a humanizar a narrativa e aproximam o espectador do cotidiano. Mais à",
+      "start": 48.571,
+      "end": 60.393,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "vídeo,",
+          "start": 48.571,
+          "end": 48.794,
+          "synthetic": true
+        },
+        {
+          "word": "os",
+          "start": 49.127,
+          "end": 49.325,
+          "synthetic": true
+        },
+        {
+          "word": "mercados",
+          "start": 49.678,
+          "end": 49.886,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 50.232,
+          "end": 50.427,
+          "synthetic": true
+        },
+        {
+          "word": "os",
+          "start": 50.782,
+          "end": 50.994,
+          "synthetic": true
+        },
+        {
+          "word": "pratos",
+          "start": 51.334,
+          "end": 51.547,
+          "synthetic": true
+        },
+        {
+          "word": "servidos",
+          "start": 51.886,
+          "end": 52.105,
+          "synthetic": true
+        },
+        {
+          "word": "na",
+          "start": 52.44,
+          "end": 52.646,
+          "synthetic": true
+        },
+        {
+          "word": "hora",
+          "start": 52.992,
+          "end": 53.2,
+          "synthetic": true
+        },
+        {
+          "word": "ajudam",
+          "start": 53.548,
+          "end": 53.734,
+          "synthetic": true
+        },
+        {
+          "word": "a",
+          "start": 54.097,
+          "end": 54.302,
+          "synthetic": true
+        },
+        {
+          "word": "humanizar",
+          "start": 54.65,
+          "end": 54.851,
+          "synthetic": true
+        },
+        {
+          "word": "a",
+          "start": 55.202,
+          "end": 55.406,
+          "synthetic": true
+        },
+        {
+          "word": "narrativa",
+          "start": 55.756,
+          "end": 55.946,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 56.309,
+          "end": 56.495,
+          "synthetic": true
+        },
+        {
+          "word": "aproximam",
+          "start": 56.86,
+          "end": 57.055,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 57.413,
+          "end": 57.604,
+          "synthetic": true
+        },
+        {
+          "word": "espectador",
+          "start": 57.963,
+          "end": 58.17,
+          "synthetic": true
+        },
+        {
+          "word": "do",
+          "start": 58.516,
+          "end": 58.72,
+          "synthetic": true
+        },
+        {
+          "word": "cotidiano.",
+          "start": 59.069,
+          "end": 59.268,
+          "synthetic": true
+        },
+        {
+          "word": "Mais",
+          "start": 59.618,
+          "end": 59.839,
+          "synthetic": true
+        },
+        {
+          "word": "à",
+          "start": 60.17,
+          "end": 60.393,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "frente, vinho, sobremesas, cafés e doçaria criam um bloco visual mais específico e memorável. A ideia deste teste é validar se a",
+      "start": 60.724,
+      "end": 72.542,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "frente,",
+          "start": 60.724,
+          "end": 60.938,
+          "synthetic": true
+        },
+        {
+          "word": "vinho,",
+          "start": 61.274,
+          "end": 61.5,
+          "synthetic": true
+        },
+        {
+          "word": "sobremesas,",
+          "start": 61.832,
+          "end": 62.023,
+          "synthetic": true
+        },
+        {
+          "word": "cafés",
+          "start": 62.379,
+          "end": 62.602,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 62.936,
+          "end": 63.131,
+          "synthetic": true
+        },
+        {
+          "word": "doçaria",
+          "start": 63.486,
+          "end": 63.698,
+          "synthetic": true
+        },
+        {
+          "word": "criam",
+          "start": 64.041,
+          "end": 64.233,
+          "synthetic": true
+        },
+        {
+          "word": "um",
+          "start": 64.588,
+          "end": 64.814,
+          "synthetic": true
+        },
+        {
+          "word": "bloco",
+          "start": 65.147,
+          "end": 65.332,
+          "synthetic": true
+        },
+        {
+          "word": "visual",
+          "start": 65.699,
+          "end": 65.885,
+          "synthetic": true
+        },
+        {
+          "word": "mais",
+          "start": 66.248,
+          "end": 66.452,
+          "synthetic": true
+        },
+        {
+          "word": "específico",
+          "start": 66.803,
+          "end": 66.991,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 67.355,
+          "end": 67.544,
+          "synthetic": true
+        },
+        {
+          "word": "memorável.",
+          "start": 67.905,
+          "end": 68.113,
+          "synthetic": true
+        },
+        {
+          "word": "A",
+          "start": 68.459,
+          "end": 68.654,
+          "synthetic": true
+        },
+        {
+          "word": "ideia",
+          "start": 69.007,
+          "end": 69.231,
+          "synthetic": true
+        },
+        {
+          "word": "deste",
+          "start": 69.565,
+          "end": 69.754,
+          "synthetic": true
+        },
+        {
+          "word": "teste",
+          "start": 70.115,
+          "end": 70.316,
+          "synthetic": true
+        },
+        {
+          "word": "é",
+          "start": 70.665,
+          "end": 70.884,
+          "synthetic": true
+        },
+        {
+          "word": "validar",
+          "start": 71.222,
+          "end": 71.408,
+          "synthetic": true
+        },
+        {
+          "word": "se",
+          "start": 71.774,
+          "end": 71.961,
+          "synthetic": true
+        },
+        {
+          "word": "a",
+          "start": 72.322,
+          "end": 72.542,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "timeline acompanha exatamente o áudio e evita repetir costa, skyline ou cenas genéricas quando o texto fala de comida. Se a edição",
+      "start": 72.879,
+      "end": 84.683,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "timeline",
+          "start": 72.879,
+          "end": 73.064,
+          "synthetic": true
+        },
+        {
+          "word": "acompanha",
+          "start": 73.429,
+          "end": 73.631,
+          "synthetic": true
+        },
+        {
+          "word": "exatamente",
+          "start": 73.982,
+          "end": 74.178,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 74.531,
+          "end": 74.753,
+          "synthetic": true
+        },
+        {
+          "word": "áudio",
+          "start": 75.083,
+          "end": 75.303,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 75.635,
+          "end": 75.86,
+          "synthetic": true
+        },
+        {
+          "word": "evita",
+          "start": 76.189,
+          "end": 76.403,
+          "synthetic": true
+        },
+        {
+          "word": "repetir",
+          "start": 76.74,
+          "end": 76.96,
+          "synthetic": true
+        },
+        {
+          "word": "costa,",
+          "start": 77.293,
+          "end": 77.511,
+          "synthetic": true
+        },
+        {
+          "word": "skyline",
+          "start": 77.85,
+          "end": 78.038,
+          "synthetic": true
+        },
+        {
+          "word": "ou",
+          "start": 78.402,
+          "end": 78.592,
+          "synthetic": true
+        },
+        {
+          "word": "cenas",
+          "start": 78.949,
+          "end": 79.172,
+          "synthetic": true
+        },
+        {
+          "word": "genéricas",
+          "start": 79.507,
+          "end": 79.691,
+          "synthetic": true
+        },
+        {
+          "word": "quando",
+          "start": 80.053,
+          "end": 80.279,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 80.611,
+          "end": 80.8,
+          "synthetic": true
+        },
+        {
+          "word": "texto",
+          "start": 81.163,
+          "end": 81.355,
+          "synthetic": true
+        },
+        {
+          "word": "fala",
+          "start": 81.715,
+          "end": 81.91,
+          "synthetic": true
+        },
+        {
+          "word": "de",
+          "start": 82.263,
+          "end": 82.486,
+          "synthetic": true
+        },
+        {
+          "word": "comida.",
+          "start": 82.82,
+          "end": 83.013,
+          "synthetic": true
+        },
+        {
+          "word": "Se",
+          "start": 83.368,
+          "end": 83.587,
+          "synthetic": true
+        },
+        {
+          "word": "a",
+          "start": 83.921,
+          "end": 84.14,
+          "synthetic": true
+        },
+        {
+          "word": "edição",
+          "start": 84.475,
+          "end": 84.683,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "text": "respeitar o tempo da fala e a ordem dos blocos, o resultado final deve parecer muito mais humano.",
+      "start": 85.029,
+      "end": 94.61,
+      "confidence": 0.5,
+      "words": [
+        {
+          "word": "respeitar",
+          "start": 85.029,
+          "end": 85.225,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 85.578,
+          "end": 85.797,
+          "synthetic": true
+        },
+        {
+          "word": "tempo",
+          "start": 86.135,
+          "end": 86.319,
+          "synthetic": true
+        },
+        {
+          "word": "da",
+          "start": 86.682,
+          "end": 86.901,
+          "synthetic": true
+        },
+        {
+          "word": "fala",
+          "start": 87.235,
+          "end": 87.453,
+          "synthetic": true
+        },
+        {
+          "word": "e",
+          "start": 87.788,
+          "end": 88.001,
+          "synthetic": true
+        },
+        {
+          "word": "a",
+          "start": 88.338,
+          "end": 88.564,
+          "synthetic": true
+        },
+        {
+          "word": "ordem",
+          "start": 88.892,
+          "end": 89.109,
+          "synthetic": true
+        },
+        {
+          "word": "dos",
+          "start": 89.447,
+          "end": 89.645,
+          "synthetic": true
+        },
+        {
+          "word": "blocos,",
+          "start": 90,
+          "end": 90.194,
+          "synthetic": true
+        },
+        {
+          "word": "o",
+          "start": 90.551,
+          "end": 90.756,
+          "synthetic": true
+        },
+        {
+          "word": "resultado",
+          "start": 91.105,
+          "end": 91.295,
+          "synthetic": true
+        },
+        {
+          "word": "final",
+          "start": 91.655,
+          "end": 91.863,
+          "synthetic": true
+        },
+        {
+          "word": "deve",
+          "start": 92.208,
+          "end": 92.411,
+          "synthetic": true
+        },
+        {
+          "word": "parecer",
+          "start": 92.76,
+          "end": 92.962,
+          "synthetic": true
+        },
+        {
+          "word": "muito",
+          "start": 93.315,
+          "end": 93.503,
+          "synthetic": true
+        },
+        {
+          "word": "mais",
+          "start": 93.867,
+          "end": 94.057,
+          "synthetic": true
+        },
+        {
+          "word": "humano.",
+          "start": 94.419,
+          "end": 94.61,
+          "synthetic": true
+        }
+      ]
+    }
+  ],
+  "pause_markers": [
+    {
+      "start": 11.236,
+      "end": 11.536000000000001,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 22.277,
+      "end": 22.577,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 34.412,
+      "end": 34.711999999999996,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 46.557,
+      "end": 46.857,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 59.268,
+      "end": 59.568,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 68.113,
+      "end": 68.413,
+      "duration": 0.3,
+      "type": "sentence_break"
+    },
+    {
+      "start": 83.013,
+      "end": 83.313,
+      "duration": 0.3,
+      "type": "sentence_break"
+    }
+  ],
+  "speaking_rate": {
+    "average_wps": 1.81,
+    "total_duration_seconds": 95,
+    "total_words": 172,
+    "total_segments": 8
+  },
+  "scene_boundaries": [
+    {
+      "scene_index": 1,
+      "title": "Portugal em sabores",
+      "narration_excerpt": "Portugal abre o roteiro com uma promessa simples: viajar pelo país através dos mercados, cafés, pratos e vinhos.",
+      "keywords": [
+        "portugal food travel",
+        "portugal market",
+        "travel overview",
+        "portugal cafe",
+        "food journey"
+      ],
+      "target_duration_seconds": 8,
+      "block_id": "introducao",
+      "block_index": 1,
+      "block_label": "Introducao",
+      "block_type": "general",
+      "block_keywords": [
+        "portugal food travel",
+        "portugal market",
+        "travel overview",
+        "portugal cafe",
+        "food journey",
+        "praia",
+        "portugal",
+        "sabores",
+        "abre",
+        "roteiro",
+        "promessa",
+        "simples"
+      ],
+      "negative_keywords": [
+        "Lisboa",
+        "lisboa",
+        "lisbon",
+        "Porto",
+        "porto",
+        "oporto"
+      ],
+      "overlay_title": "1. Introducao",
+      "visual_requirements": [
+        "establishing_shot",
+        "portugal food travel",
+        "portugal market",
+        "travel overview"
+      ],
+      "narrative_function": "hook",
+      "generic_tolerance": "low",
+      "requires_visual_proof": true,
+      "slot_criticality": "high",
+      "probable_shot_role": "hook_exact",
+      "role": "intro",
+      "scene_order": 1,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "beach",
+      "visual_intent": "gastronomy",
+      "visual_intent_source": "gastronomy",
+      "required_visual_evidence": [
+        "food",
+        "plate",
+        "market",
+        "restaurant",
+        "people eating"
+      ],
+      "allowed_visual_categories": [
+        "food",
+        "local_food",
+        "market",
+        "wine",
+        "pastry",
+        "restaurant",
+        "cafe",
+        "street_food",
+        "people_eating"
+      ],
+      "forbidden_visual_categories": [
+        "skyline",
+        "bridge",
+        "river",
+        "clouds",
+        "generic_street",
+        "coast",
+        "landscape"
+      ],
+      "generic_asset_allowed": true,
+      "generic_asset_allowed_reason": "establishing_shot",
+      "max_generic_establishing_seconds": 3,
+      "hard_boundary": true,
+      "boundary_id": "hb_001_introducao",
+      "transition_type": "hard",
+      "expected_location": "",
+      "expected_visual_start_sec": 0,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 0,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Introducao",
+        "query_hint": "Introducao praia intro"
+      },
+      "audio_start_seconds": 0,
+      "audio_end_seconds": 31.655,
+      "audio_span_seconds": 31.655,
+      "boundary_confidence": 0.85,
+      "anchor_word": "Portugal"
+    },
+    {
+      "scene_index": 2,
+      "title": "Lisboa gastronómica",
+      "narration_excerpt": "Em Lisboa, confeitarias, cafés históricos e mercados dão o tom da primeira grande parada do vídeo.",
+      "keywords": [
+        "lisbon food market",
+        "lisbon pastry",
+        "lisbon cafe",
+        "portugal bakery",
+        "lisbon street food"
+      ],
+      "target_duration_seconds": 8,
+      "block_id": "lisboa",
+      "block_index": 2,
+      "block_label": "Lisboa",
+      "block_type": "city",
+      "block_keywords": [
+        "lisbon food market",
+        "lisbon pastry",
+        "lisbon cafe",
+        "portugal bakery",
+        "lisbon street food",
+        "Lisboa",
+        "praia",
+        "lisboa",
+        "gastronomica",
+        "confeitarias",
+        "cafes",
+        "historicos"
+      ],
+      "negative_keywords": [
+        "Porto",
+        "porto",
+        "oporto"
+      ],
+      "overlay_title": "2. Lisboa",
+      "visual_requirements": [
+        "location_specific",
+        "lisbon food market",
+        "lisbon pastry",
+        "lisbon cafe"
+      ],
+      "narrative_function": "detail",
+      "generic_tolerance": "medium",
+      "requires_visual_proof": false,
+      "slot_criticality": "medium",
+      "probable_shot_role": "proof_exact",
+      "role": "body",
+      "scene_order": 2,
+      "location": {
+        "city": "Lisboa",
+        "country": "Portugal",
+        "confidence": 0.9,
+        "matched_alias": "lisboa",
+        "source": "alias"
+      },
+      "landmarks": [],
+      "subtheme": "beach",
+      "visual_intent": "gastronomy",
+      "visual_intent_source": "gastronomy",
+      "required_visual_evidence": [
+        "food",
+        "plate",
+        "market",
+        "restaurant",
+        "people eating"
+      ],
+      "allowed_visual_categories": [
+        "food",
+        "local_food",
+        "market",
+        "wine",
+        "pastry",
+        "restaurant",
+        "cafe",
+        "street_food",
+        "people_eating"
+      ],
+      "forbidden_visual_categories": [
+        "skyline",
+        "aerial_city",
+        "bridge",
+        "river",
+        "clouds",
+        "generic_street",
+        "coast",
+        "landscape"
+      ],
+      "generic_asset_allowed": false,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 0,
+      "hard_boundary": true,
+      "boundary_id": "hb_002_lisboa",
+      "transition_type": "hard",
+      "expected_location": "Lisboa",
+      "expected_visual_start_sec": 15.833,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 15.833,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Lisboa",
+        "query_hint": "Lisboa praia intro"
+      },
+      "audio_start_seconds": 33.66,
+      "audio_end_seconds": 63.034,
+      "audio_span_seconds": 29.374,
+      "boundary_confidence": 0.85,
+      "anchor_word": "da"
+    },
+    {
+      "scene_index": 3,
+      "title": "Porto gastronómico",
+      "narration_excerpt": "No Porto, a narrativa muda para caves, vinho do Porto, restaurantes junto ao Douro e comida mais densa.",
+      "keywords": [
+        "porto wine cellar",
+        "porto food market",
+        "porto restaurant",
+        "douro food",
+        "porto gastronomy"
+      ],
+      "target_duration_seconds": 8,
+      "block_id": "porto",
+      "block_index": 3,
+      "block_label": "Porto",
+      "block_type": "city",
+      "block_keywords": [
+        "porto wine cellar",
+        "porto food market",
+        "porto restaurant",
+        "douro food",
+        "porto gastronomy",
+        "Porto",
+        "rio e margem",
+        "porto",
+        "gastronomico",
+        "narrativa",
+        "muda",
+        "caves"
+      ],
+      "negative_keywords": [
+        "Lisboa",
+        "lisboa",
+        "lisbon"
+      ],
+      "overlay_title": "3. Porto",
+      "visual_requirements": [
+        "location_specific",
+        "waterfront",
+        "boats",
+        "wide_city_view",
+        "porto wine cellar",
+        "porto food market",
+        "porto restaurant"
+      ],
+      "narrative_function": "detail",
+      "generic_tolerance": "medium",
+      "requires_visual_proof": false,
+      "slot_criticality": "medium",
+      "probable_shot_role": "proof_exact",
+      "role": "body",
+      "scene_order": 3,
+      "location": {
+        "city": "Porto",
+        "country": "Portugal",
+        "confidence": 0.86,
+        "matched_alias": "Douro",
+        "source": "landmark_city_hint"
+      },
+      "landmarks": [
+        {
+          "name": "Rio Douro",
+          "city": "Porto",
+          "confidence": 0.82,
+          "source": "alias"
+        }
+      ],
+      "subtheme": "riverfront",
+      "visual_intent": "gastronomy",
+      "visual_intent_source": "gastronomy",
+      "required_visual_evidence": [
+        "food",
+        "plate",
+        "market",
+        "restaurant",
+        "people eating"
+      ],
+      "allowed_visual_categories": [
+        "food",
+        "local_food",
+        "market",
+        "wine",
+        "pastry",
+        "restaurant",
+        "cafe",
+        "street_food",
+        "people_eating"
+      ],
+      "forbidden_visual_categories": [
+        "skyline",
+        "aerial_city",
+        "bridge",
+        "river",
+        "clouds",
+        "generic_street",
+        "coast",
+        "landscape"
+      ],
+      "generic_asset_allowed": false,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 0,
+      "hard_boundary": true,
+      "boundary_id": "hb_003_porto",
+      "transition_type": "hard",
+      "expected_location": "Porto",
+      "expected_visual_start_sec": 31.667,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 31.667,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Porto",
+        "query_hint": "Porto rio e margem intro"
+      },
+      "audio_start_seconds": 63.034,
+      "audio_end_seconds": 94.057,
+      "audio_span_seconds": 31.023,
+      "boundary_confidence": 0.85,
+      "anchor_word": "e"
+    },
+    {
+      "scene_index": 4,
+      "title": "Mercados e comida local",
+      "narration_excerpt": "Mercados, bancas, pratos servidos na hora e cenas de rua humanizam a montagem e trazem textura ao roteiro.",
+      "keywords": [
+        "portugal food market",
+        "street market food",
+        "local dishes",
+        "food hall portugal",
+        "market people"
+      ],
+      "target_duration_seconds": 8,
+      "block_id": "portugal-gastronomico-lisboa-porto-mercados-e-vinhos",
+      "block_index": 4,
+      "block_label": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "block_type": "general",
+      "block_keywords": [
+        "portugal food market",
+        "street market food",
+        "local dishes",
+        "food hall portugal",
+        "market people",
+        "praia",
+        "mercados",
+        "comida",
+        "bancas",
+        "pratos",
+        "servidos",
+        "hora"
+      ],
+      "negative_keywords": [
+        "Lisboa",
+        "lisboa",
+        "lisbon",
+        "Porto",
+        "porto",
+        "oporto"
+      ],
+      "overlay_title": "4. Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "visual_requirements": [
+        "portugal food market",
+        "street market food",
+        "local dishes"
+      ],
+      "narrative_function": "detail",
+      "generic_tolerance": "medium",
+      "requires_visual_proof": false,
+      "slot_criticality": "medium",
+      "probable_shot_role": "proof_exact",
+      "role": "body",
+      "scene_order": 4,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "beach",
+      "visual_intent": "gastronomy",
+      "visual_intent_source": "gastronomy",
+      "required_visual_evidence": [
+        "food",
+        "plate",
+        "market",
+        "restaurant",
+        "people eating"
+      ],
+      "allowed_visual_categories": [
+        "food",
+        "local_food",
+        "market",
+        "wine",
+        "pastry",
+        "restaurant",
+        "cafe",
+        "street_food",
+        "people_eating"
+      ],
+      "forbidden_visual_categories": [
+        "skyline",
+        "aerial_city",
+        "bridge",
+        "river",
+        "clouds",
+        "generic_street",
+        "coast",
+        "landscape"
+      ],
+      "generic_asset_allowed": false,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 0,
+      "hard_boundary": true,
+      "boundary_id": "hb_004_portugal-gastronomico-lisboa-porto-mercados-e-vinhos",
+      "transition_type": "hard",
+      "expected_location": "",
+      "expected_visual_start_sec": 47.5,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 47.5,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+        "query_hint": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos praia intro"
+      },
+      "audio_start_seconds": 94.419,
+      "audio_end_seconds": 63.333,
+      "audio_span_seconds": -31.086,
+      "boundary_confidence": 0.3,
+      "anchor_word": ""
+    },
+    {
+      "scene_index": 5,
+      "title": "Vinhos e doçaria",
+      "narration_excerpt": "Vinho, pastelaria, sobremesas e cafés fecham a viagem com um bloco visual mais específico e memorável.",
+      "keywords": [
+        "portugal wine tasting",
+        "portugal pastry",
+        "bakery dessert",
+        "cafe dessert",
+        "sweet food portugal"
+      ],
+      "target_duration_seconds": 8,
+      "block_id": "portugal-gastronomico-lisboa-porto-mercados-e-vinhos",
+      "block_index": 4,
+      "block_label": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "block_type": "general",
+      "block_keywords": [
+        "portugal wine tasting",
+        "portugal pastry",
+        "bakery dessert",
+        "cafe dessert",
+        "sweet food portugal",
+        "gastronomia",
+        "vinhos",
+        "docaria",
+        "vinho",
+        "pastelaria",
+        "sobremesas",
+        "cafes"
+      ],
+      "negative_keywords": [
+        "Lisboa",
+        "lisboa",
+        "lisbon",
+        "Porto",
+        "porto",
+        "oporto"
+      ],
+      "overlay_title": "4. Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+      "visual_requirements": [
+        "food_closeups",
+        "market_life",
+        "people_eating",
+        "portugal wine tasting",
+        "portugal pastry",
+        "bakery dessert"
+      ],
+      "narrative_function": "detail",
+      "generic_tolerance": "medium",
+      "requires_visual_proof": false,
+      "slot_criticality": "medium",
+      "probable_shot_role": "proof_exact",
+      "role": "body",
+      "scene_order": 5,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "food",
+      "visual_intent": "gastronomy",
+      "visual_intent_source": "gastronomy",
+      "required_visual_evidence": [
+        "food",
+        "plate",
+        "market",
+        "restaurant",
+        "people eating"
+      ],
+      "allowed_visual_categories": [
+        "food",
+        "local_food",
+        "market",
+        "wine",
+        "pastry",
+        "restaurant",
+        "cafe",
+        "street_food",
+        "people_eating"
+      ],
+      "forbidden_visual_categories": [
+        "skyline",
+        "aerial_city",
+        "bridge",
+        "river",
+        "clouds",
+        "generic_street",
+        "coast",
+        "landscape"
+      ],
+      "generic_asset_allowed": false,
+      "generic_asset_allowed_reason": "",
+      "max_generic_establishing_seconds": 0,
+      "hard_boundary": false,
+      "boundary_id": "",
+      "transition_type": "soft",
+      "expected_location": "",
+      "expected_visual_start_sec": 63.333,
+      "chapter_trigger": null,
+      "chapter_card_required": false,
+      "block_intro_asset": null,
+      "audio_start_seconds": 63.333,
+      "audio_end_seconds": 79.167,
+      "audio_span_seconds": 15.833,
+      "boundary_confidence": 0.3,
+      "anchor_word": ""
+    },
+    {
+      "scene_index": 6,
+      "title": "Fechamento",
+      "narration_excerpt": "No final, o vídeo resume por que Portugal funciona tão bem quando a narrativa segue o ritmo dos sabores e das cidades.",
+      "keywords": [
+        "portugal travel closing",
+        "food montage",
+        "city food summary",
+        "portugal cafe closing",
+        "travel lifestyle"
+      ],
+      "target_duration_seconds": 8,
+      "block_id": "fechamento",
+      "block_index": 5,
+      "block_label": "Fechamento",
+      "block_type": "general",
+      "block_keywords": [
+        "portugal travel closing",
+        "food montage",
+        "city food summary",
+        "portugal cafe closing",
+        "travel lifestyle",
+        "praia",
+        "fechamento",
+        "final",
+        "resume",
+        "portugal",
+        "funciona",
+        "tao"
+      ],
+      "negative_keywords": [
+        "Lisboa",
+        "lisboa",
+        "lisbon",
+        "Porto",
+        "porto",
+        "oporto"
+      ],
+      "overlay_title": "5. Fechamento",
+      "visual_requirements": [
+        "closing_summary",
+        "portugal travel closing",
+        "food montage",
+        "city food summary"
+      ],
+      "narrative_function": "closing",
+      "generic_tolerance": "low",
+      "requires_visual_proof": true,
+      "slot_criticality": "high",
+      "probable_shot_role": "closing_payoff",
+      "role": "outro",
+      "scene_order": 6,
+      "location": {
+        "city": "",
+        "country": "",
+        "confidence": 0,
+        "source": "unknown"
+      },
+      "landmarks": [],
+      "subtheme": "beach",
+      "visual_intent": "gastronomy",
+      "visual_intent_source": "gastronomy",
+      "required_visual_evidence": [
+        "food",
+        "plate",
+        "market",
+        "restaurant",
+        "people eating"
+      ],
+      "allowed_visual_categories": [
+        "food",
+        "local_food",
+        "market",
+        "wine",
+        "pastry",
+        "restaurant",
+        "cafe",
+        "street_food",
+        "people_eating"
+      ],
+      "forbidden_visual_categories": [
+        "skyline",
+        "bridge",
+        "river",
+        "clouds",
+        "generic_street",
+        "coast",
+        "landscape"
+      ],
+      "generic_asset_allowed": true,
+      "generic_asset_allowed_reason": "establishing_shot",
+      "max_generic_establishing_seconds": 3,
+      "hard_boundary": true,
+      "boundary_id": "hb_006_fechamento",
+      "transition_type": "hard",
+      "expected_location": "",
+      "expected_visual_start_sec": 79.167,
+      "chapter_trigger": {
+        "detected": true,
+        "source": "topic_change",
+        "confidence": 0.9,
+        "timestamp_sec": 79.167,
+        "anchor_word": ""
+      },
+      "chapter_card_required": true,
+      "block_intro_asset": {
+        "required": true,
+        "location": "Fechamento",
+        "query_hint": "Fechamento praia intro"
+      },
+      "audio_start_seconds": 79.167,
+      "audio_end_seconds": 95,
+      "audio_span_seconds": 15.833,
+      "boundary_confidence": 0.3,
+      "anchor_word": ""
+    }
+  ],
+  "chapter_triggers": [
+    {
+      "scene_index": 2,
+      "timestamp_sec": 33.66,
+      "anchor_word": "da",
+      "cue_text": "aparece como parte da cidade. Depois o",
+      "cue_detected": true,
+      "confidence": 0.85,
+      "source": "word_level_transition_cue"
+    },
+    {
+      "scene_index": 3,
+      "timestamp_sec": 63.034,
+      "anchor_word": "e",
+      "cue_text": "vinho, sobremesas, cafés e doçaria criam um",
+      "cue_detected": false,
+      "confidence": 0.85,
+      "source": "scene_boundary"
+    },
+    {
+      "scene_index": 4,
+      "timestamp_sec": 94.419,
+      "anchor_word": "humano.",
+      "cue_text": "parecer muito mais humano.",
+      "cue_detected": false,
+      "confidence": 0.55,
+      "source": "scene_boundary"
+    },
+    {
+      "scene_index": 5,
+      "timestamp_sec": 63.333,
+      "anchor_word": "doçaria",
+      "cue_text": "sobremesas, cafés e doçaria criam um bloco",
+      "cue_detected": false,
+      "confidence": 0.55,
+      "source": "scene_boundary"
+    },
+    {
+      "scene_index": 6,
+      "timestamp_sec": 79.167,
+      "anchor_word": "cenas",
+      "cue_text": "costa, skyline ou cenas genéricas quando o",
+      "cue_detected": false,
+      "confidence": 0.55,
+      "source": "scene_boundary"
+    }
+  ]
+}

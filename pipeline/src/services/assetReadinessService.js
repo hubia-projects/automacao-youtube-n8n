@@ -62,6 +62,9 @@ const buildSceneAssetReadiness = ({
     return requiredThemeCategories.some((category) => detectedCategories.includes(String(category || "").toLowerCase()));
   }).length;
   const criticalSlotsMissing = Array.isArray(editorial.critical_slots_missing) ? editorial.critical_slots_missing : [];
+  const blockSlotCoverageMissing = Array.isArray(editorial.block_slot_coverage_missing) ? editorial.block_slot_coverage_missing : [];
+  const editorialBlockingReasons = Array.isArray(editorial.blocking_reasons) ? editorial.blocking_reasons : [];
+  const coverageStatus = String(editorial.coverage_status || "").toLowerCase();
   const requiresVisualProof = Boolean(
     (scene.required_visual_evidence || []).length
     || scene.hard_boundary
@@ -85,6 +88,15 @@ const buildSceneAssetReadiness = ({
   if (requiredThemeCategories.length && FOOD_VISUAL_INTENTS.has(intent) && themeMatchedWindows <= 0) {
     blockingReasons.push("scene_missing_theme_visual_proof");
   }
+  if (blockSlotCoverageMissing.length) {
+    blockingReasons.push("scene_missing_required_content_slots");
+  }
+  if (editorialBlockingReasons.includes("block_coverage_insufficient")) {
+    blockingReasons.push("scene_block_coverage_insufficient");
+  }
+  if (editorialBlockingReasons.includes("block_coverage_partial")) {
+    blockingReasons.push("scene_block_coverage_partial");
+  }
 
   return {
     scene_index: sceneIndex,
@@ -103,6 +115,12 @@ const buildSceneAssetReadiness = ({
     theme_required_categories: requiredThemeCategories,
     theme_matched_windows: themeMatchedWindows,
     critical_slots_missing: criticalSlotsMissing,
+    block_slot_coverage_missing: blockSlotCoverageMissing,
+    coverage_status: coverageStatus || "unknown",
+    coverage_missing_slots: Array.isArray(editorial.coverage_missing_slots) ? editorial.coverage_missing_slots : [],
+    coverage_weak_only_slots: Array.isArray(editorial.coverage_weak_only_slots) ? editorial.coverage_weak_only_slots : [],
+    coverage_needs_repair: editorial.coverage_needs_repair === true,
+    coverage_can_advance: editorial.coverage_can_advance === true,
     placeholder_assets: placeholderAssets.length,
     failure_reason: blockingReasons.join(","),
     blocking_reasons: blockingReasons,

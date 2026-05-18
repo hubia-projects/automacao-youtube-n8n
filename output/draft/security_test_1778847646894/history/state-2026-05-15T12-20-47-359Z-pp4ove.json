@@ -1,0 +1,225 @@
+{
+  "video_id": "security_test_1778847646894",
+  "idea_id": null,
+  "topic": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+  "angle": "guia narrativo focado em comida local, mercados, cafes e vinhos",
+  "status": "script_generated",
+  "current_step": "script_generated",
+  "approved": false,
+  "selected_idea": {
+    "topic": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+    "angle": "guia narrativo focado em comida local, mercados, cafes e vinhos"
+  },
+  "ideas": [],
+  "research_json": {},
+  "outline_json": {},
+  "script_text": "Portugal é um país que funciona muito bem quando o roteiro segue comida, cidade e atmosfera no tempo certo da narração. A abertura precisa vender essa promessa com imagens que pareçam uma viagem de sabores, não uma sequência aleatória de paisagens. Lisboa entra primeiro com cafés históricos, vitrines de pastelaria, mercados e cenas de rua onde a comida aparece como parte da cidade. Depois o Porto muda a energia com caves, vinho do Porto, restaurantes perto do Douro e planos mais densos de gastronomia local. No meio do vídeo, os mercados e os pratos servidos na hora ajudam a humanizar a narrativa e aproximam o espectador do cotidiano. Mais à frente, vinho, sobremesas, cafés e doçaria criam um bloco visual mais específico e memorável. A ideia deste teste é validar se a timeline acompanha exatamente o áudio e evita repetir costa, skyline ou cenas genéricas quando o texto fala de comida. Se a edição respeitar o tempo da fala e a ordem dos blocos, o resultado final deve parecer muito mais humano.",
+  "script_path": "",
+  "visual_plan": [
+    {
+      "scene_index": 1,
+      "title": "Portugal em sabores",
+      "narration_excerpt": "Portugal abre o roteiro com uma promessa simples: viajar pelo país através dos mercados, cafés, pratos e vinhos.",
+      "keywords": [
+        "portugal food travel",
+        "portugal market",
+        "travel overview",
+        "portugal cafe",
+        "food journey"
+      ],
+      "target_duration_seconds": 8
+    },
+    {
+      "scene_index": 2,
+      "title": "Lisboa gastronómica",
+      "narration_excerpt": "Em Lisboa, confeitarias, cafés históricos e mercados dão o tom da primeira grande parada do vídeo.",
+      "keywords": [
+        "lisbon food market",
+        "lisbon pastry",
+        "lisbon cafe",
+        "portugal bakery",
+        "lisbon street food"
+      ],
+      "target_duration_seconds": 8
+    },
+    {
+      "scene_index": 3,
+      "title": "Porto gastronómico",
+      "narration_excerpt": "No Porto, a narrativa muda para caves, vinho do Porto, restaurantes junto ao Douro e comida mais densa.",
+      "keywords": [
+        "porto wine cellar",
+        "porto food market",
+        "porto restaurant",
+        "douro food",
+        "porto gastronomy"
+      ],
+      "target_duration_seconds": 8
+    },
+    {
+      "scene_index": 4,
+      "title": "Mercados e comida local",
+      "narration_excerpt": "Mercados, bancas, pratos servidos na hora e cenas de rua humanizam a montagem e trazem textura ao roteiro.",
+      "keywords": [
+        "portugal food market",
+        "street market food",
+        "local dishes",
+        "food hall portugal",
+        "market people"
+      ],
+      "target_duration_seconds": 8
+    },
+    {
+      "scene_index": 5,
+      "title": "Vinhos e doçaria",
+      "narration_excerpt": "Vinho, pastelaria, sobremesas e cafés fecham a viagem com um bloco visual mais específico e memorável.",
+      "keywords": [
+        "portugal wine tasting",
+        "portugal pastry",
+        "bakery dessert",
+        "cafe dessert",
+        "sweet food portugal"
+      ],
+      "target_duration_seconds": 8
+    },
+    {
+      "scene_index": 6,
+      "title": "Fechamento",
+      "narration_excerpt": "No final, o vídeo resume por que Portugal funciona tão bem quando a narrativa segue o ritmo dos sabores e das cidades.",
+      "keywords": [
+        "portugal travel closing",
+        "food montage",
+        "city food summary",
+        "portugal cafe closing",
+        "travel lifestyle"
+      ],
+      "target_duration_seconds": 8
+    }
+  ],
+  "audio_path": "",
+  "duration_seconds": 0,
+  "audio_intelligence_path": "",
+  "audio_intelligence_provider": "",
+  "scene_boundaries": [],
+  "chapter_triggers": [],
+  "caption_path_srt": "",
+  "caption_path_vtt": "",
+  "assets_json": {
+    "visual_keywords": [],
+    "search_queries": [],
+    "retrieval_budget": [],
+    "raw_items": [],
+    "approved_items": [],
+    "approved_windows": [],
+    "rejected_windows": [],
+    "editorial_bins_by_scene": {},
+    "editorial_metrics": {},
+    "scene_editorial_readiness": [],
+    "provider_reliability": {},
+    "items": [],
+    "fallback_plan": [],
+    "missing_assets": false,
+    "blocking_scene_indexes": [],
+    "scene_asset_readiness": [],
+    "last_repair_plan_by_scene": [],
+    "last_refresh_scene_indexes": [],
+    "last_refresh_reason": "",
+    "last_refreshed_at": ""
+  },
+  "render_path": "",
+  "thumbnail_path": "",
+  "review": {
+    "draft_version": 1,
+    "last_rejection_note": "",
+    "last_rejected_at": "",
+    "last_published_at": "",
+    "last_refreshed_scene_indexes": [],
+    "last_refresh_reason": "",
+    "last_refreshed_at": "",
+    "drive_file_id": "",
+    "drive_view_url": "",
+    "drive_download_url": "",
+    "sheet_url": "",
+    "sheet_name": ""
+  },
+  "youtube_title": "Portugal gastronómico: Lisboa, Porto, mercados e vinhos",
+  "youtube_description": "Uma viagem guiada por comida local, mercados, cafés históricos e vinhos em Portugal.",
+  "youtube_tags": [
+    "portugal gastronomia",
+    "lisboa comida",
+    "porto vinho",
+    "mercados portugal",
+    "travel food"
+  ],
+  "youtube_chapters": [],
+  "youtube_video_id": "",
+  "youtube_url": "",
+  "youtube_privacy_status": "",
+  "youtube_caption_track_id": "",
+  "youtube_caption_language": "",
+  "youtube_caption_format": "",
+  "youtube_caption_status": "",
+  "youtube_caption_error_message": "",
+  "render_timeline": {
+    "strategy": "",
+    "transition": "",
+    "output_resolution": "",
+    "output_duration_seconds": 0,
+    "total_clips": 0,
+    "unique_asset_count": 0,
+    "semantic_alignment_score_average": 0,
+    "low_confidence_clip_count": 0,
+    "clips": []
+  },
+  "render_validation": {
+    "is_publishable": false,
+    "needs_regeneration": false,
+    "needs_manual_review": false,
+    "quality_score": 0,
+    "alignment_score": 0,
+    "diversity_score": 0,
+    "technical_score": 0,
+    "hard_boundary_status": "unknown",
+    "max_visual_lag_sec": 0,
+    "hard_boundary_report": {
+      "status": "unknown",
+      "max_visual_lag_sec": 0,
+      "avg_visual_lag_sec": 0,
+      "boundaries": [],
+      "violations": []
+    },
+    "editorial_metrics": {},
+    "qa_profile": "strict",
+    "qa_runtime_profile": "prod_strict",
+    "editorial_failure_codes": [],
+    "publish_blocked": false,
+    "publish_blocked_codes": [],
+    "provider_reliability": {},
+    "regeneration_plan": {
+      "scene_indexes_to_refresh": [],
+      "failure_codes": [],
+      "repair_by_scene": []
+    },
+    "editorial_observability": {},
+    "critical_slot_audit": [],
+    "issues": [],
+    "scene_indexes_to_refresh": [],
+    "clip_indexes_to_replace": []
+  },
+  "editorial_observability_history": [],
+  "telegram": {
+    "chat_id": "",
+    "ideas_message_id": null,
+    "ideas_message_sent_at": "",
+    "final_review_message_id": null,
+    "final_review_version": null,
+    "final_review_message_sent_at": "",
+    "last_inbound_message_id": null,
+    "last_inbound_text": "",
+    "last_inbound_at": "",
+    "sent_status_keys": []
+  },
+  "error_message": "",
+  "state_path": "C:\\Users\\HABILFIX\\Desktop\\Hubia\\Projetos\\youtube-video-pipeline\\automacao-youtube-n8n\\output\\draft\\security_test_1778847646894\\state.json",
+  "created_at": "2026-05-15T12:20:46.900Z",
+  "updated_at": "2026-05-15T12:20:46.906Z"
+}

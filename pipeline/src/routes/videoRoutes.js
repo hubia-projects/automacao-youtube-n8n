@@ -10,11 +10,12 @@ const { renderVideo } = require("../services/renderService");
 const { analyzeAudio } = require("../services/audioIntelligence");
 const { validateRender, fixRenderSync } = require("../services/syncValidator");
 const { generateMetadata } = require("../services/metadataService");
-const { uploadToYoutube } = require("../services/youtubeService");
+const { uploadToYoutube, getProductionPreflightStatus } = require("../services/youtubeService");
 const { markNeedsManualReview } = require("../services/manualReviewService");
 const { loadState, updateState, setStateError } = require("../services/stateService");
 const { triggerWorkflow2, triggerWorkflow3 } = require("../services/workflowHandoffService");
 const { requestReviewRegeneration } = require("../services/reviewRevisionService");
+const { ingestRetentionLearning } = require("../services/editorialLearningService");
 const { config } = require("../config/env");
 
 const router = Router();
@@ -318,6 +319,29 @@ router.post("/videos/final/approve", async (req, res, next) => {
   }
 });
 
+router.post("/videos/editorial/retention-ingest", async (req, res, next) => {
+  try {
+    const schema = bodyWithVideoId.extend({
+      alpha: z.number().min(0.05).max(0.8).optional(),
+      retention_samples: z.array(
+        z.object({
+          timestamp_sec: z.number().min(0),
+          retention_score: z.number().min(0),
+        })
+      ).min(1),
+    });
+    const parsed = schema.parse(req.body || {});
+    const result = await ingestRetentionLearning({
+      videoId: parsed.video_id,
+      retentionSamples: parsed.retention_samples,
+      alpha: parsed.alpha,
+    });
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/videos/review/regenerate", async (req, res, next) => {
   try {
     const schema = bodyWithVideoId.extend({
@@ -407,6 +431,19 @@ router.post("/videos/youtube/upload", async (req, res, next) => {
     res.json({ ok: true, ...result });
   } catch (error) {
     await setStateError(req.body?.video_id, error, "youtube_upload_failed").catch(() => null);
+    next(error);
+  }
+});
+
+router.post("/videos/production/preflight", async (req, res, next) => {
+  try {
+    const parsed = bodyWithVideoId.parse(req.body || {});
+    const result = await getProductionPreflightStatus({
+      videoId: parsed.video_id,
+      mockMode: withDefaultMock(parsed),
+    });
+    res.json({ ok: true, ...result });
+  } catch (error) {
     next(error);
   }
 });

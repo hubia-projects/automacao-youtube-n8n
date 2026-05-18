@@ -4,6 +4,7 @@ const { logger } = require("../utils/logger");
 const { writeJsonAtomic, readJsonSafe } = require("../utils/fileUtils");
 const { loadState, ensureVideoStructure, updateState } = require("./stateService");
 const { transcribeWithWordTimestamps } = require("./openaiService");
+const { buildMicroSegmentsFromAudio } = require("./microMomentPlannerService");
 
 const FALLBACK_WPM = 144;
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
@@ -245,12 +246,18 @@ const analyzeAudio = async ({ videoId }) => {
     sceneBoundaries,
     words: audioIntelligence.words,
   });
+  const microSegments = buildMicroSegmentsFromAudio({
+    words: audioIntelligence.words,
+    segments: audioIntelligence.segments,
+    pauseMarkers: audioIntelligence.pause_markers,
+  });
   const audioIntelligenceData = {
     video_id: videoId,
     provider,
     analyzed_at: new Date().toISOString(),
     audio_path: state.audio_path,
     ...audioIntelligence,
+    micro_segments: microSegments,
     scene_boundaries: sceneBoundaries,
     chapter_triggers: chapterTriggers,
   };
@@ -273,6 +280,7 @@ const analyzeAudio = async ({ videoId }) => {
     provider,
     words_count: audioIntelligence.words.length,
     pause_markers_count: audioIntelligence.pause_markers.length,
+    micro_segments_count: microSegments.length,
     chapter_triggers_count: chapterTriggers.length,
     state_path: nextState.state_path,
   };

@@ -36,6 +36,23 @@ const SCORE_WEIGHTS = {
   genericAssetPenalty: 7.0,
   metadataFallbackPenalty: 4.5,
   darkFramePenalty: 4.0,
+  microNeedExactMatchScore: 6.2,
+  microActionMatchScore: 5.2,
+  microTemporalPrecisionScore: 4.8,
+  microProofMissPenalty: 8.5,
+  repairStatePenalty: 4.4,
+};
+
+const MICRO_NEED_KEYWORDS = {
+  market_stall: ["market", "mercado", "banca", "stall", "feira", "food hall"],
+  vendor_interaction: ["vendor", "vendedor", "atendente", "serving", "servindo", "atendimento"],
+  people_eating: ["people eating", "pessoas comendo", "comendo", "eating", "degustando", "tasting"],
+  pastry_closeup: ["pastry", "pastel", "doces", "dessert", "bakery", "confeitaria"],
+  food_closeup: ["food", "comida", "dish", "prato", "ingrediente", "fresh produce"],
+  wine_pouring: ["wine", "vinho", "pour", "pouring", "taça", "glass", "brinde"],
+  restaurant_table: ["restaurant", "restaurante", "table", "mesa", "cafe", "coffee shop"],
+  street_level: ["street", "rua", "bairro", "walking", "centro", "downtown"],
+  landmark: ["landmark", "ponte", "bridge", "tower", "torre", "rio", "river"],
 };
 
 const buildVisualSignature = (candidate = {}) => [
@@ -148,6 +165,66 @@ const computeMotionScore = (candidate = {}) => {
 };
 
 const computeConfidenceScore = (candidate = {}) => clamp(Number(candidate.confidence || 0), 0, 1);
+
+const computeMicroNeedExactMatchScore = ({ candidate = {}, microMoment = null }) => {
+  if (!microMoment) return 0.5;
+  const need = String(microMoment.visual_need || "").toLowerCase();
+  if (!need) return 0.5;
+  const slotType = String(candidate.content_slot_type || "").toLowerCase();
+  if (slotType && slotType === need) return 1;
+  const supported = (candidate.micro_needs_supported || []).map((item) => String(item || "").toLowerCase());
+  if (supported.includes(need)) return 1;
+  const keywords = MICRO_NEED_KEYWORDS[need] || [need.replace(/_/g, " ")];
+  const haystack = normalizeLabel([
+    candidate.description,
+    candidate.summary,
+    candidate.content_slot_type,
+    ...(candidate.tags || []),
+    ...(candidate.detected_visual_categories || []),
+    ...(candidate.detected_objects || []),
+  ].filter(Boolean).join(" "));
+  const keywordHits = keywords.filter((keyword) => haystack.includes(String(keyword || "").toLowerCase())).length;
+  if (keywordHits > 0) {
+    const ratio = clamp(keywordHits / Math.max(1, Math.min(3, keywords.length)), 0, 1);
+    return clamp(0.72 + (ratio * 0.28), 0, 1);
+  }
+  return 0.1;
+};
+
+const computeMicroActionMatchScore = ({ candidate = {}, microMoment = null }) => {
+  if (!microMoment) return 0.5;
+  const actions = (microMoment.action_tokens || []).map((item) => String(item || "").toLowerCase());
+  if (!actions.length) return 0.5;
+  const detected = (candidate.action_tokens_detected || []).map((item) => String(item || "").toLowerCase());
+  const text = normalizeLabel([
+    candidate.description,
+    ...(candidate.tags || []),
+    ...(candidate.detected_objects || []),
+    ...(candidate.detected_visual_categories || []),
+  ].filter(Boolean).join(" "));
+  const hits = actions.filter((token) => detected.includes(token) || text.includes(token)).length;
+  return clamp(hits / Math.max(1, actions.length), 0, 1);
+};
+
+const computeMicroTemporalPrecisionScore = ({ candidate = {}, microMoment = null, slotStartSec = 0, slotEndSec = 0 }) => {
+  if (!microMoment) return 0.6;
+  const microDuration = Math.max(0.2, Number(microMoment.end_sec || 0) - Number(microMoment.start_sec || 0));
+  const hintDuration = Number(candidate.temporal_match_hints?.duration_seconds || 0);
+  const candidateDuration = Math.max(0.2, hintDuration || Number(candidate.duration_sec || 0));
+  const durationDelta = Math.abs(candidateDuration - microDuration);
+  const durationFit = clamp(1 - (durationDelta / Math.max(1, microDuration)), 0, 1);
+  const candidateActionHints = (candidate.temporal_match_hints?.dominant_action_tokens || []).map((item) => normalizeLabel(item));
+  const microActions = (microMoment.action_tokens || []).map((item) => normalizeLabel(item));
+  const actionFit = microActions.length
+    ? clamp(microActions.filter((token) => candidateActionHints.includes(token)).length / microActions.length, 0, 1)
+    : 0.7;
+  const sourceFit = String(candidate.visual_observation_origin || "real_vision").toLowerCase() === "real_vision" ? 1 : 0.45;
+  const slotMid = (Number(slotStartSec || 0) + Number(slotEndSec || slotStartSec || 0)) / 2;
+  const microMid = (Number(microMoment.start_sec || 0) + Number(microMoment.end_sec || 0)) / 2;
+  const drift = Math.abs(slotMid - microMid);
+  const driftFit = clamp(1 - (drift / 1.2), 0, 1);
+  return clamp((durationFit * 0.45) + (actionFit * 0.35) + (sourceFit * 0.1) + (driftFit * 0.1), 0, 1);
+};
 
 const isWeakMetadataEvidence = (candidate = {}) =>
   (candidate.visual_evidence_source || candidate.analysis_provider || "") === "metadata_fallback";
@@ -320,9 +397,12 @@ const computeSourceTierScore = ({ candidate = {}, criticalSlot = false, provider
   const provider = String(candidate.source || candidate.asset?.provider || "unknown").toLowerCase();
   const reliability = clamp(Number(providerReliability[provider] || 0.5), 0, 1);
 
-  let score = tierWeight * 0.7 + reliability * 0.3;
+  let score = criticalSlot
+    ? (tierWeight * 0.45 + reliability * 0.55)
+    : (tierWeight * 0.7 + reliability * 0.3);
   if (criticalSlot && (tier === "premium" || tier === "curated")) score += 0.15;
   if (criticalSlot && tier === "generated") score -= 0.35;
+  if (criticalSlot && reliability < 0.35) score -= 0.2;
   return clamp(score, 0, 1);
 };
 
@@ -335,6 +415,14 @@ const computeSourceTierPenalty = ({ candidate = {}, criticalSlot = false }) => {
   if (tier === "free" && (status === "exact" || (status === "regional" && confidence >= 0.8))) return 0.15;
   if (tier === "free") return 0.55;
   return 0.8;
+};
+
+const computeRepairStatePenalty = (candidate = {}) => {
+  const state = String(candidate.block_repair_state || "").toLowerCase();
+  if (state === "blocked") return 1;
+  if (state === "repair_required") return 0.65;
+  if (state === "degraded") return 0.3;
+  return 0;
 };
 
 const buildRejectedReasons = (components = {}) => {
@@ -363,6 +451,9 @@ const rankCandidates = async ({
   slotRole = "",
   criticalSlot = false,
   providerReliability = {},
+  microMoment = null,
+  slotStartSec = 0,
+  slotEndSec = 0,
 }) => {
   const ranked = [];
   const semanticScores = await computeSemanticScores({ narrationText, candidates, videoId });
@@ -414,6 +505,15 @@ const rankCandidates = async ({
     const resolutionScore = computeResolutionScore(candidate);
     const motionScore = computeMotionScore(candidate);
     const confidenceScore = weakMetadataEvidence ? Math.min(computeConfidenceScore(candidate), 0.35) : computeConfidenceScore(candidate);
+    const microNeedExactMatchScore = computeMicroNeedExactMatchScore({ candidate, microMoment });
+    const microActionMatchScore = computeMicroActionMatchScore({ candidate, microMoment });
+    const microTemporalPrecisionScore = computeMicroTemporalPrecisionScore({
+      candidate,
+      microMoment,
+      slotStartSec,
+      slotEndSec,
+    });
+    const microProofMissPenalty = (microMoment?.needs_visual_proof === true && microNeedExactMatchScore < 0.5) ? 1 : 0;
     const reuse = computeReusePenalties({ block, candidate, usage, clipIndex });
     const blockMismatchPenalty = computeBlockMismatchPenalty({ block, candidate, previousMacroTopic });
     const hardBoundaryBlockReason = computeHardBoundaryBlockReason({
@@ -426,6 +526,7 @@ const rankCandidates = async ({
     const hardBoundaryIntroBonus = computeHardBoundaryIntroBonus({ block, candidate, isBoundaryFirstSlot });
     const sourceTierScore = computeSourceTierScore({ candidate, criticalSlot, providerReliability });
     const sourceTierPenalty = computeSourceTierPenalty({ candidate, criticalSlot });
+    const repairStatePenalty = computeRepairStatePenalty(candidate);
     const hardBlocked = Boolean(hardBoundaryBlockReason);
     const genericAssetPenalty = hardRejection.reason === "generic_visual_for_specific_intent"
       ? 1
@@ -451,6 +552,9 @@ const rankCandidates = async ({
       resolutionScore * SCORE_WEIGHTS.resolutionScore +
       motionScore * SCORE_WEIGHTS.motionScore +
       confidenceScore * SCORE_WEIGHTS.confidenceScore +
+      microNeedExactMatchScore * SCORE_WEIGHTS.microNeedExactMatchScore +
+      microActionMatchScore * SCORE_WEIGHTS.microActionMatchScore +
+      microTemporalPrecisionScore * SCORE_WEIGHTS.microTemporalPrecisionScore +
       sourceTierScore * 2.2 +
       hardBoundaryIntroBonus -
       forbiddenCategoryPenalty * SCORE_WEIGHTS.forbiddenCategoryPenalty -
@@ -465,7 +569,9 @@ const rankCandidates = async ({
       genericAssetPenalty * SCORE_WEIGHTS.genericAssetPenalty -
       metadataFallbackPenalty * SCORE_WEIGHTS.metadataFallbackPenalty -
       darkFramePenalty * SCORE_WEIGHTS.darkFramePenalty -
+      microProofMissPenalty * SCORE_WEIGHTS.microProofMissPenalty -
       sourceTierPenalty * 7 -
+      repairStatePenalty * SCORE_WEIGHTS.repairStatePenalty -
       editorialContractPenalty * 12;
 
     const reasons = buildRejectedReasons({
@@ -503,6 +609,10 @@ const rankCandidates = async ({
         resolutionScore: round3(resolutionScore),
         motionScore: round3(motionScore),
         confidenceScore: round3(confidenceScore),
+        microNeedExactMatchScore: round3(microNeedExactMatchScore),
+        microActionMatchScore: round3(microActionMatchScore),
+        microTemporalPrecisionScore: round3(microTemporalPrecisionScore),
+        microProofMissPenalty: round3(microProofMissPenalty),
         forbiddenCategoryPenalty: round3(forbiddenCategoryPenalty),
         sourceReusePenalty: round3(reuse.sourceReusePenalty),
         assetReusePenalty: round3(reuse.assetReusePenalty),
@@ -519,6 +629,7 @@ const rankCandidates = async ({
         hardBoundaryIntroBonus: round3(hardBoundaryIntroBonus),
         sourceTierScore: round3(sourceTierScore),
         sourceTierPenalty: round3(sourceTierPenalty),
+        repairStatePenalty: round3(repairStatePenalty),
         reusePenalty: round3(reuse.total),
         detectedVisualCategories: evidence.detected_visual_categories,
         missingRequiredVisualEvidence: evidence.missing_required_visual_evidence,
@@ -600,6 +711,7 @@ module.exports = {
     computeHardBoundaryIntroBonus,
     computeSourceTierScore,
     computeSourceTierPenalty,
+    computeRepairStatePenalty,
     computeGenericAssetPenalty,
     computeGastronomySpecificityScore,
     computeDarkFramePenalty,

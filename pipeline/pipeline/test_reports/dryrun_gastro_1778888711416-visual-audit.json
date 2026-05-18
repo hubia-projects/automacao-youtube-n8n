@@ -1,0 +1,464 @@
+{
+  "video_id": "dryrun_gastro_1778888711416",
+  "clip_audit": [
+    {
+      "clip_index": 1,
+      "expected_block": "Porto e Lisboa: mercados, doces e vinhos",
+      "expected_location": "",
+      "frame_timestamps": [
+        2.45
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\dryrun_gastro_1778888711416-visual-evidence\\clip-1-2_45.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "",
+      "vision_confidence": 0,
+      "visual_truth_status": "pass",
+      "visual_truth_reason": "editorial_contract_backstop_without_explicit_location",
+      "source_url": "",
+      "query_used": " vendor serving food authentic real",
+      "provider": "pixabay",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": true,
+      "narrative_role_selected": "proof_exact",
+      "scene_index": 1,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\dryrun_gastro_1778888711416\\assets\\raw\\scene-02-04-pixabay.mp4:w05",
+      "micro_id": "mic_0001",
+      "micro_visual_need": "market_stall",
+      "micro_slot_ok": false,
+      "micro_match_score": 0.1,
+      "micro_timing_score": 0.812,
+      "micro_timing_drift_sec": 0
+    },
+    {
+      "clip_index": 2,
+      "expected_block": "Porto e Lisboa: mercados, doces e vinhos",
+      "expected_location": "",
+      "frame_timestamps": [
+        6.27
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\dryrun_gastro_1778888711416-visual-evidence\\clip-2-6_27.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "",
+      "vision_confidence": 0.8,
+      "visual_truth_status": "pass",
+      "visual_truth_reason": "editorial_contract_backstop_without_explicit_location",
+      "source_url": "",
+      "query_used": " vendor serving food authentic real",
+      "provider": "pixabay",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": true,
+      "narrative_role_selected": "proof_exact",
+      "scene_index": 1,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\dryrun_gastro_1778888711416\\assets\\raw\\scene-02-04-pixabay.mp4:w02",
+      "micro_id": "mic_0002",
+      "micro_visual_need": "vendor_interaction",
+      "micro_slot_ok": false,
+      "micro_match_score": 0.1,
+      "micro_timing_score": 0.443,
+      "micro_timing_drift_sec": 0
+    },
+    {
+      "clip_index": 3,
+      "expected_block": "Porto e Lisboa: mercados, doces e vinhos",
+      "expected_location": "",
+      "frame_timestamps": [
+        10.14,
+        8.14,
+        12.14
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\dryrun_gastro_1778888711416-visual-evidence\\clip-3-10_14.jpg",
+        "pipeline\\test_reports\\dryrun_gastro_1778888711416-visual-evidence\\clip-3-8_14.jpg",
+        "pipeline\\test_reports\\dryrun_gastro_1778888711416-visual-evidence\\clip-3-12_14.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "",
+      "vision_confidence": 0,
+      "visual_truth_status": "pass",
+      "visual_truth_reason": "editorial_contract_backstop_without_explicit_location",
+      "source_url": "",
+      "query_used": " chef cooking authentic real",
+      "provider": "pixabay",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": true,
+      "narrative_role_selected": "proof_exact",
+      "scene_index": 1,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\dryrun_gastro_1778888711416\\assets\\raw\\scene-02-06-pixabay.mp4:w01",
+      "micro_id": "mic_0003",
+      "micro_visual_need": "pastry_closeup",
+      "micro_slot_ok": false,
+      "micro_match_score": 0.1,
+      "micro_timing_score": 0.805,
+      "micro_timing_drift_sec": 0
+    },
+    {
+      "clip_index": 4,
+      "expected_block": "Porto e Lisboa: mercados, doces e vinhos",
+      "expected_location": "",
+      "frame_timestamps": [
+        13.8
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\dryrun_gastro_1778888711416-visual-evidence\\clip-4-13_8.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "",
+      "vision_confidence": 0,
+      "visual_truth_status": "pass",
+      "visual_truth_reason": "editorial_contract_backstop_without_explicit_location",
+      "source_url": "",
+      "query_used": " vendor serving food authentic real",
+      "provider": "pixabay",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": true,
+      "narrative_role_selected": "proof_exact",
+      "scene_index": 1,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\dryrun_gastro_1778888711416\\assets\\raw\\scene-02-04-pixabay.mp4:w04",
+      "micro_id": "mic_0004",
+      "micro_visual_need": "food_closeup",
+      "micro_slot_ok": false,
+      "micro_match_score": 0.1,
+      "micro_timing_score": 0.569,
+      "micro_timing_drift_sec": 0
+    },
+    {
+      "clip_index": 5,
+      "expected_block": "Porto e Lisboa: mercados, doces e vinhos",
+      "expected_location": "",
+      "frame_timestamps": [
+        17.72
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\dryrun_gastro_1778888711416-visual-evidence\\clip-5-17_72.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "",
+      "vision_confidence": 0,
+      "visual_truth_status": "pass",
+      "visual_truth_reason": "editorial_contract_backstop_without_explicit_location",
+      "source_url": "",
+      "query_used": " vendor serving food authentic real",
+      "provider": "pixabay",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": true,
+      "narrative_role_selected": "proof_exact",
+      "scene_index": 2,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\dryrun_gastro_1778888711416\\assets\\raw\\scene-02-04-pixabay.mp4:w06",
+      "micro_id": "mic_0005",
+      "micro_visual_need": "pastry_closeup",
+      "micro_slot_ok": false,
+      "micro_match_score": 0.1,
+      "micro_timing_score": 0.797,
+      "micro_timing_drift_sec": 0.45
+    },
+    {
+      "clip_index": 6,
+      "expected_block": "Porto e Lisboa: mercados, doces e vinhos",
+      "expected_location": "",
+      "frame_timestamps": [
+        21.325
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\dryrun_gastro_1778888711416-visual-evidence\\clip-6-21_325.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "",
+      "vision_confidence": 0,
+      "visual_truth_status": "pass",
+      "visual_truth_reason": "editorial_contract_backstop_without_explicit_location",
+      "source_url": "",
+      "query_used": " vendor serving food authentic real",
+      "provider": "pixabay",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": true,
+      "narrative_role_selected": "proof_exact",
+      "scene_index": 2,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\dryrun_gastro_1778888711416\\assets\\raw\\scene-02-04-pixabay.mp4:w02",
+      "micro_id": "mic_0006",
+      "micro_visual_need": "pastry_closeup",
+      "micro_slot_ok": false,
+      "micro_match_score": 0.1,
+      "micro_timing_score": 0.763,
+      "micro_timing_drift_sec": 0.985
+    },
+    {
+      "clip_index": 7,
+      "expected_block": "Porto e Lisboa: mercados, doces e vinhos",
+      "expected_location": "",
+      "frame_timestamps": [
+        27.779,
+        25.06,
+        30.498
+      ],
+      "frame_paths": [
+        "pipeline\\test_reports\\dryrun_gastro_1778888711416-visual-evidence\\clip-7-27_779.jpg",
+        "pipeline\\test_reports\\dryrun_gastro_1778888711416-visual-evidence\\clip-7-25_06.jpg",
+        "pipeline\\test_reports\\dryrun_gastro_1778888711416-visual-evidence\\clip-7-30_498.jpg"
+      ],
+      "metadata_location": "",
+      "vision_location": "",
+      "vision_confidence": 0,
+      "visual_truth_status": "pass",
+      "visual_truth_reason": "editorial_contract_backstop_without_explicit_location",
+      "source_url": "",
+      "query_used": " chef cooking authentic real",
+      "provider": "pixabay",
+      "out_of_domain_asset": false,
+      "is_hard_boundary_first_clip": false,
+      "critical_slot": true,
+      "narrative_role_selected": "proof_exact",
+      "scene_index": 3,
+      "editorial_slot_ok": true,
+      "approved_window_id": "\\app\\pipeline\\output\\draft\\dryrun_gastro_1778888711416\\assets\\raw\\scene-02-06-pixabay.mp4:w02",
+      "micro_id": "mic_0007",
+      "micro_visual_need": "food_closeup",
+      "micro_slot_ok": false,
+      "micro_match_score": 0.1,
+      "micro_timing_score": 0.741,
+      "micro_timing_drift_sec": 0
+    }
+  ],
+  "boundary_audit": [],
+  "overlay_audit": [
+    {
+      "text": "1. Porto e Lisboa: mercados, doces e vinhos",
+      "timestamp": 0.5,
+      "state_overlay_exists": true,
+      "frame_overlay_detected": false,
+      "frame_path": "pipeline\\test_reports\\dryrun_gastro_1778888711416-visual-evidence\\overlay-block_title-0_5.jpg",
+      "status": "fail"
+    }
+  ],
+  "editorial_metrics": {
+    "exact_ratio": 0,
+    "regional_ratio": 1,
+    "generic_ratio": 0,
+    "uncertain_ratio": 0,
+    "uncertain_critical_ratio": 0,
+    "micro_critical_coverage_ratio": 0,
+    "micro_mismatch_rate": 1,
+    "critical_slots_covered": 1,
+    "critical_slots_total": 3,
+    "scene_theme_coverage_ratio": 0.667,
+    "scene_editorial_readiness": [
+      {
+        "scene_index": 1,
+        "visual_intent": "gastronomy",
+        "editorial_niche": "gastronomy",
+        "total_approved_windows": 0,
+        "exact_windows": 0,
+        "regional_windows": 0,
+        "generic_windows": 0,
+        "uncertain_windows": 0,
+        "theme_required_categories": [
+          "food",
+          "local_food",
+          "market",
+          "restaurant",
+          "cafe",
+          "people_eating",
+          "street_food",
+          "pastry",
+          "wine"
+        ],
+        "theme_matched_windows": 0,
+        "critical_slots_required": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening"
+        ],
+        "critical_slots_missing": [
+          "first_clip_of_block",
+          "hard_boundary_first_clip",
+          "chapter_opening"
+        ],
+        "critical_slots_covered": 0,
+        "critical_slots_total": 3,
+        "micro_total": 0,
+        "micro_covered": 0,
+        "micro_coverage_ratio": 0,
+        "micro_critical_missing": 0,
+        "max_generic_windows_by_policy": 1,
+        "ready": false,
+        "blocking": true,
+        "blocking_reasons": [
+          "missing_exact_for_required_proof",
+          "critical_slots_uncovered",
+          "no_proof_for_promise",
+          "missing_theme_visual_proof",
+          "missing_required_content_slots"
+        ],
+        "block_slot_coverage_missing": [
+          "food_closeup",
+          "vendor_interaction",
+          "wine_tasting",
+          "market_stall",
+          "people_eating",
+          "chef_or_vendor"
+        ]
+      },
+      {
+        "scene_index": 2,
+        "visual_intent": "gastronomy",
+        "editorial_niche": "gastronomy",
+        "total_approved_windows": 6,
+        "exact_windows": 0,
+        "regional_windows": 6,
+        "generic_windows": 0,
+        "uncertain_windows": 6,
+        "theme_required_categories": [
+          "food",
+          "local_food",
+          "market",
+          "restaurant",
+          "cafe",
+          "people_eating",
+          "street_food",
+          "pastry",
+          "wine"
+        ],
+        "theme_matched_windows": 6,
+        "critical_slots_required": [
+          "first_clip_of_block"
+        ],
+        "critical_slots_missing": [],
+        "critical_slots_covered": 1,
+        "critical_slots_total": 1,
+        "micro_total": 0,
+        "micro_covered": 0,
+        "micro_coverage_ratio": 0,
+        "micro_critical_missing": 0,
+        "max_generic_windows_by_policy": 2,
+        "ready": false,
+        "blocking": true,
+        "blocking_reasons": [
+          "missing_required_content_slots"
+        ],
+        "block_slot_coverage_missing": [
+          "food_closeup",
+          "vendor_interaction",
+          "wine_tasting",
+          "market_stall",
+          "people_eating",
+          "chef_or_vendor"
+        ]
+      },
+      {
+        "scene_index": 3,
+        "visual_intent": "gastronomy",
+        "editorial_niche": "gastronomy",
+        "total_approved_windows": 5,
+        "exact_windows": 0,
+        "regional_windows": 5,
+        "generic_windows": 0,
+        "uncertain_windows": 0,
+        "theme_required_categories": [
+          "food",
+          "local_food",
+          "market",
+          "restaurant",
+          "cafe",
+          "people_eating",
+          "street_food",
+          "pastry",
+          "wine"
+        ],
+        "theme_matched_windows": 5,
+        "critical_slots_required": [
+          "first_clip_of_block"
+        ],
+        "critical_slots_missing": [
+          "first_clip_of_block"
+        ],
+        "critical_slots_covered": 0,
+        "critical_slots_total": 1,
+        "micro_total": 0,
+        "micro_covered": 0,
+        "micro_coverage_ratio": 0,
+        "micro_critical_missing": 0,
+        "max_generic_windows_by_policy": 2,
+        "ready": false,
+        "blocking": true,
+        "blocking_reasons": [
+          "critical_slots_uncovered",
+          "missing_required_content_slots"
+        ],
+        "block_slot_coverage_missing": [
+          "food_closeup",
+          "vendor_interaction",
+          "wine_tasting",
+          "market_stall",
+          "people_eating",
+          "chef_or_vendor"
+        ]
+      }
+    ],
+    "micro_sync_metrics": {
+      "micro_total": 7,
+      "micro_critical_total": 7,
+      "micro_critical_covered": 0,
+      "micro_critical_coverage_ratio": 0,
+      "micro_mismatch_rate": 1,
+      "micro_timing_drift_avg": 0.205,
+      "micro_timing_drift_max": 0.985,
+      "critical_micro_missing_count": 7,
+      "critical_micro_drift_exceeded_count": 0,
+      "failed_micro_ids": [
+        "mic_0001",
+        "mic_0002",
+        "mic_0003",
+        "mic_0004",
+        "mic_0005",
+        "mic_0006",
+        "mic_0007"
+      ]
+    },
+    "timeline_uses_approved_pool_only": true,
+    "approved_pool_audit": {
+      "timeline_uses_approved_pool_only": true,
+      "invalid_clip_count": 0,
+      "missing_approved_window_id_count": 0,
+      "invalid_rows": [],
+      "approved_pool_size": 11
+    }
+  },
+  "approved_pool_audit": {
+    "timeline_uses_approved_pool_only": true,
+    "invalid_clip_count": 0,
+    "missing_approved_window_id_count": 0,
+    "invalid_rows": [],
+    "approved_pool_size": 11
+  },
+  "provider_reliability": {
+    "unknown": 0.625
+  },
+  "resolution_audit": {
+    "ffprobe_width": 1920,
+    "ffprobe_height": 1080,
+    "state_output_resolution": ""
+  },
+  "final_decision": {
+    "is_publishable": false,
+    "needs_manual_review": true,
+    "final_hard_boundary_status": "pass",
+    "editorial_failure_codes": [
+      "NO_MICRO_PROOF_FOR_PROMISE"
+    ]
+  }
+}
