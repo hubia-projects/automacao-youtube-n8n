@@ -6,8 +6,9 @@ const { createPlaceholderImage, probeMedia, runFfmpeg } = require("../utils/medi
 const { isPlaceholderAsset, shouldAllowPlaceholderAssets } = require("./assetReadinessService");
 const { buildTimeline, chooseOutputResolution } = require("./timelinePlanner");
 const { analyzeAudio } = require("./audioIntelligence");
-const { applyOverlaysToVideo, buildBlockOverlays } = require("./overlayService");
+const { applyOverlaysToVideo, buildBlockOverlays, preflightOverlayFilter } = require("./overlayService");
 const { summarizeClipLibrary } = require("./clipLibraryService");
+const { appendPipelineEvent } = require("./pipelineEventLogService");
 const { config } = require("../config/env");
 const { logger } = require("../utils/logger");
 
@@ -1654,13 +1655,13 @@ const evaluateRenderPreflightGate = ({ state = {}, mockMode = false, allowRuntim
   const failureCodes = [];
   if (!approvedWindows.length) failureCodes.push("NO_APPROVED_WINDOWS");
   if (!allowRuntimeFallback && insufficientCoverageScenes.length) failureCodes.push("INSUFFICIENT_BLOCK_COVERAGE");
-  if (!allowRuntimeFallback && strictStrongOnly && !allowPartialCoverage && (partialReadinessScenes.length || partialBlockScenes.length)) {
+  if (strictStrongOnly && !allowPartialCoverage && (partialReadinessScenes.length || partialBlockScenes.length)) {
     failureCodes.push("PARTIAL_BLOCK_COVERAGE");
   }
   if (criticalSlotOnlyGenericScenes.length || criticalGenericClips.length) {
     failureCodes.push("CRITICAL_SLOT_ONLY_GENERIC");
   }
-  if (diversityBypassCriticalClips.length) {
+  if (diversityBypassCriticalClips.length && criticalGenericClips.length) {
     failureCodes.push("DIVERSITY_BYPASS_ON_CRITICAL_SLOT");
   }
   if (!allowRuntimeFallback && sceneReadiness.length && blockedCriticalScenes.length === sceneReadiness.length) {
@@ -1690,6 +1691,18 @@ const evaluateRenderPreflightGate = ({ state = {}, mockMode = false, allowRuntim
 };
 
 const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = "" }) => {
+  const stageStartedAt = Date.now();
+  await appendPipelineEvent({
+    videoId,
+    stage: "render",
+    event: "start",
+    status: "running",
+    payload: {
+      mock_mode: Boolean(mockMode),
+    },
+  }).catch(() => null);
+
+  try {
   let state = await loadState(videoId);
   const paths = await ensureVideoStructure(videoId);
   const draftVersion = getDraftVersion(state);
@@ -1780,6 +1793,26 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
   });
 
   const outputResolution = chooseOutputResolution(clipPlan);
+  const overlays = buildBlockOverlays({
+    narrativeBlocks: timelineResult.narrativeBlocks || [],
+    clips: clipPlan,
+    enabled: config.ENABLE_BLOCK_OVERLAYS,
+    requireChapterOverlay: Boolean(config.HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY),
+  });
+  if (overlays.length) {
+    try {
+      await preflightOverlayFilter({
+        overlays,
+        videoWidth: outputResolution.width,
+        videoHeight: outputResolution.height,
+      });
+    } catch (error) {
+      const overlayFailFast = !mockMode && Boolean(config.HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY);
+      if (overlayFailFast) {
+        throw new Error(`Render blocked: overlay preflight failed (${String(error?.message || "overlay_preflight_failed")}).`);
+      }
+    }
+  }
   const segmentsDir = path.join(paths.base, "render", "segments");
   await fs.emptyDir(segmentsDir);
 
@@ -1892,13 +1925,10 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     // Optional stage reserved for future mix implementation
   }
 
-  const overlays = buildBlockOverlays({
-    narrativeBlocks: timelineResult.narrativeBlocks || [],
-    clips: clipPlan,
-    enabled: config.ENABLE_BLOCK_OVERLAYS,
-    requireChapterOverlay: Boolean(config.HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY),
-  });
   let finalRenderPath = renderPath;
+  let overlayApplyStatus = overlays.length ? "pending" : "skipped";
+  let overlayApplyError = "";
+  let overlayOutputPath = "";
   if (overlays.length) {
     const overlayPath = path.join(paths.base, "render", "final-with-overlays.mp4");
     try {
@@ -1909,10 +1939,22 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
         fps: OUTPUT_FPS,
         videoBitrate: VIDEO_BITRATE,
         maxVideoBitrate: MAX_VIDEO_BITRATE,
+        videoWidth: Number(outputResolution.width || config.OUTPUT_WIDTH || 1920),
+        videoHeight: Number(outputResolution.height || config.OUTPUT_HEIGHT || 1080),
+        runPreflight: false,
       });
       finalRenderPath = overlayPath;
-    } catch {
+      overlayApplyStatus = "applied";
+      overlayOutputPath = overlayPath;
+    } catch (error) {
+      overlayApplyStatus = "failed";
+      overlayApplyError = String(error?.message || "overlay_apply_failed");
+      const overlayFailFast = !mockMode && Boolean(config.HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY);
+      if (overlayFailFast) {
+        throw new Error(`Render blocked: mandatory overlay failed (${overlayApplyError}).`);
+      }
       finalRenderPath = renderPath;
+      overlayOutputPath = renderPath;
     }
   }
 
@@ -1952,6 +1994,9 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
       render_timeline: {
         strategy: renderStrategy,
         transition,
+        overlay_apply_status: overlayApplyStatus,
+        overlay_apply_error: overlayApplyError,
+        overlay_output_path: overlayOutputPath,
         output_resolution: `${outputInfo.width || outputResolution.width}x${outputInfo.height || outputResolution.height}`,
         output_duration_seconds: round3(outputInfo.duration || audioDuration),
         total_clips: clipPlan.length,
@@ -2029,6 +2074,13 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
           detected_visual_categories: clip.detected_visual_categories,
           detected_objects: clip.detected_objects,
           visual_intent_match: clip.visual_intent_match,
+          semantic_relevance_score: Number(clip.semantic_relevance_score || 0),
+          editorial_evidence_score: Number(clip.editorial_evidence_score || 0),
+          semantic_risk_score: Number(clip.semantic_risk_score || 0),
+          identity_class: clip.identity_class || "",
+          editorial_utility: clip.editorial_utility || "",
+          visual_type: clip.visual_type || "",
+          risk_flags: clip.risk_flags || [],
           visual_truth_status: clip.visual_truth_status || "regional",
           visual_observation_origin: clip.visual_observation_origin || "real_vision",
           visual_family: clip.visual_family || "",
@@ -2045,6 +2097,11 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
           theme_evidence_present: clip.theme_evidence_present !== false,
           source_tier: clip.source_tier || "free",
           approved_window_id: clip.approved_window_id || clip.asset_window_id,
+          approval_provenance: clip.approval_provenance || {
+            approved_window_id: String(clip.approved_window_id || clip.asset_window_id || ""),
+            clip_library_id: String(clip.clip_library_id || ""),
+            origin_approved_window_id: String(clip.origin_approved_window_id || ""),
+          },
           content_slot_type: clip.content_slot_type || "",
           content_slot_id: clip.content_slot_id || "",
           slot_coverage_ok: clip.slot_coverage_ok !== false,
@@ -2095,11 +2152,38 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     lines: ["Preparando metadata e publicação do link de revisão online."],
   }).catch(() => null);
 
+  await appendPipelineEvent({
+    videoId,
+    stage: "render",
+    event: "end",
+    status: "ok",
+    payload: {
+      duration_ms: Date.now() - stageStartedAt,
+      render_path: nextState.render_path || "",
+      total_clips: Number(nextState.render_timeline?.total_clips || 0),
+      hard_boundary_status: String(nextState.render_timeline?.hard_boundary_status || "unknown"),
+      overlay_apply_status: String(nextState.render_timeline?.overlay_apply_status || "unknown"),
+    },
+  }).catch(() => null);
+
   return {
     video_id: videoId,
       render_path: nextState.render_path,
     state_path: nextState.state_path,
   };
+  } catch (error) {
+    await appendPipelineEvent({
+      videoId,
+      stage: "render",
+      event: "end",
+      status: "error",
+      payload: {
+        duration_ms: Date.now() - stageStartedAt,
+        error_message: String(error?.message || "render_failed"),
+      },
+    }).catch(() => null);
+    throw error;
+  }
 };
 
 module.exports = {

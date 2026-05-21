@@ -1,57 +1,76 @@
 # Visual Truth Final Report
 
-- video_id: 9be0a70b-00cc-48fb-9838-cb68fd592a58
-- render_path: \app\pipeline\output\draft\9be0a70b-00cc-48fb-9838-cb68fd592a58\render\final.mp4
-- upload_source_path: \app\pipeline\output\draft\9be0a70b-00cc-48fb-9838-cb68fd592a58\render\final.mp4
+- video_id: youtube_private_gemini_travel_1779282504217
+- render_path: \app\pipeline\output\draft\youtube_private_gemini_travel_1779282504217\render\final-with-overlays.mp4
+- upload_source_path: \app\pipeline\output\draft\youtube_private_gemini_travel_1779282504217\render\final-with-overlays.mp4
 - youtube_video_id: 
-- ffprobe: 1920x1080 / 95s
+- ffprobe: 1920x1080 / 162.834s
 - state_output_resolution: 
-- metadata_boundary_status: pass
-- visual_frame_boundary_status: pass
-- final_hard_boundary_status: pass
-- contact_sheet: C:\Users\HABILFIX\Desktop\Hubia\Projetos\youtube-video-pipeline\automacao-youtube-n8n\pipeline\test_reports\9be0a70b-00cc-48fb-9838-cb68fd592a58-contact-sheet.jpg
-- visual_audit_json: C:\Users\HABILFIX\Desktop\Hubia\Projetos\youtube-video-pipeline\automacao-youtube-n8n\pipeline\test_reports\9be0a70b-00cc-48fb-9838-cb68fd592a58-visual-audit.json
+- metadata_boundary_status: fail
+- visual_frame_boundary_status: fail
+- final_hard_boundary_status: fail
+- contact_sheet: \app\pipeline\output\test_reports\youtube_private_gemini_travel_1779282504217-contact-sheet.jpg
+- visual_audit_json: \app\pipeline\output\test_reports\youtube_private_gemini_travel_1779282504217-visual-audit.json
 
 ## Boundary Visual Audit
 | Boundary | Expected | Vision | Status |
 |---|---|---|---|
-| hb_005_10-paises-baratos-para-viajar-em-2026 @ 40.323s | 10 países baratos para viajar em 2026 |  | pass |
-| hb_005_10-paises-baratos-para-viajar-em-2026 @ 40.723s | 10 países baratos para viajar em 2026 |  | pass |
-| hb_005_10-paises-baratos-para-viajar-em-2026 @ 41.223s | 10 países baratos para viajar em 2026 |  | pass |
-| hb_006_introducao @ 48.004s | Introducao |  | pass |
-| hb_006_introducao @ 48.404s | Introducao |  | pass |
-| hb_006_introducao @ 48.904s | Introducao |  | pass |
-| hb_007_10-paises-baratos-para-viajar-em-2026 @ 59.279s | 10 países baratos para viajar em 2026 |  | pass |
-| hb_007_10-paises-baratos-para-viajar-em-2026 @ 59.679s | 10 países baratos para viajar em 2026 |  | pass |
-| hb_007_10-paises-baratos-para-viajar-em-2026 @ 60.179s | 10 países baratos para viajar em 2026 |  | pass |
-| hb_008_fechamento @ 66.96s | Fechamento |  | pass |
-| hb_008_fechamento @ 67.36s | Fechamento |  | pass |
-| hb_008_fechamento @ 67.86s | Fechamento |  | pass |
+| hb_002_lisboa @ 14.91s | Lisboa |  | pass |
+| hb_002_lisboa @ 15.31s | Lisboa |  | pass |
+| hb_002_lisboa @ 15.81s | Lisboa |  | pass |
+| hb_004_porto @ 53.417s | Porto |  | fail |
+| hb_004_porto @ 53.817s | Porto |  | fail |
+| hb_004_porto @ 54.317s | Porto |  | fail |
+| hb_006_faro @ 91.923s | Faro |  | fail |
+| hb_006_faro @ 92.323s | Faro |  | fail |
+| hb_006_faro @ 92.823s | Faro |  | fail |
+| hb_009_porto @ 148.202s | Porto |  | fail |
+| hb_009_porto @ 148.602s | Porto |  | fail |
+| hb_009_porto @ 149.102s | Porto |  | fail |
 
 ## Clip Audit
 | Clip | Expected | Query | Metadata | Vision | Status |
 |---|---|---|---|---|---|
-| 1 | Introducao |  | Introducao |  | pass |
+| 1 | Introducao |  |  |  | pass |
 | 2 | Introducao |  |  |  | pass |
 | 3 | Introducao |  |  |  | pass |
 | 4 | Introducao |  |  |  | pass |
-| 5 | Introducao |  |  |  | pass |
-| 6 | Introducao |  |  |  | pass |
-| 7 | Introducao |  |  |  | pass |
-| 8 | Introducao |  |  |  | pass |
-| 9 | Introducao |  |  |  | pass |
-| 10 | Introducao |  |  |  | pass |
-| 11 | Introducao |  |  |  | pass |
-| 12 | 10 países baratos para viajar em 2026 |  | 10 países baratos para viajar em 2026 |  | pass |
-| 13 | 10 países baratos para viajar em 2026 |  |  |  | pass |
-| 14 | Introducao |  | Introducao |  | pass |
-| 15 | Introducao |  |  |  | pass |
-| 16 | Introducao |  |  |  | pass |
-| 17 | 10 países baratos para viajar em 2026 |  | 10 países baratos para viajar em 2026 |  | pass |
-| 18 | 10 países baratos para viajar em 2026 |  |  |  | pass |
-| 19 | Fechamento |  | Fechamento |  | pass |
-| 20 | Fechamento |  |  |  | pass |
-| 21 | Fechamento |  |  |  | pass |
-| 22 | Fechamento |  |  |  | pass |
-| 23 | Fechamento |  |  |  | pass |
-| 24 | Fechamento |  |  |  | pass |
+| 5 | Lisboa |  | Lisboa |  | pass |
+| 6 | Lisboa |  | Lisboa |  | pass |
+| 7 | Lisboa |  | Lisboa |  | pass |
+| 8 | Lisboa |  | Lisboa |  | pass |
+| 9 | Lisboa | porto people walking city |  |  | uncertain |
+| 10 | Lisboa | lisboa street level authentic real action | Lisboa |  | pass |
+| 11 | Lisboa |  | Lisboa |  | pass |
+| 12 | Lisboa |  | Lisboa |  | pass |
+| 13 | Lisboa |  | Lisboa |  | pass |
+| 14 | Lisboa | porto people walking city |  |  | uncertain |
+| 15 | Porto | porto people walking city |  |  | uncertain |
+| 16 | Porto | introducao city establishing shot |  |  | pass |
+| 17 | Porto | porto city landmark |  |  | pass |
+| 18 | Porto | introducao people walking |  |  | pass |
+| 19 | Porto | porto people walking city |  |  | uncertain |
+| 20 | Porto |  |  |  | pass |
+| 21 | Porto | introducao authentic local street |  |  | pass |
+| 22 | Porto | introducao authentic local street |  |  | pass |
+| 23 | Porto | introducao authentic local street |  |  | pass |
+| 24 | Porto | porto people walking city |  |  | uncertain |
+| 25 | Faro | introducao people walking |  |  | uncertain |
+| 26 | Faro |  |  |  | pass |
+| 27 | Faro |  |  |  | pass |
+| 28 | Faro |  |  |  | pass |
+| 29 | Faro | porto people walking city |  |  | uncertain |
+| 30 | Faro |  |  |  | pass |
+| 31 | Faro |  |  |  | pass |
+| 32 | Faro |  |  |  | pass |
+| 33 | Faro |  |  |  | pass |
+| 34 | Faro | porto people walking city |  |  | uncertain |
+| 35 | Faro |  |  |  | pass |
+| 36 | Faro | introducao authentic local street |  |  | pass |
+| 37 | Faro | introducao authentic local street |  |  | pass |
+| 38 | Faro | introducao authentic local street |  |  | pass |
+| 39 | Faro | porto people walking city |  |  | uncertain |
+| 40 | Porto | porto people walking city |  |  | uncertain |
+| 41 | Porto | introducao people walking |  |  | pass |
+| 42 | Porto | introducao city establishing shot |  |  | pass |
+| 43 | Porto |  |  |  | pass |

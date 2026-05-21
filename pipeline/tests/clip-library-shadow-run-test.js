@@ -5,7 +5,7 @@ const { config } = require("../src/config/env");
 const { createPlaceholderImage, runFfmpeg } = require("../src/utils/mediaUtils");
 
 const run = async () => {
-  const outputRoot = path.join(process.cwd(), "output", "tests-clip-shadow");
+  const outputRoot = path.join(config.OUTPUT_ROOT, "tests-clip-shadow");
   await fs.emptyDir(outputRoot);
   const framePath = path.join(outputRoot, "frame.png");
   const videoPath = path.join(outputRoot, "long-source.mp4");
@@ -41,4 +41,3 @@ run().catch((error) => {
   console.error(error);
   process.exit(1);
 });
-

@@ -34,6 +34,7 @@ const generateMetadata = async ({ videoId, mockMode = false }) => {
         (await generateMetadataWithOpenAI({
           topic: state.topic,
           scriptText: state.script_text,
+          videoId,
         })) || buildMockMetadata({ topic: state.topic })
     : buildMockMetadata({ topic: state.topic });
 

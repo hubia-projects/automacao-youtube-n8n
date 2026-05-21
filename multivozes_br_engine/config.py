@@ -8,6 +8,9 @@ DEFAULT_CONFIGS = {
     "DEFAULT_RESPONSE_FORMAT": "mp3",
     "DEFAULT_SPEED": 1.0,
     "DEFAULT_LANGUAGE": "pt-BR",
+    "EDGE_TTS_ATTEMPTS": 3,
+    "EDGE_TTS_TIMEOUT_SEC": 45,
+    "EDGE_TTS_RETRY_DELAY_MS": 600,
 
     # --- Funcionalidades (Flags) ---
     "REQUIRE_API_KEY": True,

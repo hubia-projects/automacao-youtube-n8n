@@ -62,13 +62,16 @@ assert.strictEqual(block1.needs_repair, true, "b1 deveria exigir repair");
 assert.strictEqual(block1.can_advance, false, "b1 nao deveria avançar sem partial override");
 assert(block1.missing_slots.includes("people_eating"), "b1 deveria listar slot faltante");
 assert(block1.weak_only_slots.includes("people_eating"), "b1 deveria listar weak-only");
+assert.strictEqual(block1.coverage_levels.mandatory.coverage_ratio, 0.5, "b1 mandatory coverage ratio esperado");
+assert.strictEqual(block1.primary_failure_cause, "semantic_ambiguity", "b1 causa primaria deveria ser semantic_ambiguity");
 
 assert.strictEqual(block2.coverage_status, COVERAGE_STATUS.STRONG, "b2 deveria ficar strong");
 assert.strictEqual(block2.can_advance, true, "b2 deveria poder avançar");
+assert.strictEqual(block2.coverage_levels.mandatory.coverage_ratio, 1, "b2 mandatory coverage ratio esperado");
 
 assert.strictEqual(report.summary.total, 2, "summary total");
 assert.strictEqual(report.summary.strong, 1, "summary strong");
 assert.strictEqual(report.summary.partial, 1, "summary partial");
+assert.strictEqual(Number(report.summary.failure_causes.semantic_ambiguity || 0), 1, "summary failure cause semantic_ambiguity");
 
 console.log("coverage gate service validado com sucesso");
-

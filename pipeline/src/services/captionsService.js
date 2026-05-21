@@ -56,6 +56,7 @@ const generateCaptions = async ({ videoId, mockMode = false }) => {
       const transcriptionText = await transcribeWithOpenAI({
         audioPath: state.audio_path,
         format: "text",
+        videoId,
       });
 
       if (transcriptionText) {

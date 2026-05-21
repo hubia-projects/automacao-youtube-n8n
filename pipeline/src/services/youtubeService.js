@@ -3,6 +3,11 @@ const { google } = require("googleapis");
 const { config } = require("../config/env");
 const { loadState, updateState } = require("./stateService");
 const { sendWorkflowStatus } = require("./telegramService");
+const {
+  consumeExternalCallBudget,
+  isProviderDisabledInLocalTest,
+  getExternalApiStats,
+} = require("./externalApiControlService");
 
 const YOUTUBE_CAPTION_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl";
 const YOUTUBE_PARTNER_SCOPE = "https://www.googleapis.com/auth/youtubepartner";
@@ -219,8 +224,34 @@ const hasYoutubeCredentials = () =>
 const hasProviderCredentials = () =>
   Boolean(config.PEXELS_API_KEY || config.PIXABAY_API_KEY);
 
+const resolveEffectiveRenderValidation = (renderValidation = {}) => {
+  const hasActualIsPublishable = typeof renderValidation.actual_is_publishable === "boolean";
+  const hasActualNeedsRegeneration = typeof renderValidation.actual_needs_regeneration === "boolean";
+  const hasActualNeedsManualReview = typeof renderValidation.actual_needs_manual_review === "boolean";
+
+  return {
+    is_publishable: hasActualIsPublishable
+      ? renderValidation.actual_is_publishable === true
+      : renderValidation.is_publishable === true,
+    needs_regeneration: hasActualNeedsRegeneration
+      ? renderValidation.actual_needs_regeneration === true
+      : renderValidation.needs_regeneration === true,
+    needs_manual_review: hasActualNeedsManualReview
+      ? renderValidation.actual_needs_manual_review === true
+      : renderValidation.needs_manual_review === true,
+    hard_boundary_status: String(
+      renderValidation.actual_hard_boundary_status
+      || renderValidation.final_hard_boundary_status
+      || renderValidation.hard_boundary_status
+      || "unknown"
+    ),
+    max_visual_lag_sec: Number(renderValidation.max_visual_lag_sec || 0),
+  };
+};
+
 const getProductionPreflightStatus = async ({ videoId = "", mockMode = false } = {}) => {
   const state = videoId ? await loadState(videoId).catch(() => null) : null;
+  const effectiveValidation = resolveEffectiveRenderValidation(state?.render_validation || {});
   const runtimeProfile = String(
     state?.render_validation?.qa_runtime_profile
     || (mockMode ? config.QA_RUNTIME_PROFILE_MOCK : config.QA_RUNTIME_PROFILE_PROD)
@@ -232,9 +263,9 @@ const getProductionPreflightStatus = async ({ videoId = "", mockMode = false } =
     has_provider_credentials: hasProviderCredentials(),
     has_openai_key: Boolean(config.OPENAI_API_KEY),
     has_render_validation: Boolean(state?.render_validation),
-    render_publishable: state?.render_validation?.is_publishable === true,
+    render_publishable: effectiveValidation.is_publishable === true,
     editorial_blocked: Boolean(state?.render_validation?.publish_blocked),
-    hard_boundary_pass: String(state?.render_validation?.hard_boundary_status || "") === "pass",
+    hard_boundary_pass: effectiveValidation.hard_boundary_status === "pass",
   };
   const missing = [];
   if (!checks.has_provider_credentials) missing.push("PROVIDER_CREDENTIALS_MISSING");
@@ -261,15 +292,12 @@ const getProductionPreflightStatus = async ({ videoId = "", mockMode = false } =
 
 const ensureRenderIsPublishableForUpload = (state = {}) => {
   const renderValidation = state.render_validation || {};
-  const qaRuntimeProfile = String(renderValidation.qa_runtime_profile || "").toLowerCase();
-  if (qaRuntimeProfile === "mock_relaxed") {
-    return;
-  }
-  const isPublishable = renderValidation.is_publishable === true;
-  const needsRegeneration = renderValidation.needs_regeneration === true;
-  const needsManualReview = renderValidation.needs_manual_review === true;
-  const hardBoundaryStatus = renderValidation.hard_boundary_status || "unknown";
-  const maxVisualLagSec = Number(renderValidation.max_visual_lag_sec || 0);
+  const effectiveValidation = resolveEffectiveRenderValidation(renderValidation);
+  const isPublishable = effectiveValidation.is_publishable === true;
+  const needsRegeneration = effectiveValidation.needs_regeneration === true;
+  const needsManualReview = effectiveValidation.needs_manual_review === true;
+  const hardBoundaryStatus = effectiveValidation.hard_boundary_status || "unknown";
+  const maxVisualLagSec = effectiveValidation.max_visual_lag_sec;
   const maxAllowedLagSec = Number(config.HARD_BOUNDARY_MAX_LAG_SEC || 0.5);
   const editorialFailureCodes = Array.isArray(renderValidation.editorial_failure_codes)
     ? renderValidation.editorial_failure_codes
@@ -298,6 +326,8 @@ const ensureRenderIsPublishableForUpload = (state = {}) => {
 
 const uploadToYoutube = async ({ videoId, mockMode = false, privacyStatus = config.YOUTUBE_DEFAULT_PRIVACY }) => {
   const state = await loadState(videoId);
+  const forceLocalMock = isProviderDisabledInLocalTest("youtube");
+  const effectiveMockMode = mockMode || forceLocalMock;
 
   if (!state.approved) {
     throw new Error("Upload bloqueado: aprovação final não foi confirmada.");
@@ -309,7 +339,7 @@ const uploadToYoutube = async ({ videoId, mockMode = false, privacyStatus = conf
     throw new Error("Arquivo de vídeo final não encontrado para upload.");
   }
 
-  if (mockMode || !hasYoutubeCredentials()) {
+  if (effectiveMockMode || !hasYoutubeCredentials()) {
     const fakeId = `mock_${videoId.slice(0, 8)}`;
     const mockCaptionSource = resolveCaptionUploadSource(state);
     const nextState = await updateState(
@@ -323,11 +353,12 @@ const uploadToYoutube = async ({ videoId, mockMode = false, privacyStatus = conf
         youtube_caption_format: mockCaptionSource?.format || "",
         youtube_caption_status: mockCaptionSource ? "uploaded_mock" : "skipped_no_caption",
         youtube_caption_error_message: "",
+        external_api_stats: getExternalApiStats({ videoId }),
         error_message: "",
       },
       {
         currentStep: "youtube_uploaded",
-        status: "youtube_uploaded_mock",
+        status: forceLocalMock ? "youtube_uploaded_local_test_mock" : "youtube_uploaded_mock",
       }
     );
 
@@ -355,6 +386,14 @@ const uploadToYoutube = async ({ videoId, mockMode = false, privacyStatus = conf
 
   const oauth2Client = createYoutubeOAuthClient();
   const youtube = google.youtube({ version: "v3", auth: oauth2Client });
+  const budget = consumeExternalCallBudget({
+    provider: "youtube",
+    videoId,
+    operation: "upload_video",
+  });
+  if (!budget.allowed) {
+    throw new Error(`Upload bloqueado pelo circuit breaker: ${budget.reason}.`);
+  }
 
   const response = await youtube.videos.insert({
     part: ["snippet", "status"],
@@ -396,6 +435,7 @@ const uploadToYoutube = async ({ videoId, mockMode = false, privacyStatus = conf
       youtube_url: youtubeUrl,
       youtube_privacy_status: privacyStatus || config.YOUTUBE_DEFAULT_PRIVACY,
       ...captionUpload.statePatch,
+      external_api_stats: getExternalApiStats({ videoId }),
       error_message: "",
     },
     {
@@ -427,6 +467,13 @@ const uploadToYoutube = async ({ videoId, mockMode = false, privacyStatus = conf
 };
 
 const basicYoutubeHealthcheck = async () => {
+  if (isProviderDisabledInLocalTest("youtube")) {
+    return {
+      configured: true,
+      ok: true,
+      message: "YouTube desativado em LOCAL_TEST_MODE",
+    };
+  }
   if (!hasYoutubeCredentials()) {
     return {
       configured: false,
@@ -436,6 +483,18 @@ const basicYoutubeHealthcheck = async () => {
   }
 
   try {
+    const budget = consumeExternalCallBudget({
+      provider: "youtube",
+      videoId: "",
+      operation: "healthcheck",
+    });
+    if (!budget.allowed) {
+      return {
+        configured: true,
+        ok: true,
+        message: "YouTube bloqueado pelo circuit breaker",
+      };
+    }
     const oauth2Client = createYoutubeOAuthClient();
     const { scopes, errorMessage } = await getYoutubeScopesInfo(oauth2Client);
 

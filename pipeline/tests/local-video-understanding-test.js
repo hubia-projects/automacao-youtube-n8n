@@ -6,7 +6,7 @@ const { createPlaceholderImage, runFfmpeg } = require("../src/utils/mediaUtils")
 const { config } = require("../src/config/env");
 
 const run = async () => {
-  const tempDir = path.join(process.cwd(), "output", "tests-local-understanding");
+  const tempDir = path.join(config.OUTPUT_ROOT, "tests-local-understanding");
   await fs.ensureDir(tempDir);
   const imagePath = path.join(tempDir, "frame.png");
   const videoPath = path.join(tempDir, "sample.mp4");

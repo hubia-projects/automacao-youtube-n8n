@@ -76,13 +76,13 @@ const getResolutionLabel = ({ width = 0, height = 0 }) => {
 
 const placeholderPalette = [
   "#0f766e",
-  "#1d4ed8",
-  "#7c3aed",
-  "#ea580c",
-  "#15803d",
-  "#be123c",
-  "#0369a1",
-  "#4338ca",
+  "#374151",
+  "#166534",
+  "#92400e",
+  "#7f1d1d",
+  "#3f3f46",
+  "#14532d",
+  "#78350f",
 ];
 
 const createPlaceholderImage = async ({ outputPath, width = 1920, height = 1080, seed = 1 }) => {

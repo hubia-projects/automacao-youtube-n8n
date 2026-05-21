@@ -88,7 +88,8 @@ const buildSceneAssetReadiness = ({
   if (requiredThemeCategories.length && FOOD_VISUAL_INTENTS.has(intent) && themeMatchedWindows <= 0) {
     blockingReasons.push("scene_missing_theme_visual_proof");
   }
-  if (blockSlotCoverageMissing.length) {
+  const strictSlotCoverageIntent = FOOD_VISUAL_INTENTS.has(intent) || scene.requires_visual_proof === true;
+  if (blockSlotCoverageMissing.length && strictSlotCoverageIntent) {
     blockingReasons.push("scene_missing_required_content_slots");
   }
   if (editorialBlockingReasons.includes("block_coverage_insufficient")) {

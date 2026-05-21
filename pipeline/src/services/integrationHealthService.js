@@ -16,7 +16,7 @@ const runIntegrationHealthchecks = async () => {
     basicElevenLabsHealthcheck(),
     basicPexelsHealthcheck(),
     basicPixabayHealthcheck(),
-    basicTelegramHealthcheck(),
+    basicTelegramHealthcheck({ sendMessage: false }),
     basicYoutubeHealthcheck(),
   ]);
 

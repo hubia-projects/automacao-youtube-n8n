@@ -34,13 +34,38 @@ const toList = (value, fallback = []) =>
       .filter(Boolean)
     : fallback;
 
-const OUTPUT_ROOT = process.env.OUTPUT_ROOT || path.join(PIPELINE_ROOT, "output");
+const resolveProjectPath = (rawPath = "", fallbackPath = "") => {
+  const candidate = String(rawPath || "").trim();
+  if (!candidate) return fallbackPath;
+  if (path.isAbsolute(candidate)) return candidate;
+  if (/^pipeline[\\/]/i.test(candidate)) return path.resolve(REPO_ROOT, candidate);
+  return path.resolve(PIPELINE_ROOT, candidate);
+};
+
+const OUTPUT_ROOT = resolveProjectPath(
+  process.env.OUTPUT_ROOT || "",
+  path.join(PIPELINE_ROOT, "output")
+);
+const TEST_REPORTS_ROOT = resolveProjectPath(
+  process.env.TEST_REPORTS_ROOT || "",
+  path.join(OUTPUT_ROOT, "test_reports")
+);
 
 const config = {
   APP_PORT: Number(process.env.APP_PORT || 8080),
   MOCK_MODE: toBool(process.env.MOCK_MODE, false),
+  LOCAL_TEST_MODE: toBool(process.env.LOCAL_TEST_MODE, false),
+  LOCAL_TEST_DISABLE_OPENAI: toBool(process.env.LOCAL_TEST_DISABLE_OPENAI, true),
+  LOCAL_TEST_DISABLE_GEMINI: toBool(process.env.LOCAL_TEST_DISABLE_GEMINI, true),
+  LOCAL_TEST_DISABLE_YOUTUBE: toBool(process.env.LOCAL_TEST_DISABLE_YOUTUBE, true),
+  EXTERNAL_API_CIRCUIT_BREAKER_ENABLED: toBool(process.env.EXTERNAL_API_CIRCUIT_BREAKER_ENABLED, false),
+  EXTERNAL_API_MAX_CALLS_TOTAL: Number(process.env.EXTERNAL_API_MAX_CALLS_TOTAL || -1),
+  EXTERNAL_API_MAX_CALLS_OPENAI: Number(process.env.EXTERNAL_API_MAX_CALLS_OPENAI || -1),
+  EXTERNAL_API_MAX_CALLS_GEMINI: Number(process.env.EXTERNAL_API_MAX_CALLS_GEMINI || -1),
+  EXTERNAL_API_MAX_CALLS_YOUTUBE: Number(process.env.EXTERNAL_API_MAX_CALLS_YOUTUBE || -1),
   ALLOW_PLACEHOLDER_ASSETS: toBool(process.env.ALLOW_PLACEHOLDER_ASSETS, false),
   OUTPUT_ROOT,
+  TEST_REPORTS_ROOT,
   N8N_BASE_URL: process.env.N8N_BASE_URL || "http://n8n:5678",
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",
@@ -48,7 +73,7 @@ const config = {
   GEMINI_VISION_ENABLED: toBool(process.env.GEMINI_VISION_ENABLED, true),
   GEMINI_VISION_MODEL_LITE: process.env.GEMINI_VISION_MODEL_LITE || "gemini-2.5-flash-lite",
   GEMINI_VISION_MODEL_FULL: process.env.GEMINI_VISION_MODEL_FULL || "gemini-2.5-flash",
-  GEMINI_VISION_FALLBACK_MODELS: toList(process.env.GEMINI_VISION_FALLBACK_MODELS, ["gemini-2.0-flash"]),
+  GEMINI_VISION_FALLBACK_MODELS: toList(process.env.GEMINI_VISION_FALLBACK_MODELS, []),
   GEMINI_VISION_TIMEOUT_MS: Number(process.env.GEMINI_VISION_TIMEOUT_MS || 45000),
   GEMINI_VISION_MAX_RETRIES: Number(process.env.GEMINI_VISION_MAX_RETRIES || 2),
   GEMINI_VISION_RETRY_BASE_MS: Number(process.env.GEMINI_VISION_RETRY_BASE_MS || 1200),
@@ -57,6 +82,7 @@ const config = {
   MULTIVOZES_BR_ENGINE:
     process.env.MULTIVOZES_BR_ENGINE || process.env.MULTIVOZEZ_BR_ENGINE || "",
   MULTIVOZES_BR_BASE_URL: process.env.MULTIVOZES_BR_BASE_URL || "http://host.docker.internal:5050/v1",
+  MULTIVOZES_DEFAULT_VOICE: process.env.MULTIVOZES_DEFAULT_VOICE || "",
   MULTIVOZES_AUTO_START: toBool(process.env.MULTIVOZES_AUTO_START, false),
   MULTIVOZES_PROJECT_PATH: process.env.MULTIVOZES_PROJECT_PATH || "",
   MULTIVOZES_DOCKER_SERVICE: process.env.MULTIVOZES_DOCKER_SERVICE || "",
@@ -88,6 +114,9 @@ const config = {
   VISUAL_EVIDENCE_PROVIDER_VERSION: process.env.VISUAL_EVIDENCE_PROVIDER_VERSION || "v2_heuristic",
   CRITICAL_SLOT_FREE_SOURCE_BUDGET_PER_BLOCK: Number(process.env.CRITICAL_SLOT_FREE_SOURCE_BUDGET_PER_BLOCK || 1),
   CRITICAL_SLOT_FREE_CONFIDENCE_MIN: Number(process.env.CRITICAL_SLOT_FREE_CONFIDENCE_MIN || 0.82),
+  CRITICAL_SLOT_MIN_SEMANTIC_RELEVANCE: Number(process.env.CRITICAL_SLOT_MIN_SEMANTIC_RELEVANCE || 0.45),
+  CRITICAL_SLOT_MIN_EDITORIAL_EVIDENCE: Number(process.env.CRITICAL_SLOT_MIN_EDITORIAL_EVIDENCE || 0.58),
+  CRITICAL_SLOT_MAX_SEMANTIC_RISK: Number(process.env.CRITICAL_SLOT_MAX_SEMANTIC_RISK || 0.55),
   LOCAL_VIDEO_UNDERSTANDING_ENABLED: toBool(process.env.LOCAL_VIDEO_UNDERSTANDING_ENABLED, false),
   LOCAL_VIDEO_UNDERSTANDING_MODE: process.env.LOCAL_VIDEO_UNDERSTANDING_MODE || "frames",
   LOCAL_VIDEO_UNDERSTANDING_WINDOW_SECONDS: Number(process.env.LOCAL_VIDEO_UNDERSTANDING_WINDOW_SECONDS || 8),
@@ -107,7 +136,7 @@ const config = {
   ASSET_SCARCITY_CHEAP_SHORTLIST_PER_BLOCK: Number(process.env.ASSET_SCARCITY_CHEAP_SHORTLIST_PER_BLOCK || 30),
   ASSET_SCARCITY_VISION_FINALISTS_PER_BLOCK: Number(process.env.ASSET_SCARCITY_VISION_FINALISTS_PER_BLOCK || 12),
   COVERAGE_GATE_MAX_REPAIR_ROUNDS_PER_BLOCK: Number(process.env.COVERAGE_GATE_MAX_REPAIR_ROUNDS_PER_BLOCK || 2),
-  COVERAGE_GATE_ALLOW_PARTIAL: toBool(process.env.COVERAGE_GATE_ALLOW_PARTIAL, false),
+  COVERAGE_GATE_ALLOW_PARTIAL: toBool(process.env.COVERAGE_GATE_ALLOW_PARTIAL, true),
   EDITORIAL_STRONG_ONLY_PRE_RENDER: toBool(process.env.EDITORIAL_STRONG_ONLY_PRE_RENDER, true),
   REPAIR_PLANNER_MAX_LOCAL_ROUNDS: Number(process.env.REPAIR_PLANNER_MAX_LOCAL_ROUNDS || 2),
   CRITICAL_SLOT_MIN_PROVIDER_RELIABILITY: Number(process.env.CRITICAL_SLOT_MIN_PROVIDER_RELIABILITY || 0.45),
@@ -133,6 +162,8 @@ const config = {
     process.env.CLIP_LIBRARY_ROOT_DIR
     || path.join(OUTPUT_ROOT, "editorial", "clip-library"),
   CLIP_LIBRARY_MAX_SEARCH_RESULTS: Number(process.env.CLIP_LIBRARY_MAX_SEARCH_RESULTS || 24),
+  CLIP_LIBRARY_TARGET_DURATIONS: process.env.CLIP_LIBRARY_TARGET_DURATIONS || "3,5,15",
+  CLIP_LIBRARY_MAX_MICROCLIPS_PER_WINDOW: Number(process.env.CLIP_LIBRARY_MAX_MICROCLIPS_PER_WINDOW || 8),
   CLIP_LIBRARY_SHADOW_ENABLED: toBool(process.env.CLIP_LIBRARY_SHADOW_ENABLED, false),
   CLIP_LIBRARY_SHADOW_VIDEO_PATH: process.env.CLIP_LIBRARY_SHADOW_VIDEO_PATH || "",
   CLIP_LIBRARY_SHADOW_REPORT_DIR:
@@ -173,6 +204,7 @@ const config = {
 
 fs.ensureDirSync(config.OUTPUT_ROOT);
 fs.ensureDirSync(path.join(config.OUTPUT_ROOT, "draft"));
+fs.ensureDirSync(config.TEST_REPORTS_ROOT);
 fs.ensureDirSync(path.dirname(config.CLIP_LIBRARY_DB_PATH));
 fs.ensureDirSync(path.dirname(config.SCENE_INDEX_DB_PATH));
 fs.ensureDirSync(config.CLIP_LIBRARY_ROOT_DIR);

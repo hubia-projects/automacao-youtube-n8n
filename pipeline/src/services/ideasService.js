@@ -102,7 +102,7 @@ const generateIdeas = async ({ videoId, count = 5, mockMode = false }) => {
 
   let ideas = [];
   if (!mockMode) {
-    const aiIdeas = await generateIdeasWithOpenAI({ count: requested });
+    const aiIdeas = await generateIdeasWithOpenAI({ count: requested, videoId });
     if (aiIdeas?.length) {
       ideas = normalizeOpenAiIdeas(aiIdeas);
     }

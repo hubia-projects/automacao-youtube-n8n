@@ -5,7 +5,7 @@ const { config } = require("../src/config/env");
 const { createPlaceholderImage, runFfmpeg } = require("../src/utils/mediaUtils");
 
 const run = async () => {
-  const outputRoot = path.join(process.cwd(), "output", "tests-clip-library");
+  const outputRoot = path.join(config.OUTPUT_ROOT, "tests-clip-library");
   await fs.emptyDir(outputRoot);
   const videoPath = path.join(outputRoot, "source.mp4");
   const framePath = path.join(outputRoot, "frame.png");
@@ -60,12 +60,21 @@ const run = async () => {
     sceneIndex: 1,
     blockId: "block_a",
     asset,
-    windows,
+    windows: [{
+      ...windows[0],
+      summary: "Bonde amarelo descendo uma rua histórica de Alfama em Lisboa.",
+      description: "Plano amplo de um bonde amarelo cruzando Alfama com casario antigo ao fundo.",
+      landmarks: [{ name: "Alfama", city: "Lisboa" }],
+    }],
     initialStatus: "raw_cut",
     approvalContext: { stage: "test_repeat" },
   });
   assert.strictEqual(second.length, 1, "segunda execução deveria retornar 1 clip");
   assert.strictEqual(second[0].clip_id, first[0].clip_id, "reprocessar não deveria duplicar clip lógico");
+
+  const enriched = await getClipById({ clipId: first[0].clip_id });
+  assert(String(enriched.metadata?.semantic_summary || "").includes("Alfama"), "deveria persistir semantic_summary enriquecido no metadata");
+  assert(String(enriched.metadata?.semantic_phrase || "").trim(), "deveria persistir semantic_phrase no metadata");
 
   const promoted = await updateClipStatus({
     clipId: first[0].clip_id,
@@ -78,10 +87,11 @@ const run = async () => {
     sceneIndex: 1,
     blockId: "block_a",
     visualIntent: "city_landmark",
-    keywords: ["tram"],
+    keywords: ["alfama", "bonde"],
     limit: 10,
   });
   assert(approved.length >= 1, "busca deveria encontrar clip aprovado");
+  assert(String(approved[0].semantic_summary || approved[0].metadata?.semantic_summary || "").includes("Alfama"), "busca deveria retornar clip com semantic_summary rico");
 
   await markClipUsed({ clipId: first[0].clip_id });
   const usedClip = await getClipById({ clipId: first[0].clip_id });
@@ -98,4 +108,3 @@ run().catch((error) => {
   console.error(error);
   process.exit(1);
 });
-

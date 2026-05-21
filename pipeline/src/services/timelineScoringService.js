@@ -28,6 +28,7 @@ const SCORE_WEIGHTS = {
   sourceReusePenalty: 4.0,
   assetReusePenalty: 4.0,
   windowReusePenalty: 5.0,
+  clipLibraryReusePenalty: 8.0,
   signatureReusePenalty: 3.5,
   blockSignaturePenalty: 4.5,
   blockProviderPenalty: 3.0,
@@ -62,6 +63,15 @@ const buildVisualSignature = (candidate = {}) => [
   normalizeLabel(candidate.location?.city || "neutral"),
   normalizeLabel((candidate.tags || []).slice(0, 3).join(" ")),
 ].join("|");
+
+const getCandidateReuseAssetKey = (candidate = {}) =>
+  String(
+    candidate.source_asset_id
+    || candidate.asset?.source_asset_id
+    || candidate.asset_id
+    || candidate.asset?.asset_id
+    || ""
+  ).trim();
 
 const computeSemanticScores = async ({ narrationText, candidates, videoId }) => {
   try {
@@ -260,6 +270,11 @@ const computeGenericAssetPenalty = ({ block, candidate }) => {
   if ((block.subtheme === "food" || block.subtheme === "market" || block.subtheme === "wine_pastry") && !/food|market|wine|pastry|dessert|bakery|cafe|restaurant|dish/.test(text)) {
     return 0.85;
   }
+  if (["gastronomy", "market", "wine", "pastry", "restaurant", "cafe", "street_food"].includes(String(block.visual_intent || "").toLowerCase())) {
+    if (/landscape|coast|bridge|river|aerial|skyline|historic street|generic_street|city_landmark/.test(text)) {
+      return Math.max(0.82, Number(candidate.neutral ? 0.9 : 0.82));
+    }
+  }
   return 0;
 };
 
@@ -277,23 +292,27 @@ const buildReuseSnapshot = ({ usage, candidate }) => {
   const sourceUrl = candidate.asset?.source_url || "";
   const localPath = candidate.asset?.local_path || "";
   const signature = buildVisualSignature(candidate);
+  const reuseAssetKey = getCandidateReuseAssetKey(candidate);
 
   return {
     sourceUrlCount: usage.usedSourceUrls?.get(sourceUrl) || 0,
-    assetCount: usage.usedAssetIds?.get(candidate.asset_id) || 0,
+    assetCount: usage.usedAssetIds?.get(reuseAssetKey) || 0,
     localPathCount: usage.usedLocalPaths?.get(localPath) || 0,
     windowCount: usage.usedWindowIds?.get(candidate.id) || 0,
     providerCount: usage.usedProviders?.get(candidate.source || candidate.asset?.provider || "unknown") || 0,
+    clipLibraryCount: usage.usedClipLibraryIds?.get(String(candidate.clip_library_id || "")) || 0,
     signatureCount: usage.usedVisualSignatures?.get(signature) || 0,
     signature,
+    reuseAssetKey,
   };
 };
 
 const computeReusePenalties = ({ block, candidate, usage, clipIndex }) => {
   const snapshot = buildReuseSnapshot({ usage, candidate });
-  const sameAssetLastGap = usage.lastClipByAssetId?.get(candidate.asset_id);
+  const sameAssetLastGap = usage.lastClipByAssetId?.get(snapshot.reuseAssetKey);
   const blockKey = block.block_id || "";
   const provider = String(candidate.source || candidate.asset?.provider || "unknown").toLowerCase();
+  const providerPenaltyExempt = candidate.from_clip_library === true || provider === "clip_library";
   const landmarkKey = normalizeLabel(
     `${(candidate.landmarks || [])[0]?.name || (candidate.landmarks || [])[0] || ""}|${(candidate.landmarks || [])[0]?.city || candidate.location?.city || ""}`
   );
@@ -310,17 +329,21 @@ const computeReusePenalties = ({ block, candidate, usage, clipIndex }) => {
   const sourceReusePenalty = clamp(snapshot.sourceUrlCount > 0 ? snapshot.sourceUrlCount / 2 : 0, 0, 1);
   const assetReusePenalty = clamp(snapshot.assetCount > 0 ? snapshot.assetCount / 2 : 0, 0, 1);
   const windowReusePenalty = clamp(snapshot.windowCount > 0 ? 1 : 0, 0, 1);
+  const clipLibraryReusePenalty = clamp(snapshot.clipLibraryCount > 0 ? 1 : 0, 0, 1);
   const signatureReusePenalty = clamp(snapshot.signatureCount > 0 ? Math.min(1, snapshot.signatureCount / 2) : 0, 0, 1);
-  const minGapPenalty = sameAssetLastGap && clipIndex - sameAssetLastGap < 2 ? 1 : 0;
-  const blockOverusePenalty = block.block_id && (usage.usedBlockAssetIds?.get(`${block.block_id}:${candidate.asset_id}`) || 0) > 0.5 ? 0.5 : 0;
+  const minGapPenalty = sameAssetLastGap && clipIndex - sameAssetLastGap < 3 ? 1 : 0;
+  const blockOverusePenalty = block.block_id && (usage.usedBlockAssetIds?.get(`${block.block_id}:${snapshot.reuseAssetKey}`) || 0) > 0.5 ? 0.5 : 0;
   const blockSignaturePenalty = clamp(blockSignatureCount > 0 ? Math.min(1, blockSignatureCount / 1.5) : 0, 0, 1);
-  const blockProviderPenalty = clamp(blockProviderCount >= 2 ? Math.min(1, (blockProviderCount - 1) / 2) : 0, 0, 1);
+  const blockProviderPenalty = providerPenaltyExempt
+    ? 0
+    : clamp(blockProviderCount >= 2 ? Math.min(1, (blockProviderCount - 1) / 2) : 0, 0, 1);
   const blockLandmarkPenalty = clamp(blockLandmarkCount > 0 ? Math.min(1, blockLandmarkCount / 1.5) : 0, 0, 1);
 
   return {
     sourceReusePenalty,
     assetReusePenalty: clamp(assetReusePenalty + blockOverusePenalty + minGapPenalty, 0, 1),
     windowReusePenalty,
+    clipLibraryReusePenalty,
     signatureReusePenalty,
     blockSignaturePenalty,
     blockProviderPenalty,
@@ -330,11 +353,12 @@ const computeReusePenalties = ({ block, candidate, usage, clipIndex }) => {
         sourceReusePenalty
         + assetReusePenalty
         + windowReusePenalty
+        + clipLibraryReusePenalty
         + signatureReusePenalty
         + blockSignaturePenalty
         + blockProviderPenalty
         + blockLandmarkPenalty
-      ) / 7,
+      ) / 8,
       0,
       1
     ),
@@ -429,6 +453,7 @@ const buildRejectedReasons = (components = {}) => {
   const reasons = [];
   if (components.blockMismatchPenalty >= 1) reasons.push("wrong_block");
   if (components.windowReusePenalty >= 1) reasons.push("reused_window");
+  if (components.clipLibraryReusePenalty >= 1) reasons.push("reused_clip_library_id");
   if (components.assetReusePenalty >= 1) reasons.push("reused_asset");
   if (components.sourceReusePenalty >= 1) reasons.push("reused_source_url");
   if (components.signatureReusePenalty >= 0.5) reasons.push("repeated_visual_signature");
@@ -561,6 +586,7 @@ const rankCandidates = async ({
       reuse.sourceReusePenalty * SCORE_WEIGHTS.sourceReusePenalty -
       reuse.assetReusePenalty * SCORE_WEIGHTS.assetReusePenalty -
       reuse.windowReusePenalty * SCORE_WEIGHTS.windowReusePenalty -
+      reuse.clipLibraryReusePenalty * SCORE_WEIGHTS.clipLibraryReusePenalty -
       reuse.signatureReusePenalty * SCORE_WEIGHTS.signatureReusePenalty -
       reuse.blockSignaturePenalty * SCORE_WEIGHTS.blockSignaturePenalty -
       reuse.blockProviderPenalty * SCORE_WEIGHTS.blockProviderPenalty -
@@ -579,6 +605,7 @@ const rankCandidates = async ({
       sourceReusePenalty: reuse.sourceReusePenalty,
       assetReusePenalty: reuse.assetReusePenalty,
       windowReusePenalty: reuse.windowReusePenalty,
+      clipLibraryReusePenalty: reuse.clipLibraryReusePenalty,
       signatureReusePenalty: reuse.signatureReusePenalty,
       blockMismatchPenalty,
       genericAssetPenalty,
@@ -617,6 +644,7 @@ const rankCandidates = async ({
         sourceReusePenalty: round3(reuse.sourceReusePenalty),
         assetReusePenalty: round3(reuse.assetReusePenalty),
         windowReusePenalty: round3(reuse.windowReusePenalty),
+        clipLibraryReusePenalty: round3(reuse.clipLibraryReusePenalty),
         signatureReusePenalty: round3(reuse.signatureReusePenalty),
         blockSignaturePenalty: round3(reuse.blockSignaturePenalty),
         blockProviderPenalty: round3(reuse.blockProviderPenalty),
@@ -658,12 +686,14 @@ const registerClipUsage = ({ usage, block, candidate, clipIndex }) => {
   const localPath = candidate.asset?.local_path || "";
   const provider = candidate.source || candidate.asset?.provider || "unknown";
   const signature = buildVisualSignature(candidate);
+  const reuseAssetKey = getCandidateReuseAssetKey(candidate);
 
   usage.usedSourceUrls = usage.usedSourceUrls || new Map();
   usage.usedAssetIds = usage.usedAssetIds || new Map();
   usage.usedLocalPaths = usage.usedLocalPaths || new Map();
   usage.usedWindowIds = usage.usedWindowIds || new Map();
   usage.usedProviders = usage.usedProviders || new Map();
+  usage.usedClipLibraryIds = usage.usedClipLibraryIds || new Map();
   usage.usedBlockAssetIds = usage.usedBlockAssetIds || new Map();
   usage.usedVisualSignatures = usage.usedVisualSignatures || new Map();
   usage.usedBlockVisualSignatures = usage.usedBlockVisualSignatures || new Map();
@@ -673,13 +703,21 @@ const registerClipUsage = ({ usage, block, candidate, clipIndex }) => {
 
   if (sourceUrl) usage.usedSourceUrls.set(sourceUrl, (usage.usedSourceUrls.get(sourceUrl) || 0) + 1);
   if (localPath) usage.usedLocalPaths.set(localPath, (usage.usedLocalPaths.get(localPath) || 0) + 1);
-  usage.usedAssetIds.set(candidate.asset_id, (usage.usedAssetIds.get(candidate.asset_id) || 0) + 1);
+  if (reuseAssetKey) {
+    usage.usedAssetIds.set(reuseAssetKey, (usage.usedAssetIds.get(reuseAssetKey) || 0) + 1);
+  }
   usage.usedWindowIds.set(candidate.id, (usage.usedWindowIds.get(candidate.id) || 0) + 1);
   usage.usedProviders.set(provider, (usage.usedProviders.get(provider) || 0) + 1);
+  if (candidate.clip_library_id) {
+    const clipLibraryId = String(candidate.clip_library_id || "");
+    usage.usedClipLibraryIds.set(clipLibraryId, (usage.usedClipLibraryIds.get(clipLibraryId) || 0) + 1);
+  }
   usage.usedVisualSignatures.set(signature, (usage.usedVisualSignatures.get(signature) || 0) + 1);
   if (block.block_id) {
-    const blockKey = `${block.block_id}:${candidate.asset_id}`;
-    usage.usedBlockAssetIds.set(blockKey, (usage.usedBlockAssetIds.get(blockKey) || 0) + 1);
+    if (reuseAssetKey) {
+      const blockKey = `${block.block_id}:${reuseAssetKey}`;
+      usage.usedBlockAssetIds.set(blockKey, (usage.usedBlockAssetIds.get(blockKey) || 0) + 1);
+    }
     const signatureKey = `${block.block_id}:${signature}`;
     usage.usedBlockVisualSignatures.set(signatureKey, (usage.usedBlockVisualSignatures.get(signatureKey) || 0) + 1);
     const providerKey = `${block.block_id}:${String(provider).toLowerCase()}`;
@@ -691,7 +729,9 @@ const registerClipUsage = ({ usage, block, candidate, clipIndex }) => {
       usage.usedBlockLandmarks.set(blockLandmarkKey, (usage.usedBlockLandmarks.get(blockLandmarkKey) || 0) + 1);
     }
   }
-  usage.lastClipByAssetId.set(candidate.asset_id, clipIndex);
+  if (reuseAssetKey) {
+    usage.lastClipByAssetId.set(reuseAssetKey, clipIndex);
+  }
 };
 
 module.exports = {

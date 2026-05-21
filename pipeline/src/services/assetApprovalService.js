@@ -1,5 +1,6 @@
 const { evaluateVisualEvidence, normalizeLabel } = require("./visualIntentService");
 const { isSameLocation } = require("./narrativeBlockPlanner");
+const { config } = require("../config/env");
 const {
   FOOD_VISUAL_INTENTS,
   getThemeRequiredCategoriesForIntent,
@@ -42,6 +43,14 @@ const GENERIC_CATEGORY_SET = new Set([
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
 const normalize = (value = "") => String(value || "").toLowerCase().trim();
+const clamp01 = (value) => Math.max(0, Math.min(1, Number(value || 0)));
+const SLOT_HINT_SYNONYMS = {
+  landmark: ["landmark", "monument", "palace", "palacio", "castle", "castelo", "cathedral", "fortress", "historic center"],
+  street_level: ["street", "rua", "avenue", "alley", "city street", "pedestrian", "urban"],
+  people_walking: ["people", "walking", "pedestrian", "crowd", "street life"],
+  wide_establishing: ["wide", "establishing", "panorama", "overview", "aerial"],
+  river: ["river", "rio", "waterfront", "douro", "tagus", "tejo"],
+};
 
 const MICRO_NEED_RULES = [
   { need: "market_stall", tokens: ["market", "mercado", "banca", "stall", "feira"] },
@@ -89,7 +98,10 @@ const getExpectedLocation = (scene = {}) =>
 const hasWrongLocation = ({ scene = {}, window = {} }) => {
   const expectedLocation = getExpectedLocation(scene);
   const detectedCity = window.location?.city || "";
+  const detectedConfidence = Number(window.location?.confidence || 0);
   if (!expectedLocation || !detectedCity) return false;
+  // Avoid false negatives from weak/uncertain city guesses.
+  if (detectedConfidence > 0 && detectedConfidence < 0.65) return false;
   return !isSameLocation(detectedCity, expectedLocation);
 };
 
@@ -107,6 +119,27 @@ const classifyVisualTruthStatus = ({
   const hasRequiredEvidence = requiredFoundCount > 0;
   const genericVisual = Boolean(evidence.generic_visual);
   const requiredMatchRatio = requiredCount > 0 ? (requiredFoundCount / requiredCount) : 0;
+  const semanticRelevanceScore = clamp01(
+    evidence.semantic_relevance_score
+    ?? evidence.editorial_inference?.semantic_relevance_score
+    ?? window.semantic_relevance_score
+    ?? window.confidence
+    ?? 0
+  );
+  const editorialEvidenceScore = clamp01(
+    evidence.editorial_evidence_score
+    ?? evidence.editorial_inference?.editorial_evidence_score
+    ?? window.editorial_evidence_score
+    ?? evidence.required_evidence_score
+    ?? 0
+  );
+  const semanticRiskScore = clamp01(
+    evidence.semantic_risk_score
+    ?? evidence.editorial_inference?.semantic_risk_score
+    ?? window.semantic_risk_score
+    ?? 0
+  );
+  const maxCriticalRisk = Number(config.CRITICAL_SLOT_MAX_SEMANTIC_RISK || 0.55);
   const normalizedIntent = String(scene.visual_intent || "").toLowerCase();
   const isFoodIntent = ["gastronomy", "market", "wine", "pastry", "restaurant", "cafe", "street_food"].includes(normalizedIntent);
   const themeRequiredCategories = getThemeRequiredCategoriesForIntent(normalizedIntent).map((item) => String(item || "").toLowerCase());
@@ -126,6 +159,7 @@ const classifyVisualTruthStatus = ({
 
   if (requiredCount > 0) {
     if (!observedObjectsOrActions) return "uncertain";
+    if (semanticRiskScore > maxCriticalRisk && editorialEvidenceScore < 0.7) return "uncertain";
     if (weakVisualSource) {
       if (!hasRequiredEvidence || genericVisual) return "uncertain";
       return requiredMatchRatio >= 0.7 && !genericVisual ? "regional" : "uncertain";
@@ -135,7 +169,13 @@ const classifyVisualTruthStatus = ({
       if (foodThemeHits >= 1) return "regional";
     }
     const minExactHits = isFoodIntent ? Math.min(2, requiredCount) : 1;
-    if ((requiredFoundCount >= minExactHits || requiredMatchRatio >= 0.5) && !genericVisual && !weakVisualSource) return "exact";
+    if (
+      (requiredFoundCount >= minExactHits || requiredMatchRatio >= 0.5)
+      && semanticRelevanceScore >= 0.45
+      && editorialEvidenceScore >= 0.55
+      && !genericVisual
+      && !weakVisualSource
+    ) return "exact";
     if (hasRequiredEvidence && !genericVisual) return "regional";
     if (genericVisual) return "generic";
     return "uncertain";
@@ -147,7 +187,7 @@ const classifyVisualTruthStatus = ({
     if (foodThemeHits >= 1) return "regional";
   }
   const allowedMatches = Number((evidence.matched_allowed_categories || []).length);
-  if (allowedMatches > 0 && !genericVisual && !weakVisualSource) return "exact";
+  if (allowedMatches > 0 && semanticRelevanceScore >= 0.45 && editorialEvidenceScore >= 0.5 && !genericVisual && !weakVisualSource) return "exact";
   if (allowedMatches > 0 && !genericVisual) return "regional";
   if (genericVisual) return "generic";
   return weakVisualSource ? "uncertain" : "regional";
@@ -199,14 +239,32 @@ const computeEditorialConfidence = ({ status, evidence = {}, weakVisualSource = 
   const requiredEvidenceScore = Number(evidence.required_evidence_score || 0);
   const allowedCategoryScore = Number(evidence.allowed_category_score || 0);
   const forbiddenPenalty = Number(evidence.forbidden_category_penalty || 0);
+  const semanticRelevanceScore = Number(
+    evidence.semantic_relevance_score
+    ?? evidence.editorial_inference?.semantic_relevance_score
+    ?? 0
+  );
+  const editorialEvidenceScore = Number(
+    evidence.editorial_evidence_score
+    ?? evidence.editorial_inference?.editorial_evidence_score
+    ?? requiredEvidenceScore
+  );
+  const semanticRiskScore = Number(
+    evidence.semantic_risk_score
+    ?? evidence.editorial_inference?.semantic_risk_score
+    ?? 0
+  );
   const strongSourcePenalty = weakVisualSource ? 0.3 : 0;
   const rolePenalty = scene.generic_asset_allowed === false && status === "generic" ? 0.2 : 0;
   const requiredMatchBonus = Number(evidence.required_evidence_score || 0) >= 0.5 ? 0.08 : 0;
   const base = (
     (status === "exact" ? 0.85 : status === "regional" ? 0.68 : status === "generic" ? 0.46 : status === "wrong" ? 0.05 : 0.2)
     + requiredEvidenceScore * 0.2
+    + semanticRelevanceScore * 0.08
+    + editorialEvidenceScore * 0.12
     + allowedCategoryScore * 0.1
     + requiredMatchBonus
+    - semanticRiskScore * 0.2
     - forbiddenPenalty * 0.35
     - strongSourcePenalty
     - rolePenalty
@@ -224,6 +282,9 @@ const buildReasonCodes = ({ status, evidence = {}, weakVisualSource = false, sce
   if (status === "exact") codes.push("strong_visual_proof");
   if (status === "regional") codes.push("regional_context_match");
   if (status === "uncertain") codes.push("insufficient_visual_evidence");
+  if (Number(evidence.semantic_risk_score || evidence.editorial_inference?.semantic_risk_score || 0) >= 0.5) {
+    codes.push("semantic_risk_high");
+  }
   return unique(codes);
 };
 
@@ -354,8 +415,37 @@ const buildEditorialWindowContract = ({
     : visualTruthStatus === "uncertain" || visualTruthStatus === "wrong"
       ? 0
       : getWindowDuration(window);
+  const semanticRelevanceScore = clamp01(
+    evidence.semantic_relevance_score
+    ?? evidence.editorial_inference?.semantic_relevance_score
+    ?? window.semantic_relevance_score
+    ?? window.confidence
+    ?? 0
+  );
+  const editorialEvidenceScore = clamp01(
+    evidence.editorial_evidence_score
+    ?? evidence.editorial_inference?.editorial_evidence_score
+    ?? window.editorial_evidence_score
+    ?? evidence.required_evidence_score
+    ?? 0
+  );
+  const semanticRiskScore = clamp01(
+    evidence.semantic_risk_score
+    ?? evidence.editorial_inference?.semantic_risk_score
+    ?? window.semantic_risk_score
+    ?? 0
+  );
+  const criticalSemanticMin = Number(config.CRITICAL_SLOT_MIN_SEMANTIC_RELEVANCE || 0.45);
+  const criticalEditorialMin = Number(config.CRITICAL_SLOT_MIN_EDITORIAL_EVIDENCE || 0.58);
+  const criticalRiskMax = Number(config.CRITICAL_SLOT_MAX_SEMANTIC_RISK || 0.55);
   const criticalSlotAllowed = visualTruthStatus === "exact"
-    || (visualTruthStatus === "regional" && editorialConfidence >= (scene.visual_intent === "gastronomy" ? 0.7 : 0.64));
+    || (
+      visualTruthStatus === "regional"
+      && editorialConfidence >= (scene.visual_intent === "gastronomy" ? 0.7 : 0.64)
+      && semanticRelevanceScore >= criticalSemanticMin
+      && editorialEvidenceScore >= criticalEditorialMin
+      && semanticRiskScore <= criticalRiskMax
+    );
 
   const approved = visualTruthStatus !== "wrong" && visualTruthStatus !== "uncertain";
   const rejected = !approved;
@@ -394,6 +484,9 @@ const buildEditorialWindowContract = ({
     visual_observation_origin: observationOrigin,
     visual_truth_status: visualTruthStatus,
     editorial_confidence: editorialConfidence,
+    semantic_relevance_score: semanticRelevanceScore,
+    editorial_evidence_score: editorialEvidenceScore,
+    semantic_risk_score: semanticRiskScore,
     narrative_roles_supported: narrativeRolesSupported,
     opening_allowed: narrativeRolesSupported.includes("opening_establishing") || narrativeRolesSupported.includes("hook_exact"),
     closing_allowed: narrativeRolesSupported.includes("closing_payoff"),
@@ -435,6 +528,9 @@ const buildEditorialWindowContract = ({
       required_evidence_score: Number(evidence.required_evidence_score || 0),
       allowed_category_score: Number(evidence.allowed_category_score || 0),
       forbidden_category_penalty: Number(evidence.forbidden_category_penalty || 0),
+      semantic_relevance_score: semanticRelevanceScore,
+      editorial_evidence_score: editorialEvidenceScore,
+      semantic_risk_score: semanticRiskScore,
     },
     window: {
       window_index: Number(window.window_index || windowIndex + 1),
@@ -477,8 +573,11 @@ const extractSlotMatchText = (contract = {}) =>
 
 const scoreContractAgainstSlot = ({ contract = {}, slot = {} }) => {
   const matchText = extractSlotMatchText(contract);
+  const slotType = normalize(slot.slot_type || "");
+  const slotSynonyms = SLOT_HINT_SYNONYMS[slotType] || [];
   const hints = unique([
     slot.slot_type,
+    ...slotSynonyms,
     ...(slot.query_hints || []),
     ...(slot.target_roles || []),
   ]).map(normalize);
@@ -488,7 +587,9 @@ const scoreContractAgainstSlot = ({ contract = {}, slot = {} }) => {
   const proofEligible = status === "exact" || status === "regional";
   const proofBonus = slot.requires_visual_proof ? (proofEligible ? 1 : -1) : 0.3;
   const confidence = Number(contract.editorial_confidence || 0);
-  return round3((hits * 0.4) + (roleHit * 0.4) + proofBonus + (confidence * 0.3));
+  const semanticRelevanceScore = Number(contract.semantic_relevance_score || contract.editorial_inference?.semantic_relevance_score || 0);
+  const editorialEvidenceScore = Number(contract.editorial_evidence_score || contract.editorial_inference?.editorial_evidence_score || 0);
+  return round3((hits * 0.35) + (roleHit * 0.35) + proofBonus + (confidence * 0.2) + (semanticRelevanceScore * 0.1) + (editorialEvidenceScore * 0.2));
 };
 
 const annotateContractSlotCoverage = ({ contract = {}, blockPackage = null }) => {
@@ -541,14 +642,17 @@ const getSceneByIndexMap = (visualPlan = []) =>
 
 const getCriticalSlotDefinitions = (scene = {}) => {
   const role = String(scene.role || "body").toLowerCase();
-  const defs = [
-    { slot: "first_clip_of_block", requiredBins: ["proof_exact", "context_regional"] },
-  ];
+  const visualIntent = String(scene.visual_intent || "").toLowerCase();
+  const isGenericIntro = role === "intro" && ["generic_travel", "travel", "overview"].includes(visualIntent);
+  const defs = [];
+  if (!isGenericIntro) {
+    defs.push({ slot: "first_clip_of_block", requiredBins: ["proof_exact", "context_regional"] });
+  }
   if (scene.hard_boundary) defs.push({ slot: "hard_boundary_first_clip", requiredBins: ["hook_exact", "proof_exact", "opening_establishing"] });
   if (scene.chapter_card_required) defs.push({ slot: "chapter_opening", requiredBins: ["hook_exact", "opening_establishing", "proof_exact"] });
-  if (role === "intro") defs.push({ slot: "intro", requiredBins: ["hook_exact", "opening_establishing"] });
+  if (role === "intro" && !isGenericIntro) defs.push({ slot: "intro", requiredBins: ["hook_exact", "opening_establishing"] });
   if (role === "outro") defs.push({ slot: "closing", requiredBins: ["closing_payoff"] });
-  if (role === "intro") defs.push({ slot: "hook", requiredBins: ["hook_exact"] });
+  if (role === "intro" && !isGenericIntro) defs.push({ slot: "hook", requiredBins: ["hook_exact"] });
   return defs;
 };
 
@@ -640,11 +744,15 @@ const approveAssetsForVisualPlan = ({ visualPlan = [], assets = [], blockPackage
       const slotProofWindows = slot.requires_visual_proof
         ? slotWindows.filter((window) => ["exact", "regional"].includes(String(window.visual_truth_status || "").toLowerCase()))
         : slotWindows.filter((window) => !["wrong", "uncertain"].includes(String(window.visual_truth_status || "").toLowerCase()));
+      const semanticScores = slotProofWindows.map((window) => Number(window.semantic_relevance_score || window.editorial_inference?.semantic_relevance_score || 0));
+      const editorialScores = slotProofWindows.map((window) => Number(window.editorial_evidence_score || window.editorial_inference?.editorial_evidence_score || 0));
       const count = Math.min(Number(slot.max_count || 1), slotProofWindows.length);
       const ok = slot.required ? count >= Number(slot.min_count || 1) : true;
       return {
         slot_id: slot.slot_id,
         slot_type: slot.slot_type,
+        criticality: slot.criticality || "",
+        requires_visual_proof: slot.requires_visual_proof === true,
         required: slot.required === true,
         min_count: Number(slot.min_count || 0),
         max_count: Number(slot.max_count || 0),
@@ -652,6 +760,12 @@ const approveAssetsForVisualPlan = ({ visualPlan = [], assets = [], blockPackage
         eligible_count: slotProofWindows.length,
         coverage_count: count,
         covered: ok,
+        avg_semantic_relevance_score: round3(
+          semanticScores.reduce((acc, score) => acc + Number(score || 0), 0) / Math.max(1, semanticScores.length)
+        ),
+        avg_editorial_evidence_score: round3(
+          editorialScores.reduce((acc, score) => acc + Number(score || 0), 0) / Math.max(1, editorialScores.length)
+        ),
       };
     });
     const requiredSlots = slotCoverage.filter((slot) => slot.required);
@@ -791,13 +905,15 @@ const approveAssetsForVisualPlan = ({ visualPlan = [], assets = [], blockPackage
       blockingReasons.push("missing_theme_visual_proof");
     }
     const missingRequiredSlots = missingSlotsBySceneIndex.get(sceneIndex) || [];
-    if (missingRequiredSlots.length) {
+    const strictSlotCoverageIntent = FOOD_VISUAL_INTENTS.has(String(scene.visual_intent || "").toLowerCase())
+      || scene.requires_visual_proof === true;
+    if (missingRequiredSlots.length && strictSlotCoverageIntent) {
       blockingReasons.push("missing_required_content_slots");
     }
     const criticalMicroMissing = sceneMicroRows.filter((row) =>
       !row.covered && (row.criticality === "high" || row.needs_visual_proof === true)
     ).length;
-    if (criticalMicroMissing > 0) {
+    if (criticalMicroMissing > 0 && scene.requires_visual_proof === true) {
       blockingReasons.push("missing_micro_visual_proof");
     }
 

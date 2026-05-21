@@ -1,12 +1,13 @@
 const fs = require("fs");
 const path = require("path");
 const assert = require("assert");
+const { config } = require("../src/config/env");
 const { loadState, updateState } = require("../src/services/stateService");
 const { uploadToYoutube } = require("../src/services/youtubeService");
 
 const run = async () => {
   const videoId = `youtube_blocked_${Date.now()}`;
-  const renderPath = path.join(__dirname, "..", "test_reports", `${videoId}.mp4`);
+  const renderPath = path.join(config.TEST_REPORTS_ROOT, `${videoId}.mp4`);
 
   fs.mkdirSync(path.dirname(renderPath), { recursive: true });
   fs.writeFileSync(renderPath, "fake render content");
@@ -18,9 +19,17 @@ const run = async () => {
       approved: true,
       render_path: renderPath,
       render_validation: {
-        is_publishable: false,
-        needs_regeneration: true,
-        needs_manual_review: true,
+        is_publishable: true,
+        needs_regeneration: false,
+        needs_manual_review: false,
+        qa_runtime_profile: "mock_relaxed",
+        actual_is_publishable: false,
+        actual_needs_regeneration: true,
+        actual_needs_manual_review: true,
+        actual_hard_boundary_status: "fail",
+        final_hard_boundary_status: "fail",
+        hard_boundary_status: "fail",
+        max_visual_lag_sec: 1.25,
       },
       error_message: "",
     },

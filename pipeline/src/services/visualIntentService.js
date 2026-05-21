@@ -90,7 +90,7 @@ const INTENT_CONFIG = {
   city_landmark: {
     required_visual_evidence: ["city_landmark"],
     allowed_visual_categories: ["city_landmark", "historic_street", "aerial_city"],
-    forbidden_visual_categories: ["coast"],
+    forbidden_visual_categories: [],
     generic_asset_allowed: true,
   },
   historic_street: {
@@ -144,6 +144,7 @@ const GASTRONOMY_THEME_PATTERN = /(gastronom|food|meal|dish|restaurant|restauran
 const ESTABLISHING_ALLOWED_ROLES = new Set(["intro", "outro"]);
 const SPECIFIC_GASTRONOMY_INTENTS = new Set(["market", "wine", "pastry", "cafe", "restaurant", "street_food", "local_food"]);
 const REQUIRED_EVIDENCE_ALIASES = {
+  city_landmark: ["city_landmark", "historic_street", "aerial_city", "river", "bridge"],
   plate: ["food", "local_food", "people_eating"],
   "people eating": ["people_eating", "restaurant", "cafe", "street_food"],
   "people buying food": ["market", "street_food", "food"],
@@ -155,6 +156,8 @@ const REQUIRED_EVIDENCE_ALIASES = {
   cellar: ["wine"],
   grapes: ["wine"],
 };
+const GENERIC_COVERAGE_CATEGORIES = new Set(["aerial_city", "generic_street", "clouds", "landscape", "river", "bridge", "coast"]);
+const FOOD_SIGNAL_CATEGORIES = new Set(["food", "local_food", "market", "wine", "pastry", "restaurant", "cafe", "street_food", "people_eating"]);
 
 const detectVisualCategories = ({ text = "", tags = [], objects = [] } = {}) => {
   const combined = [text, ...(tags || []), ...(objects || [])].filter(Boolean).join(" ");
@@ -221,6 +224,26 @@ const extractStructuredObservation = ({ summary = "", tags = [], objects = [], v
 
 const inferVisualIntent = ({ scene = {}, block = {}, topic = "" } = {}) => {
   const role = String(scene.role || block.role || "body").toLowerCase();
+  const sceneIntentOverride = String(scene.visual_intent || "").toLowerCase().trim();
+  if (sceneIntentOverride && INTENT_CONFIG[sceneIntentOverride]) {
+    const overrideConfig = INTENT_CONFIG[sceneIntentOverride];
+    const establishingAllowedOverride = ESTABLISHING_ALLOWED_ROLES.has(role);
+    const genericAllowedOverride = overrideConfig.generic_asset_allowed || establishingAllowedOverride;
+    return {
+      visual_intent: sceneIntentOverride,
+      visual_intent_source: "scene_override",
+      required_visual_evidence: overrideConfig.required_visual_evidence,
+      allowed_visual_categories: overrideConfig.allowed_visual_categories,
+      forbidden_visual_categories: genericAllowedOverride
+        ? overrideConfig.forbidden_visual_categories.filter((category) => !["aerial_city", "city_landmark", "historic_street"].includes(category))
+        : overrideConfig.forbidden_visual_categories,
+      generic_asset_allowed: genericAllowedOverride,
+      generic_asset_allowed_reason: genericAllowedOverride && !overrideConfig.generic_asset_allowed ? "establishing_shot" : "",
+      max_generic_establishing_seconds: genericAllowedOverride ? 3 : 0,
+    };
+  }
+
+  const cityScopedScene = Boolean(scene.location?.city || block.location?.city || block.topic_type === "city" || scene.topic_type === "city");
   const combined = [
     scene.title,
     scene.narration_excerpt,
@@ -246,6 +269,18 @@ const inferVisualIntent = ({ scene = {}, block = {}, topic = "" } = {}) => {
   }
   if (["local_food", "market", "wine", "pastry", "restaurant", "cafe", "street_food"].includes(visualIntent) && role === "intro") {
     visualIntent = "gastronomy";
+  }
+
+  if (cityScopedScene) {
+    const sectionLabel = `${scene.title || ""}`;
+    const explicitFoodSection = /(gastronom|culin|sabores|comida|food)/i.test(sectionLabel);
+    const locationLandmarkCue = /(landmark|monument|castle|tower|cathedral|palace|belem|alfama|ribeira|historic center|historic district|centro historico|ponte|bridge|douro|tejo|tagus|tram|bonde)/i.test(combined);
+    const isSpecificFoodIntent = SPECIFIC_GASTRONOMY_INTENTS.has(visualIntent);
+    if (isSpecificFoodIntent && matchedSpecificGastronomyIntents.length < 2 && !explicitFoodSection) {
+      visualIntent = locationLandmarkCue ? "city_landmark" : "historic_street";
+    } else if (visualIntent === "generic_travel") {
+      visualIntent = locationLandmarkCue ? "city_landmark" : "historic_street";
+    }
   }
 
   const baseConfig = INTENT_CONFIG[visualIntent] || INTENT_CONFIG.generic_travel;
@@ -311,6 +346,108 @@ const buildEvidenceLayers = ({ scene = {}, window = {}, asset = {} } = {}) => {
   };
 };
 
+const classifyEditorialTaxonomy = ({
+  scene = {},
+  window = {},
+  detectedVisualCategories = [],
+  requiredEvidenceFound = [],
+  matchedAllowedCategories = [],
+  matchedForbiddenCategories = [],
+} = {}) => {
+  const categoriesSet = new Set((detectedVisualCategories || []).map((item) => normalizeLabel(item)));
+  const hasLandmarkCategory = categoriesSet.has("city_landmark");
+  const hasStreetCategory = categoriesSet.has("historic_street") || categoriesSet.has("street_level");
+  const hasFoodSignals = [...FOOD_SIGNAL_CATEGORIES].some((item) => categoriesSet.has(item));
+  const genericCategoryCount = [...GENERIC_COVERAGE_CATEGORIES].filter((item) => categoriesSet.has(item)).length;
+  const locationCity = String(window.location?.city || "").trim();
+  const locationCountry = normalizeLabel(window.location?.country || "");
+  const locationConfidence = Number(window.location?.confidence || 0);
+  const landmarkCount = Array.isArray(window.landmarks) ? window.landmarks.filter(Boolean).length : 0;
+  const shotType = normalizeLabel(window.visual_features?.shot_type || window.shot_type || "");
+  const hasWater = window.visual_features?.has_water === true || categoriesSet.has("river") || categoriesSet.has("coast");
+  const hasPeople = window.visual_features?.has_people === true || categoriesSet.has("people_eating");
+
+  let identityClass = "ambiguous_location";
+  if (locationCountry && locationCountry !== "portugal" && locationConfidence >= 0.7) {
+    identityClass = "non_portugal_risk";
+  } else if (hasLandmarkCategory && (locationCity || landmarkCount > 0)) {
+    identityClass = "exact_landmark";
+  } else if ((hasStreetCategory || hasLandmarkCategory || hasWater) && (locationCity || landmarkCount > 0)) {
+    identityClass = "recognizable_city_view";
+  } else if (genericCategoryCount > 0) {
+    identityClass = "generic_city";
+  }
+
+  let editorialUtility = "do_not_use_for_coverage";
+  if ((requiredEvidenceFound || []).length > 0 && (matchedForbiddenCategories || []).length === 0) {
+    editorialUtility = "critical_evidence";
+  } else if ((matchedAllowedCategories || []).length > 0 && (matchedForbiddenCategories || []).length === 0) {
+    editorialUtility = "supporting_broll";
+  } else if (genericCategoryCount > 0) {
+    editorialUtility = "transition_only";
+  }
+
+  let visualType = "architecture_detail";
+  if (hasFoodSignals) {
+    visualType = categoriesSet.has("market") ? "market_scene" : "food_closeup";
+  } else if (shotType.includes("aerial") || categoriesSet.has("aerial_city")) {
+    visualType = "aerial";
+  } else if (shotType.includes("interior") || categoriesSet.has("restaurant") || categoriesSet.has("cafe")) {
+    visualType = "interior";
+  } else if (hasWater) {
+    visualType = "waterfront";
+  } else if (hasStreetCategory || hasPeople) {
+    visualType = "street_level";
+  }
+
+  const riskFlags = [];
+  if (identityClass === "non_portugal_risk" || identityClass === "ambiguous_location") {
+    riskFlags.push("geography_mismatch_risk");
+  }
+  if (genericCategoryCount > 0 && editorialUtility !== "critical_evidence") {
+    riskFlags.push("too_generic_for_critical_slot");
+  }
+  if (shotType.includes("aerial") || categoriesSet.has("aerial_city")) {
+    riskFlags.push("duplicate_visual_language");
+  }
+  if (!hasLandmarkCategory && (String(scene.visual_intent || "").toLowerCase() === "city_landmark" || String(scene.topic_type || "").toLowerCase() === "city")) {
+    riskFlags.push("weak_landmark_signal");
+  }
+
+  const semanticRelevanceScore = Math.max(0, Math.min(1,
+    (locationCity ? 0.2 : 0)
+    + (hasLandmarkCategory ? 0.25 : 0)
+    + ((matchedAllowedCategories || []).length ? 0.2 : 0)
+    + ((requiredEvidenceFound || []).length ? 0.25 : 0)
+    + (genericCategoryCount ? 0.1 : 0)
+  ));
+  const editorialEvidenceScore = Math.max(0, Math.min(1,
+    ((requiredEvidenceFound || []).length ? 0.5 : 0)
+    + ((matchedAllowedCategories || []).length ? 0.2 : 0)
+    + (editorialUtility === "critical_evidence" ? 0.2 : 0)
+    - ((matchedForbiddenCategories || []).length ? 0.2 : 0)
+    - (riskFlags.includes("too_generic_for_critical_slot") ? 0.15 : 0)
+  ));
+  const semanticRiskScore = Math.max(0, Math.min(1,
+    (riskFlags.includes("geography_mismatch_risk") ? 0.45 : 0)
+    + (riskFlags.includes("too_generic_for_critical_slot") ? 0.3 : 0)
+    + (riskFlags.includes("duplicate_visual_language") ? 0.15 : 0)
+    + (riskFlags.includes("weak_landmark_signal") ? 0.15 : 0)
+  ));
+
+  return {
+    identity_class: identityClass,
+    editorial_utility: editorialUtility,
+    visual_type: visualType,
+    risk_flags: unique(riskFlags),
+    location_confidence: Number(locationConfidence || 0),
+    is_portugal_confident: locationCountry ? (locationCountry === "portugal" && locationConfidence >= 0.6) : null,
+    semantic_relevance_score: Number(semanticRelevanceScore.toFixed(3)),
+    editorial_evidence_score: Number(editorialEvidenceScore.toFixed(3)),
+    semantic_risk_score: Number(semanticRiskScore.toFixed(3)),
+  };
+};
+
 const evaluateVisualEvidenceV2Heuristic = ({ scene = {}, window = {}, asset = {} } = {}) => {
   const evidenceLayers = buildEvidenceLayers({ scene, window, asset });
   const tags = evidenceLayers.visual_observation.tags;
@@ -343,8 +480,15 @@ const evaluateVisualEvidenceV2Heuristic = ({ scene = {}, window = {}, asset = {}
   const missingRequiredEvidence = requiredEvidence.filter((entry) => !requiredEvidenceFound.includes(entry));
   const matchedAllowedCategories = detectedVisualCategories.filter((category) => allowedCategories.includes(category));
   const matchedForbiddenCategories = detectedVisualCategories.filter((category) => forbiddenCategories.includes(category));
-  const genericVisual = detectedVisualCategories.some((category) => ["aerial_city", "bridge", "river", "coast", "generic_street", "clouds", "landscape"].includes(category))
+  let genericVisual = detectedVisualCategories.some((category) => ["aerial_city", "bridge", "river", "coast", "generic_street", "clouds", "landscape"].includes(category))
     && !matchedAllowedCategories.length;
+  if (
+    String(scene.visual_intent || "").toLowerCase() === "city_landmark"
+    && requiredEvidenceFound.includes("city_landmark")
+    && matchedForbiddenCategories.length === 0
+  ) {
+    genericVisual = false;
+  }
   const visualIntentMatch = scene.generic_asset_allowed
     ? matchedForbiddenCategories.length === 0
     : requiredEvidence.length === 0
@@ -362,6 +506,21 @@ const evaluateVisualEvidenceV2Heuristic = ({ scene = {}, window = {}, asset = {}
     forbidden_category_penalty: forbiddenCategories.length ? matchedForbiddenCategories.length / forbiddenCategories.length : 0,
     generic_visual: genericVisual,
   };
+  const taxonomy = classifyEditorialTaxonomy({
+    scene,
+    window,
+    detectedVisualCategories,
+    requiredEvidenceFound,
+    matchedAllowedCategories,
+    matchedForbiddenCategories,
+  });
+  editorialInference.semantic_relevance_score = taxonomy.semantic_relevance_score;
+  editorialInference.editorial_evidence_score = taxonomy.editorial_evidence_score;
+  editorialInference.semantic_risk_score = taxonomy.semantic_risk_score;
+  editorialInference.identity_class = taxonomy.identity_class;
+  editorialInference.editorial_utility = taxonomy.editorial_utility;
+  editorialInference.visual_type = taxonomy.visual_type;
+  editorialInference.risk_flags = taxonomy.risk_flags;
 
   return {
     search_hypothesis: evidenceLayers.search_hypothesis,
@@ -372,6 +531,15 @@ const evaluateVisualEvidenceV2Heuristic = ({ scene = {}, window = {}, asset = {}
       detected_objects: detectedObjects,
     },
     editorial_inference: editorialInference,
+    semantic_relevance_score: taxonomy.semantic_relevance_score,
+    editorial_evidence_score: taxonomy.editorial_evidence_score,
+    semantic_risk_score: taxonomy.semantic_risk_score,
+    identity_class: taxonomy.identity_class,
+    editorial_utility: taxonomy.editorial_utility,
+    visual_type: taxonomy.visual_type,
+    risk_flags: taxonomy.risk_flags,
+    location_confidence: taxonomy.location_confidence,
+    is_portugal_confident: taxonomy.is_portugal_confident,
     detected_visual_categories: detectedVisualCategories,
     detected_objects: detectedObjects,
     required_evidence_found: requiredEvidenceFound,

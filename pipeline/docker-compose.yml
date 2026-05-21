@@ -27,8 +27,17 @@ services:
     container_name: yt-pipeline-multivozes
     env_file:
       - ../multivozes_br_engine/.env
+    working_dir: /app
+    command: python -m uvicorn main:app --host 0.0.0.0 --port 5050 --reload
     ports:
       - "5050:5050"
+    volumes:
+      - ../multivozes_br_engine:/app
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    extra_hosts:
+      - "speech.platform.bing.com:150.171.30.10"
     healthcheck:
       test:
         [

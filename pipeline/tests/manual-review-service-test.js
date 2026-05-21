@@ -1,12 +1,13 @@
 const fs = require("fs");
 const path = require("path");
 const assert = require("assert");
+const { config } = require("../src/config/env");
 const { loadState, updateState } = require("../src/services/stateService");
 const { markNeedsManualReview } = require("../src/services/manualReviewService");
 
 const run = async () => {
   const videoId = `manual_review_${Date.now()}`;
-  const renderPath = path.join(__dirname, "..", "test_reports", `${videoId}.mp4`);
+  const renderPath = path.join(config.TEST_REPORTS_ROOT, `${videoId}.mp4`);
 
   fs.mkdirSync(path.dirname(renderPath), { recursive: true });
   fs.writeFileSync(renderPath, "fake render content");

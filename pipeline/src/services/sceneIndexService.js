@@ -51,6 +51,17 @@ const ensureDb = () => {
   return db;
 };
 
+const closeSceneIndexDb = () => {
+  if (!db) return;
+  try {
+    db.close();
+  } catch {
+    // noop
+  } finally {
+    db = null;
+  }
+};
+
 const buildIndexSignature = ({
   assetId = "",
   sceneId = "",
@@ -233,6 +244,7 @@ const indexAsset = async ({
 
 module.exports = {
   indexAsset,
+  closeSceneIndexDb,
   __test__: {
     buildIndexSignature,
     buildIndexId,

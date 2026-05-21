@@ -174,14 +174,27 @@ const buildFinalReviewMessage = ({
     .join("\n");
 };
 
-const basicTelegramHealthcheck = async () => {
+const basicTelegramHealthcheck = async ({ sendMessage = false } = {}) => {
   if (!hasTelegram()) {
     return { configured: false, ok: false, message: "Telegram não configurado" };
   }
 
   try {
-    const result = await sendTelegramMessage({ text: "✅ Healthcheck Telegram: integração ativa." });
-    return { configured: true, ok: true, message: "Mensagem enviada", details: result };
+    if (sendMessage) {
+      const result = await sendTelegramMessage({ text: "✅ Healthcheck Telegram: integração ativa." });
+      return { configured: true, ok: true, message: "Mensagem enviada", details: result };
+    }
+
+    const response = await axios.get(`https://api.telegram.org/bot${config.TELEGRAM_BOT_TOKEN}/getChat`, {
+      params: { chat_id: config.TELEGRAM_CHAT_ID },
+      timeout: 20000,
+    });
+    const chatId = response?.data?.result?.id;
+    return {
+      configured: true,
+      ok: true,
+      message: `Chat validado (${chatId || config.TELEGRAM_CHAT_ID})`,
+    };
   } catch (error) {
     return { configured: true, ok: false, message: error.message };
   }

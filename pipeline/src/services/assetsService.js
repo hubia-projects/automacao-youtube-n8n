@@ -31,6 +31,8 @@ const {
   bulkUpdateStatusByAssetAndWindow,
   summarizeClipLibrary,
 } = require("./clipLibraryService");
+const { appendPipelineEvent } = require("./pipelineEventLogService");
+const { getExternalApiStats } = require("./externalApiControlService");
 const { logger } = require("../utils/logger");
 
 const hasPexels = () => Boolean(config.PEXELS_API_KEY);
@@ -48,21 +50,26 @@ const ANALYSIS_WINDOW_SECONDS = config.SEMANTIC_SYNC_MODE === "high-quality" ? 3
 const ANALYSIS_STRIDE_SECONDS = config.SEMANTIC_SYNC_MODE === "high-quality" ? 1.5 : 2;
 const GEMINI_ESCALATION_MIN_CONFIDENCE = Number(config.GEMINI_VISION_ESCALATION_MIN_CONFIDENCE || 0.62);
 const GEMINI_ESCALATION_MAX_GENERIC_RATIO = Number(config.GEMINI_VISION_ESCALATION_MAX_GENERIC_RATIO || 0.5);
+const GEMINI_ASSET_ANALYSIS_TIMEOUT_MS = Math.max(8000, Math.min(20000, Number(config.GEMINI_VISION_TIMEOUT_MS || 45000)));
+const GEMINI_ASSET_ANALYSIS_MAX_RETRIES = Math.max(0, Math.min(1, Number(config.GEMINI_VISION_MAX_RETRIES || 2)));
+const MAX_WINDOWS_PER_ASSET_FOR_INDEX = Math.max(2, Math.min(6, Number(process.env.ASSET_MAX_WINDOWS_PER_ASSET || 3)));
+const MAX_WINDOWS_TOTAL_FOR_INDEX = Math.max(20, Math.min(160, Number(process.env.ASSET_MAX_WINDOWS_TOTAL || 80)));
 const SEARCH_RESULTS_PER_QUERY = Math.max(4, Number(config.ASSET_SEARCH_RESULTS_PER_QUERY || 12));
 const ECONOMIC_BUDGET = {
-  raw_candidates_per_block: Math.max(40, Math.min(120, Number(config.ASSET_RAW_CANDIDATES_PER_BLOCK || ECONOMIC_BUDGET_PROFILE.raw_candidates_per_block))),
-  cheap_shortlist_per_block: Math.max(12, Math.min(30, Number(config.ASSET_CHEAP_SHORTLIST_PER_BLOCK || ECONOMIC_BUDGET_PROFILE.cheap_shortlist_per_block))),
-  vision_finalists_per_block: Math.max(4, Math.min(12, Number(config.ASSET_VISION_FINALISTS_PER_BLOCK || ECONOMIC_BUDGET_PROFILE.vision_finalists_per_block))),
-  max_repair_rounds_per_block: Math.max(0, Math.min(2, Number(config.ASSET_MAX_REPAIR_ROUNDS_PER_BLOCK || ECONOMIC_BUDGET_PROFILE.max_repair_rounds_per_block))),
+  raw_candidates_per_block: Math.max(40, Math.min(220, Number(config.ASSET_RAW_CANDIDATES_PER_BLOCK || ECONOMIC_BUDGET_PROFILE.raw_candidates_per_block))),
+  cheap_shortlist_per_block: Math.max(12, Math.min(60, Number(config.ASSET_CHEAP_SHORTLIST_PER_BLOCK || ECONOMIC_BUDGET_PROFILE.cheap_shortlist_per_block))),
+  vision_finalists_per_block: Math.max(4, Math.min(24, Number(config.ASSET_VISION_FINALISTS_PER_BLOCK || ECONOMIC_BUDGET_PROFILE.vision_finalists_per_block))),
+  max_repair_rounds_per_block: Math.max(0, Math.min(4, Number(config.ASSET_MAX_REPAIR_ROUNDS_PER_BLOCK || ECONOMIC_BUDGET_PROFILE.max_repair_rounds_per_block))),
 };
 const SCARCITY_BUDGET = {
-  raw_candidates_per_block: Math.max(ECONOMIC_BUDGET.raw_candidates_per_block, Math.min(150, Number(config.ASSET_SCARCITY_RAW_CANDIDATES_PER_BLOCK || 120))),
-  cheap_shortlist_per_block: Math.max(ECONOMIC_BUDGET.cheap_shortlist_per_block, Math.min(40, Number(config.ASSET_SCARCITY_CHEAP_SHORTLIST_PER_BLOCK || 30))),
-  vision_finalists_per_block: Math.max(ECONOMIC_BUDGET.vision_finalists_per_block, Math.min(16, Number(config.ASSET_SCARCITY_VISION_FINALISTS_PER_BLOCK || 12))),
-  max_repair_rounds_per_block: Math.max(ECONOMIC_BUDGET.max_repair_rounds_per_block, Math.min(2, Number(config.ASSET_MAX_REPAIR_ROUNDS_PER_BLOCK || 2))),
+  raw_candidates_per_block: Math.max(ECONOMIC_BUDGET.raw_candidates_per_block, Math.min(260, Number(config.ASSET_SCARCITY_RAW_CANDIDATES_PER_BLOCK || 180))),
+  cheap_shortlist_per_block: Math.max(ECONOMIC_BUDGET.cheap_shortlist_per_block, Math.min(90, Number(config.ASSET_SCARCITY_CHEAP_SHORTLIST_PER_BLOCK || 50))),
+  vision_finalists_per_block: Math.max(ECONOMIC_BUDGET.vision_finalists_per_block, Math.min(32, Number(config.ASSET_SCARCITY_VISION_FINALISTS_PER_BLOCK || 24))),
+  max_repair_rounds_per_block: Math.max(ECONOMIC_BUDGET.max_repair_rounds_per_block, Math.min(4, Number(config.ASSET_MAX_REPAIR_ROUNDS_PER_BLOCK || 3))),
 };
 const CRITICAL_SLOT_MIN_PROVIDER_RELIABILITY = Number(config.CRITICAL_SLOT_MIN_PROVIDER_RELIABILITY || 0.45);
 const CRITICAL_SLOT_PREFERRED_PROVIDER_RELIABILITY = Number(config.CRITICAL_SLOT_PREFERRED_PROVIDER_RELIABILITY || 0.6);
+const AUTO_REPAIR_MAX_ROUNDS = Math.max(0, Number(process.env.ASSET_AUTO_REPAIR_MAX_ROUNDS || 1));
 
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
 const normalizeTokenSafe = (value = "") =>
@@ -71,6 +78,60 @@ const normalizeTokenSafe = (value = "") =>
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
+
+const buildCriticalBoostQueries = ({
+  queryDetails = [],
+  blockPackage = {},
+  representativeScene = {},
+  maxBoostQueries = 6,
+}) => {
+  const base = Array.isArray(queryDetails) ? queryDetails : [];
+  const requiredSlots = Array.isArray(blockPackage.slots_required) ? blockPackage.slots_required : [];
+  const criticalSlots = requiredSlots.filter((slot) =>
+    slot?.requires_visual_proof === true
+    && ["high", "critical"].includes(String(slot?.criticality || "").toLowerCase())
+  );
+  if (!criticalSlots.length) return base;
+
+  const locationHint = String(
+    representativeScene.expected_location
+    || representativeScene.location?.city
+    || representativeScene.block_label
+    || ""
+  ).trim();
+  const seen = new Set(base.map((entry) => normalizeTokenSafe(entry?.query || "")));
+  const boosted = [...base];
+
+  const pushBoost = (slot = {}, rawQuery = "", reason = "") => {
+    const query = normalizeTokenSafe(rawQuery);
+    if (!query || seen.has(query)) return;
+    seen.add(query);
+    boosted.push({
+      query,
+      reason: reason || "critical_slot_boost",
+      slot_id: slot.slot_id || "",
+      slot_type: slot.slot_type || "",
+      priority: Math.max(10, Number(slot.priority || 1) + 3),
+      content_need: slot.slot_type || "proof_exact",
+      requires_visual_proof: true,
+    });
+  };
+
+  for (const slot of criticalSlots) {
+    const hints = Array.isArray(slot.query_hints) && slot.query_hints.length
+      ? slot.query_hints
+      : [String(slot.slot_type || "").replace(/_/g, " ").trim()].filter(Boolean);
+    for (const hint of hints.slice(0, 2)) {
+      const locationPrefix = locationHint ? `${locationHint} ` : "";
+      pushBoost(slot, `${locationPrefix}${hint} authentic real footage`, `critical_slot_boost_${slot.slot_type || "proof"}`);
+      pushBoost(slot, `${locationPrefix}${hint} people local candid`, `critical_slot_boost_human_${slot.slot_type || "proof"}`);
+      if ((boosted.length - base.length) >= maxBoostQueries) break;
+    }
+    if ((boosted.length - base.length) >= maxBoostQueries) break;
+  }
+
+  return boosted;
+};
 
 const DIVERSITY_SCENE_FUNCTION_TO_QUERY = {
   proof: "authentic close up local food market vendor serving",
@@ -136,10 +197,17 @@ const matchApprovedWindowsForAsset = ({ approvedWindows = [], asset = {} }) => {
   const sourceUrl = String(asset.source_url || "");
   return (approvedWindows || []).filter((window) => {
     if (assetId && String(window.asset_id || "") === assetId) return true;
+    if (sourcePath && String(window.asset_id || "") === sourcePath) return true;
     const metadataSourcePath = String(window.provider_metadata?.source_video_path || "");
     if (sourcePath && metadataSourcePath && metadataSourcePath === sourcePath) return true;
+    const metadataLocalPath = String(
+      window.provider_metadata?.local_path || window.provider_metadata?.source_local_path || ""
+    );
+    if (sourcePath && metadataLocalPath && metadataLocalPath === sourcePath) return true;
     const metadataSourceUrl = String(window.provider_metadata?.source_url || "");
     if (sourceUrl && metadataSourceUrl && metadataSourceUrl === sourceUrl) return true;
+    const metadataOriginalUrl = String(window.provider_metadata?.original_url || "");
+    if (sourceUrl && metadataOriginalUrl && metadataOriginalUrl === sourceUrl) return true;
     return false;
   });
 };
@@ -921,6 +989,13 @@ const mergeAnalysisPayload = ({ asset, scene, payload = {} }) => {
           generic_visual: typeof window.generic_visual === "boolean" ? window.generic_visual : evidence.generic_visual,
           required_evidence_found: window.required_evidence_found || evidence.required_evidence_found,
           missing_required_visual_evidence: window.missing_required_visual_evidence || evidence.missing_required_visual_evidence,
+          semantic_relevance_score: Number(window.semantic_relevance_score ?? evidence.semantic_relevance_score ?? evidence.editorial_inference?.semantic_relevance_score ?? window.confidence ?? 0),
+          editorial_evidence_score: Number(window.editorial_evidence_score ?? evidence.editorial_evidence_score ?? evidence.editorial_inference?.editorial_evidence_score ?? evidence.required_evidence_score ?? 0),
+          semantic_risk_score: Number(window.semantic_risk_score ?? evidence.semantic_risk_score ?? evidence.editorial_inference?.semantic_risk_score ?? 0),
+          identity_class: window.identity_class || evidence.identity_class || evidence.editorial_inference?.identity_class || "",
+          editorial_utility: window.editorial_utility || evidence.editorial_utility || evidence.editorial_inference?.editorial_utility || "",
+          visual_type: window.visual_type || evidence.visual_type || evidence.editorial_inference?.visual_type || "",
+          risk_flags: window.risk_flags || evidence.risk_flags || evidence.editorial_inference?.risk_flags || [],
           visual_evidence_source: window.visual_evidence_source || payload.analysis_provider || payload.provider || fallback.analysis_provider,
           visual_observation_origin: window.visual_observation_origin || (String(window.visual_evidence_source || payload.analysis_provider || payload.provider || fallback.analysis_provider).toLowerCase().includes("fallback") ? "weak_fallback" : "real_vision"),
         };
@@ -952,6 +1027,9 @@ Regras:
 - priorize elementos concretos como telhados, rua estreita, bonde, ponte, rio, castelo, mata, praia, falesia, mercado, comida, pessoas caminhando, panorama urbano
 - se o frame for generico, diga que e generico
 - se reconhecer cidade ou landmark, informe com confianca; se nao reconhecer, deixe vazio
+- classifique cada frame para uso editorial, nao apenas descricao
+- diferencie relevancia semantica de evidencia editorial
+- marque riscos quando a cena for bonita mas fraca para slot critico
 
 Retorne JSON estrito no formato:
 {
@@ -974,7 +1052,16 @@ Retorne JSON estrito no formato:
         "has_architecture": false
       },
       "quality": {"sharpness": 0.0, "stability": 0.0, "brightness": 0.0, "usable": true},
-      "confidence": 0.0
+      "confidence": 0.0,
+      "identity_class": "exact_landmark|recognizable_city_view|generic_city|non_portugal_risk|ambiguous_location",
+      "editorial_utility": "critical_evidence|supporting_broll|transition_only|do_not_use_for_coverage",
+      "visual_type": "street_level|aerial|interior|food_closeup|market_scene|waterfront|architecture_detail",
+      "risk_flags": ["geography_mismatch_risk|too_generic_for_critical_slot|duplicate_visual_language|weak_landmark_signal"],
+      "semantic_relevance_score": 0.0,
+      "editorial_evidence_score": 0.0,
+      "semantic_risk_score": 0.0,
+      "location_confidence": 0.0,
+      "is_portugal_confident": true
     }
   ]
 }
@@ -1026,6 +1113,9 @@ const normalizeAssetAnalysisResponse = ({ response, asset, scene, windowBlueprin
           usable: responseWindow.quality.usable !== false,
         }
       : fallback.analysis_windows[index]?.quality;
+    const taxonomyRiskFlags = Array.isArray(responseWindow.risk_flags)
+      ? unique(responseWindow.risk_flags.map((item) => String(item || "").trim()).filter(Boolean))
+      : [];
 
     return {
       window_index: windowBlueprint.window_index,
@@ -1041,6 +1131,17 @@ const normalizeAssetAnalysisResponse = ({ response, asset, scene, windowBlueprin
       visual_features: visualFeatures,
       quality,
       confidence: Math.max(0, Math.min(1, Number(responseWindow.confidence || 0.6))),
+      identity_class: String(responseWindow.identity_class || "").trim(),
+      editorial_utility: String(responseWindow.editorial_utility || "").trim(),
+      visual_type: String(responseWindow.visual_type || "").trim(),
+      risk_flags: taxonomyRiskFlags,
+      semantic_relevance_score: Math.max(0, Math.min(1, Number(responseWindow.semantic_relevance_score ?? responseWindow.confidence ?? 0.6))),
+      editorial_evidence_score: Math.max(0, Math.min(1, Number(responseWindow.editorial_evidence_score ?? responseWindow.confidence ?? 0.5))),
+      semantic_risk_score: Math.max(0, Math.min(1, Number(responseWindow.semantic_risk_score ?? 0.25))),
+      location_confidence: Math.max(0, Math.min(1, Number(responseWindow.location_confidence ?? responseWindow.location?.confidence ?? 0))),
+      is_portugal_confident: typeof responseWindow.is_portugal_confident === "boolean"
+        ? responseWindow.is_portugal_confident
+        : null,
       detected_visual_categories: responseWindow.detected_visual_categories || [],
       detected_objects: responseWindow.detected_objects || [],
       visual_intent_match: responseWindow.visual_intent_match,
@@ -1092,6 +1193,7 @@ const shouldEscalateGeminiAnalysis = ({ analysisPayload = {} }) => {
 
 const analyzeDownloadedAssetSemantics = async ({ asset, scene, paths }) => {
   const fallbackPayload = buildFallbackAnalysisPayload({ asset, scene });
+  const videoId = path.basename(String(paths?.base || ""));
 
   if (asset.asset_type !== "video" || !asset.local_path) {
     return {
@@ -1161,7 +1263,10 @@ const analyzeDownloadedAssetSemantics = async ({ asset, scene, paths }) => {
         prompt,
         imagePaths: framePaths,
         model: geminiLiteModel,
-        fallbackModels: unique([geminiFullModel, ...geminiFallbackModels]),
+        fallbackModels: [],
+        timeoutMs: GEMINI_ASSET_ANALYSIS_TIMEOUT_MS,
+        maxRetries: GEMINI_ASSET_ANALYSIS_MAX_RETRIES,
+        videoId,
       });
 
       if (geminiLiteResponse) {
@@ -1181,7 +1286,10 @@ const analyzeDownloadedAssetSemantics = async ({ asset, scene, paths }) => {
             prompt,
             imagePaths: framePaths,
             model: geminiFullModel,
-            fallbackModels: geminiFallbackModels,
+            fallbackModels: geminiFallbackModels.slice(0, 1),
+            timeoutMs: GEMINI_ASSET_ANALYSIS_TIMEOUT_MS,
+            maxRetries: GEMINI_ASSET_ANALYSIS_MAX_RETRIES,
+            videoId,
           });
           if (geminiFullResponse) {
             response = geminiFullResponse;
@@ -1202,6 +1310,7 @@ const analyzeDownloadedAssetSemantics = async ({ asset, scene, paths }) => {
         prompt,
         imagePaths: framePaths,
         detail: "low",
+        videoId,
       });
       if (response) provider = "openai_vision";
     }
@@ -1601,7 +1710,24 @@ const generateAssets = async ({
   preserveExisting = false,
   refreshReason = "",
   repairPlanByScene = [],
+  autoRepairRound = 0,
 }) => {
+  const stageStartedAt = Date.now();
+  await appendPipelineEvent({
+    videoId,
+    stage: "assets",
+    event: "start",
+    status: "running",
+    payload: {
+      mock_mode: Boolean(mockMode),
+      scene_indexes: normalizeSceneIndexes(sceneIndexes),
+      preserve_existing: Boolean(preserveExisting),
+      refresh_reason: String(refreshReason || ""),
+      auto_repair_round: Number(autoRepairRound || 0),
+    },
+  }).catch(() => null);
+
+  try {
   const state = await loadState(videoId);
   const paths = await ensureVideoStructure(videoId);
   const audioIntelligence = await getCachedAudioIntelligence({ videoId }).catch(() => null);
@@ -1733,6 +1859,23 @@ const generateAssets = async ({
       blockPackage,
       repairHints: blockRepairHints,
     });
+    const blockAssetCap = Math.max(3, Math.min(12, Number(maxAssets || 8)));
+    activeBudgetProfile.raw_candidates_per_block = Math.min(
+      Number(activeBudgetProfile.raw_candidates_per_block || ECONOMIC_BUDGET.raw_candidates_per_block),
+      Math.max(24, blockAssetCap * 8)
+    );
+    activeBudgetProfile.cheap_shortlist_per_block = Math.min(
+      Number(activeBudgetProfile.cheap_shortlist_per_block || ECONOMIC_BUDGET.cheap_shortlist_per_block),
+      Math.max(10, blockAssetCap * 2)
+    );
+    activeBudgetProfile.vision_finalists_per_block = Math.min(
+      Number(activeBudgetProfile.vision_finalists_per_block || ECONOMIC_BUDGET.vision_finalists_per_block),
+      Math.max(4, blockAssetCap)
+    );
+    activeBudgetProfile.max_repair_rounds_per_block = Math.min(
+      Number(activeBudgetProfile.max_repair_rounds_per_block || ECONOMIC_BUDGET.max_repair_rounds_per_block),
+      blockAssetCap <= 6 ? 1 : 2
+    );
 
     const queryPlan = buildBlockQueryPlan({
       block: {
@@ -1745,12 +1888,25 @@ const generateAssets = async ({
       repairHints: blockRepairHints,
       budgetProfile: activeBudgetProfile,
     });
+    const hasCriticalProofSlots = (blockPackage.slots_required || []).some((slot) =>
+      slot?.requires_visual_proof === true
+      && ["high", "critical"].includes(String(slot?.criticality || "").toLowerCase())
+    );
+    const maxQueriesPerBlock = Math.max(6, Math.min(18, blockAssetCap * 2));
+    const boostedQueryDetails = buildCriticalBoostQueries({
+      queryDetails: queryPlan.queryDetails || [],
+      blockPackage,
+      representativeScene,
+      maxBoostQueries: hasCriticalProofSlots ? 6 : 0,
+    });
+    const queryDetailsForExecution = boostedQueryDetails
+      .slice(0, hasCriticalProofSlots ? (maxQueriesPerBlock + 4) : maxQueriesPerBlock);
 
     slotQueryPlan.push({
       block_id: blockPackage.block_id,
       package_id: blockPackage.package_id,
       intent: blockPackage.intent,
-      query_details: queryPlan.queryDetails || [],
+      query_details: queryDetailsForExecution,
       negative_keywords: queryPlan.negativeKeywords || [],
       retrieval_budget: queryPlan.retrievalBudget || {},
       repair_hints: {
@@ -1770,8 +1926,8 @@ const generateAssets = async ({
         block_id: blockPackage.block_id,
         block_label: blockPackage.block_label || scene.block_label || "",
         visual_intent: scene.visual_intent || blockPackage.intent || "",
-        queries: queryPlan.queries || [],
-        query_details: queryPlan.queryDetails || [],
+        queries: queryDetailsForExecution.map((entry) => entry.query).filter(Boolean),
+        query_details: queryDetailsForExecution,
         retrieval_budget: queryPlan.retrievalBudget || {},
         negative_keywords: queryPlan.negativeKeywords || [],
         search_reason: queryPlan.searchReason,
@@ -1786,7 +1942,7 @@ const generateAssets = async ({
       intent: blockPackage.intent,
       scenes: activeSceneIndexes,
       slots: (blockPackage.slots || []).length,
-      queries_count: (queryPlan.queries || []).length,
+      queries_count: queryDetailsForExecution.length,
     });
 
     let rawCandidates = [];
@@ -1797,7 +1953,7 @@ const generateAssets = async ({
     const seenUrls = new Set();
 
     if (!mockMode) {
-      for (const queryDetail of queryPlan.queryDetails || []) {
+      for (const queryDetail of queryDetailsForExecution) {
         const candidates = await cacheSearchResultsWithFilters({
           query: queryDetail.query,
           cache: searchCache,
@@ -2188,13 +2344,40 @@ const generateAssets = async ({
   let approvedClipIds = [];
   if (config.USE_SCENE_INDEX || config.USE_CLIP_LIBRARY) {
     const approvedWindows = approvalResult.approved_windows || [];
+    let indexedWindowsTotal = 0;
     for (const approvedAsset of approvedItems) {
+      if (indexedWindowsTotal >= MAX_WINDOWS_TOTAL_FOR_INDEX) break;
       if (String(approvedAsset.asset_type || "").toLowerCase() !== "video") continue;
       const scene = visualPlan.find((entry) => Number(entry.scene_index || 0) === Number(approvedAsset.scene_index || 0)) || {};
       let windowsForAsset = matchApprovedWindowsForAsset({
         approvedWindows,
         asset: approvedAsset,
-      });
+      }).map((window) => ({
+        ...window,
+        scene_index: Number(window.scene_index || approvedAsset.scene_index || scene.scene_index || 0),
+        block_id: String(window.block_id || approvedAsset.block_id || scene.block_id || ""),
+        start_seconds: Number(window.start_seconds ?? window.start_sec ?? window.window?.start_seconds ?? 0),
+        end_seconds: Number(window.end_seconds ?? window.end_sec ?? window.window?.end_seconds ?? 0),
+        summary: window.summary || window.description || window.window?.summary || window.window?.description || "",
+        description: window.description || window.summary || window.window?.description || window.window?.summary || "",
+        tags: window.tags || window.window?.tags || [],
+        detected_visual_categories: window.detected_visual_categories || window.window?.detected_visual_categories || [],
+        detected_objects: window.detected_objects || window.window?.detected_objects || [],
+        location: window.location || window.window?.location || {},
+        landmarks: window.landmarks || window.window?.landmarks || [],
+        visual_features: window.visual_features || window.window?.visual_features || {},
+        quality: window.quality || window.window?.quality || {},
+        confidence: Number(window.editorial_confidence || window.confidence || window.window?.confidence || 0),
+        editorial_confidence: Number(window.editorial_confidence || window.confidence || window.window?.confidence || 0),
+        scene_visual_intent: window.scene_visual_intent || window.visual_intent || scene.visual_intent || "",
+        visual_intent: window.visual_intent || scene.visual_intent || "",
+        provider_metadata: {
+          ...(window.provider_metadata || {}),
+          source_video_path: String(window.provider_metadata?.source_video_path || approvedAsset.local_path || ""),
+          source_url: String(window.provider_metadata?.source_url || approvedAsset.source_url || ""),
+        },
+        approved_window_id: window.approved_window_id || window.id || window.window?.id || "",
+      })).filter((window) => Number(window.end_seconds || 0) > Number(window.start_seconds || 0));
       if (!windowsForAsset.length) {
         const analysisWindows = Array.isArray(approvedAsset.analysis_windows) ? approvedAsset.analysis_windows : [];
         windowsForAsset = analysisWindows
@@ -2227,6 +2410,19 @@ const generateAssets = async ({
           .filter((window) => Number(window.end_seconds || 0) > Number(window.start_seconds || 0));
       }
       if (!windowsForAsset.length) continue;
+      windowsForAsset = windowsForAsset
+        .sort((left, right) =>
+          (String(left.visual_truth_status || "").toLowerCase() === "fallback_window" ? 1 : 0)
+          - (String(right.visual_truth_status || "").toLowerCase() === "fallback_window" ? 1 : 0)
+          || Number(right.editorial_confidence || right.confidence || 0) - Number(left.editorial_confidence || left.confidence || 0)
+          || (Number(right.end_seconds || 0) - Number(right.start_seconds || 0)) - (Number(left.end_seconds || 0) - Number(left.start_seconds || 0))
+        )
+        .slice(0, MAX_WINDOWS_PER_ASSET_FOR_INDEX);
+      const remainingWindowBudget = Math.max(0, MAX_WINDOWS_TOTAL_FOR_INDEX - indexedWindowsTotal);
+      if (!remainingWindowBudget) break;
+      windowsForAsset = windowsForAsset.slice(0, remainingWindowBudget);
+      if (!windowsForAsset.length) continue;
+      indexedWindowsTotal += windowsForAsset.length;
 
       const sceneIndexResult = await indexAsset({
         videoId,
@@ -2332,6 +2528,9 @@ const generateAssets = async ({
       block_id: blockId,
       block_repair_state: (localRepairPlan.block_states || []).find((entry) => String(entry.block_id || "") === blockId)?.block_state || "",
       coverage_status: coverageStatus,
+      coverage_levels: blockCoverage?.coverage_levels || {},
+      coverage_primary_failure_cause: String(blockCoverage?.primary_failure_cause || "none"),
+      coverage_failure_cause_counts: blockCoverage?.failure_cause_counts || {},
       coverage_can_advance: blockCoverage?.can_advance === true,
       coverage_needs_repair: blockCoverage?.needs_repair === true,
       coverage_missing_slots: blockCoverage?.missing_slots || [],
@@ -2496,10 +2695,39 @@ const generateAssets = async ({
         approved_clip_ids: clipLibrarySummary.approved_clip_ids || [],
         last_updated_at: clipLibrarySummary.last_updated_at || refreshedAt,
       },
+      external_api_stats: getExternalApiStats({ videoId }),
       error_message: assetFailureMessage,
     },
     { currentStep: "assets_searched", status: "assets_searched" }
   );
+
+  if (!mockMode && missingAssets && !selectiveRefresh && Number(autoRepairRound || 0) < AUTO_REPAIR_MAX_ROUNDS) {
+    const blockingSceneIndexes = normalizeSceneIndexes(readinessSummary.blocking_scene_indexes || []);
+    if (blockingSceneIndexes.length) {
+      await appendPipelineEvent({
+        videoId,
+        stage: "assets",
+        event: "auto_repair_round",
+        status: "running",
+        payload: {
+          round: Number(autoRepairRound || 0) + 1,
+          blocking_scene_indexes: blockingSceneIndexes,
+          max_rounds: AUTO_REPAIR_MAX_ROUNDS,
+        },
+      }).catch(() => null);
+
+      return generateAssets({
+        videoId,
+        mockMode,
+        maxAssets,
+        sceneIndexes: blockingSceneIndexes,
+        preserveExisting: true,
+        refreshReason: `auto_repair_round_${Number(autoRepairRound || 0) + 1}`,
+        repairPlanByScene: mergedRepairPlanByScene,
+        autoRepairRound: Number(autoRepairRound || 0) + 1,
+      });
+    }
+  }
 
   await sendWorkflowStatus({
     videoId,
@@ -2518,6 +2746,21 @@ const generateAssets = async ({
     ],
   }).catch(() => null);
 
+  await appendPipelineEvent({
+    videoId,
+    stage: "assets",
+    event: "end",
+    status: "ok",
+    payload: {
+      duration_ms: Date.now() - stageStartedAt,
+      approved_items: Number(approvedItems.length || 0),
+      missing_assets: Boolean(missingAssets),
+      clips_generated: Number(clipLibrarySummary.clips_generated || 0),
+      clips_approved: Number(clipLibrarySummary.clips_approved || 0),
+      refreshed_scene_indexes: refreshSceneIndexes,
+    },
+  }).catch(() => null);
+
   return {
     video_id: videoId,
     assets_count: approvedItems.length,
@@ -2527,6 +2770,19 @@ const generateAssets = async ({
     visual_plan: nextState.visual_plan,
     refreshed_scene_indexes: refreshSceneIndexes,
   };
+  } catch (error) {
+    await appendPipelineEvent({
+      videoId,
+      stage: "assets",
+      event: "end",
+      status: "error",
+      payload: {
+        duration_ms: Date.now() - stageStartedAt,
+        error_message: String(error?.message || "assets_generation_failed"),
+      },
+    }).catch(() => null);
+    throw error;
+  }
 };
 
 const basicPexelsHealthcheck = async () => {

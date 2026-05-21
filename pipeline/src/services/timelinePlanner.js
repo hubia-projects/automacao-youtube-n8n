@@ -82,6 +82,9 @@ const isStrongFreeCriticalCandidate = (candidate = {}) => {
   if (status === "exact") return true;
   return status === "regional" && confidence >= Number(config.CRITICAL_SLOT_FREE_CONFIDENCE_MIN || 0.82);
 };
+const CRITICAL_SLOT_MIN_SEMANTIC_RELEVANCE = Number(config.CRITICAL_SLOT_MIN_SEMANTIC_RELEVANCE || 0.45);
+const CRITICAL_SLOT_MIN_EDITORIAL_EVIDENCE = Number(config.CRITICAL_SLOT_MIN_EDITORIAL_EVIDENCE || 0.58);
+const CRITICAL_SLOT_MAX_SEMANTIC_RISK = Number(config.CRITICAL_SLOT_MAX_SEMANTIC_RISK || 0.55);
 
 const getCandidateDetectedCategories = (candidate = {}) =>
   unique([
@@ -95,6 +98,31 @@ const candidateHasThemeEvidence = ({ block = {}, candidate = {} } = {}) => {
   if (!requiredCategories.length) return true;
   const detectedCategories = getCandidateDetectedCategories(candidate);
   return requiredCategories.some((category) => detectedCategories.includes(String(category || "").toLowerCase()));
+};
+
+const candidatePassesCriticalEditorialGate = ({ candidate = {}, block = {} } = {}) => {
+  const status = String(candidate.visual_truth_status || "").toLowerCase();
+  const semanticRelevance = Number(
+    candidate.semantic_relevance_score
+    ?? candidate.editorial_confidence
+    ?? candidate.confidence
+    ?? 0
+  );
+  const editorialEvidence = Number(
+    candidate.editorial_evidence_score
+    ?? candidate.editorial_confidence
+    ?? candidate.confidence
+    ?? 0
+  );
+  const semanticRisk = Number(candidate.semantic_risk_score || 0);
+  const riskFlags = new Set((candidate.risk_flags || []).map((item) => String(item || "").toLowerCase()));
+  if (!["exact", "regional"].includes(status)) return false;
+  if (semanticRelevance < CRITICAL_SLOT_MIN_SEMANTIC_RELEVANCE) return false;
+  if (editorialEvidence < CRITICAL_SLOT_MIN_EDITORIAL_EVIDENCE) return false;
+  if (semanticRisk > CRITICAL_SLOT_MAX_SEMANTIC_RISK) return false;
+  if (riskFlags.has("geography_mismatch_risk")) return false;
+  if (String(block.visual_intent || "").toLowerCase() === "city_landmark" && riskFlags.has("weak_landmark_signal")) return false;
+  return true;
 };
 
 const extractCandidateLandmarkCity = (candidate = {}) => {
@@ -214,6 +242,13 @@ const normalizeAssetAnalysisWindows = (asset = {}) => {
       required_evidence_found: unique(window.required_evidence_found || []),
       missing_required_visual_evidence: unique(window.missing_required_visual_evidence || []),
       confidence,
+      semantic_relevance_score: Number(window.semantic_relevance_score || confidence || 0),
+      editorial_evidence_score: Number(window.editorial_evidence_score || window.required_evidence_score || confidence || 0),
+      semantic_risk_score: Number(window.semantic_risk_score || 0),
+      identity_class: String(window.identity_class || ""),
+      editorial_utility: String(window.editorial_utility || ""),
+      visual_type: String(window.visual_type || ""),
+      risk_flags: Array.isArray(window.risk_flags) ? window.risk_flags : [],
       neutral: Boolean(window.neutral) || (!location.city && /travel|road|map|airplane|landscape|generic|overview/i.test(visualText)),
       analysis_provider: window.method || asset.analysis_provider || "metadata_fallback",
       visual_evidence_source: visualEvidenceSource,
@@ -260,6 +295,13 @@ const flattenAssetWindows = (assets = []) => {
         required_evidence_found: window.required_evidence_found,
         missing_required_visual_evidence: window.missing_required_visual_evidence,
         confidence: window.confidence,
+        semantic_relevance_score: Number(window.semantic_relevance_score || 0),
+        editorial_evidence_score: Number(window.editorial_evidence_score || 0),
+        semantic_risk_score: Number(window.semantic_risk_score || 0),
+        identity_class: window.identity_class || "",
+        editorial_utility: window.editorial_utility || "",
+        visual_type: window.visual_type || "",
+        risk_flags: window.risk_flags || [],
         neutral: window.neutral,
         visual_evidence_source: window.visual_evidence_source,
         visual_observation_origin: window.visual_observation_origin || "real_vision",
@@ -338,6 +380,13 @@ const buildApprovedWindowCandidates = ({ approvedWindows = [], assets = [] }) =>
       required_evidence_found: contract.editorial_inference?.required_evidence_found || [],
       missing_required_visual_evidence: contract.editorial_inference?.missing_required_visual_evidence || [],
       confidence: Number(contract.editorial_confidence || 0),
+      semantic_relevance_score: Number(contract.semantic_relevance_score || contract.editorial_inference?.semantic_relevance_score || 0),
+      editorial_evidence_score: Number(contract.editorial_evidence_score || contract.editorial_inference?.editorial_evidence_score || 0),
+      semantic_risk_score: Number(contract.semantic_risk_score || contract.editorial_inference?.semantic_risk_score || 0),
+      identity_class: String(contract.editorial_inference?.identity_class || ""),
+      editorial_utility: String(contract.editorial_inference?.editorial_utility || ""),
+      visual_type: String(contract.editorial_inference?.visual_type || ""),
+      risk_flags: Array.isArray(contract.editorial_inference?.risk_flags) ? contract.editorial_inference.risk_flags : [],
       neutral: contract.visual_truth_status === "generic",
       visual_evidence_source: contract.visual_evidence_source || "metadata_fallback",
       visual_observation_origin: contract.visual_observation_origin || contract.visual_observation?.visual_observation_origin || "real_vision",
@@ -384,11 +433,39 @@ const buildFallbackCandidate = (fallbackAsset) => ({
 
 const mapClipLibraryRecordToCandidate = (clip = {}) => {
   const sourcePath = String(clip.clip_path || "");
+  const sourceAssetId = String(clip.asset_id || clip.clip_id || "");
+  const semanticSummary = String(clip.semantic_summary || clip.metadata?.semantic_summary || "").trim();
+  const semanticPhrase = String(clip.semantic_phrase || clip.metadata?.semantic_phrase || "").trim();
+  const semanticName = String(clip.semantic_name || clip.metadata?.semantic_name || "").trim();
+  const semanticText = String(
+    clip.semantic_text
+    || clip.metadata?.semantic_text
+    || [semanticPhrase, semanticSummary, semanticName, clip.visual_intent, ...(clip.tags_semanticas || []), ...(clip.entities || [])].join(" ")
+  ).trim();
+  const preferredSummary = semanticSummary || semanticPhrase || [clip.visual_intent, ...(clip.tags_semanticas || [])].join(" ").trim() || "clip library candidate";
+  const clipEditorialEvidence = Number(
+    clip.editorial_evidence_score
+    ?? clip.metadata?.editorial_evidence_score
+    ?? clip.confidence
+    ?? 0.85
+  );
+  const clipSemanticRelevance = Number(
+    clip.semantic_relevance_score
+    ?? clip.metadata?.semantic_relevance_score
+    ?? clip.confidence
+    ?? 0.85
+  );
+  const clipSemanticRisk = Number(
+    clip.semantic_risk_score
+    ?? clip.metadata?.semantic_risk_score
+    ?? 0.12
+  );
   return {
     id: `cliplib_${clip.clip_id}`,
     asset_id: String(clip.clip_id || clip.asset_id || ""),
     asset: {
       asset_id: String(clip.clip_id || clip.asset_id || ""),
+      source_asset_id: sourceAssetId,
       provider: "clip_library",
       local_path: sourcePath,
       source_url: `clip_library://${clip.clip_id}`,
@@ -400,7 +477,7 @@ const mapClipLibraryRecordToCandidate = (clip = {}) => {
         width: Number(config.OUTPUT_WIDTH || 1920),
         height: Number(config.OUTPUT_HEIGHT || 1080),
       },
-      semantic_text: [clip.visual_intent, ...(clip.tags_semanticas || []), ...(clip.entities || [])].join(" "),
+      semantic_text: semanticText,
       from_clip_library: true,
       clip_id: clip.clip_id,
     },
@@ -410,8 +487,8 @@ const mapClipLibraryRecordToCandidate = (clip = {}) => {
     start_sec: 0,
     end_sec: Number(clip.duration_sec || 0),
     duration_sec: Number(clip.duration_sec || 0),
-    description: [clip.visual_intent, ...(clip.tags_semanticas || [])].join(" ").trim() || "clip library candidate",
-    summary: [clip.visual_intent, ...(clip.tags_semanticas || [])].join(" ").trim() || "clip library candidate",
+    description: preferredSummary,
+    summary: semanticPhrase || preferredSummary,
     tags: clip.tags_semanticas || [],
     location: clip.location || { city: "", country: "", confidence: 0 },
     landmarks: (clip.entities || []).map((item) => ({ name: item, confidence: clip.confidence || 0.6 })),
@@ -441,17 +518,25 @@ const mapClipLibraryRecordToCandidate = (clip = {}) => {
     neutral: false,
     visual_evidence_source: "clip_library",
     visual_observation_origin: "real_vision",
-    semantic_text: [clip.visual_intent, ...(clip.tags_semanticas || []), ...(clip.entities || [])].join(" ").trim(),
+    semantic_text: semanticText,
     window_index: 1,
     analysis_provider: "clip_library",
     visual_truth_status: "exact",
     editorial_confidence: Number(clip.confidence || 0.85),
+    semantic_relevance_score: clipSemanticRelevance,
+    editorial_evidence_score: clipEditorialEvidence,
+    semantic_risk_score: clipSemanticRisk,
+    identity_class: String(clip.identity_class || clip.metadata?.identity_class || "exact_landmark"),
+    editorial_utility: String(clip.editorial_utility || clip.metadata?.editorial_utility || "critical_evidence"),
+    visual_type: String(clip.visual_type || clip.metadata?.visual_type || ""),
+    risk_flags: Array.isArray(clip.risk_flags || clip.metadata?.risk_flags) ? (clip.risk_flags || clip.metadata?.risk_flags) : [],
     narrative_roles_supported: ["hook_exact", "opening_establishing", "proof_exact", "context_regional", "detail_cutaway", "closing_payoff"],
     opening_allowed: true,
     closing_allowed: true,
     critical_slot_allowed: true,
     editorial_approved: true,
     approved_window_id: `cliplib:${clip.clip_id}`,
+    origin_approved_window_id: String(clip.metadata?.approved_window_id || "").trim(),
     source_tier: "curated",
     content_slot_type: "",
     content_slot_id: "",
@@ -472,6 +557,7 @@ const mapClipLibraryRecordToCandidate = (clip = {}) => {
     human_presence: false,
     provider_signature: `clip_library|${clip.clip_id}`,
     scene_function: "",
+    source_asset_id: sourceAssetId,
     source_url: `clip_library://${clip.clip_id}`,
     from_clip_library: true,
     clip_library_id: clip.clip_id,
@@ -483,11 +569,23 @@ const mergeApprovedPoolWithClipLibrary = async ({ microBlocks = [], approvedCand
   const merged = [...approvedCandidates];
 
   for (const block of microBlocks || []) {
+    const expectedLocation = String(
+      block.expected_location
+      || block.location?.city
+      || (block.topic_type === "city" ? block.macro_topic : "")
+    ).trim();
+    const strictLocation = Boolean(expectedLocation)
+      && (
+        String(block.topic_type || "").toLowerCase() === "city"
+        || FOOD_VISUAL_INTENTS.has(String(block.visual_intent || "").toLowerCase())
+      );
     const results = await searchApprovedClips({
       sceneIndex: Number(block.scene_index || 0),
       blockId: String(block.block_id || ""),
       visualIntent: String(block.visual_intent || ""),
       keywords: block.keywords || [],
+      expectedLocation,
+      strictLocation,
       limit: Math.max(8, Number(config.CLIP_LIBRARY_MAX_SEARCH_RESULTS || 24)),
     }).catch(() => []);
     const candidates = (results || []).map(mapClipLibraryRecordToCandidate);
@@ -592,7 +690,10 @@ const filterCandidatesByHardRules = ({
   }
 
   if (criticalSlot) {
-    const criticalFiltered = strict.filter((candidate) => candidate.critical_slot_allowed !== false);
+    const criticalFiltered = strict.filter((candidate) =>
+      candidate.critical_slot_allowed !== false
+      && candidatePassesCriticalEditorialGate({ candidate, block })
+    );
     if (criticalFiltered.length) strict = criticalFiltered;
   }
 
@@ -619,12 +720,25 @@ const filterCandidatesByHardRules = ({
   if (foodIntent && strict.length) {
     const requiresThemeProof = criticalSlot || ["hook_exact", "proof_exact", "closing_payoff"].includes(slotRole);
     const themeMatches = strict.filter((candidate) => candidateHasThemeEvidence({ block, candidate }));
+    if (requiresThemeProof && !themeMatches.length && !allowPlaceholderFallback) {
+      return [];
+    }
     if (themeMatches.length && (requiresThemeProof || themeMatches.length < strict.length)) {
       strict = themeMatches;
     }
   }
 
   if (strict.length) return strict;
+
+  if (expectedLocation) {
+    const locationScoped = assetWindows
+      .filter((candidate) => {
+        const candidateCity = resolveCandidateCity({ candidate, expectedLocation });
+        return candidateCity && isSameLocation(candidateCity, expectedLocation);
+      })
+      .sort((left, right) => Number(right.editorial_confidence || right.confidence || 0) - Number(left.editorial_confidence || left.confidence || 0));
+    if (locationScoped.length) return locationScoped.slice(0, 12);
+  }
 
   if (isBoundaryFirstSlot && hardBoundaryPolicy.require_location_on_hard_boundary && expectedLocation) {
     const boundaryLocationCandidates = assetWindows
@@ -645,16 +759,31 @@ const filterCandidatesByHardRules = ({
     return [];
   }
 
-  const neutral = assetWindows.filter((candidate) => candidate.neutral && candidate.scene_index === block.scene_index);
+  const neutral = expectedLocation
+    ? []
+    : assetWindows.filter((candidate) => candidate.neutral && candidate.scene_index === block.scene_index);
   if (neutral.length) return neutral;
 
-  const generalNeutral = assetWindows.filter((candidate) => candidate.neutral);
+  const generalNeutral = expectedLocation
+    ? []
+    : assetWindows.filter((candidate) => candidate.neutral);
   if (generalNeutral.length) return generalNeutral;
 
   let crossSceneFallback = assetWindows.filter((candidate) => candidate.editorial_approved === true);
+  if (expectedLocation && crossSceneFallback.length) {
+    const sameCityFallback = crossSceneFallback.filter((candidate) => {
+      const candidateCity = resolveCandidateCity({ candidate, expectedLocation });
+      return candidateCity && isSameLocation(candidateCity, expectedLocation);
+    });
+    if (sameCityFallback.length) crossSceneFallback = sameCityFallback;
+  }
   if (foodIntent && crossSceneFallback.length) {
     const themedCrossSceneFallback = crossSceneFallback.filter((candidate) => candidateHasThemeEvidence({ block, candidate }));
-    if (themedCrossSceneFallback.length) crossSceneFallback = themedCrossSceneFallback;
+    if (themedCrossSceneFallback.length) {
+      crossSceneFallback = themedCrossSceneFallback;
+    } else {
+      crossSceneFallback = [];
+    }
   }
   if (crossSceneFallback.length) {
     return crossSceneFallback
@@ -752,6 +881,9 @@ const buildBlockLandmarkKey = (candidate = {}) => {
   return normalized.replace(/\s+/g, " ").trim();
 };
 
+const getCandidateReuseAssetKey = (candidate = {}) =>
+  String(candidate.source_asset_id || candidate.asset?.source_asset_id || candidate.asset_id || candidate.asset?.asset_id || "").trim();
+
 const candidateRespectsDiversityQuotas = ({
   candidate = {},
   block = {},
@@ -762,20 +894,36 @@ const candidateRespectsDiversityQuotas = ({
   if (!blockId) return true;
   const signature = buildVisualSignature(candidate);
   const provider = String(candidate.source || candidate.asset?.provider || "unknown").toLowerCase();
+  const providerQuotaExempt = candidate.from_clip_library === true || provider === "clip_library";
   const landmarkKey = buildBlockLandmarkKey(candidate);
+  const clipLibraryId = String(candidate.clip_library_id || "");
+  const reuseAssetKey = getCandidateReuseAssetKey(candidate);
   const signatureCount = Number(usage.usedBlockVisualSignatures?.get(`${blockId}:${signature}`) || 0);
   const providerCount = Number(usage.usedBlockProviders?.get(`${blockId}:${provider}`) || 0);
   const landmarkCount = landmarkKey ? Number(usage.usedBlockLandmarks?.get(`${blockId}:${landmarkKey}`) || 0) : 0;
+  const clipLibraryCount = clipLibraryId ? Number(usage.usedClipLibraryIds?.get(clipLibraryId) || 0) : 0;
+  const blockAssetCount = reuseAssetKey ? Number(usage.usedBlockAssetIds?.get(`${blockId}:${reuseAssetKey}`) || 0) : 0;
   const maxProviderCount = criticalSlot ? 1 : 2;
 
+  if (clipLibraryCount >= 1) return false;
+  if (blockAssetCount >= 1) return false;
   if (signatureCount >= 1) return false;
-  if (providerCount >= maxProviderCount) return false;
+  if (!providerQuotaExempt && providerCount >= maxProviderCount) return false;
   if (landmarkCount >= 1) return false;
   return true;
 };
 
+const buildCandidatePoolKey = (candidate = {}, index = 0) =>
+  String(
+    candidate.id
+    || candidate.clip_library_id
+    || candidate.approved_window_id
+    || `${candidate.asset_id || "unknown_asset"}:${candidate.start_sec || 0}:${candidate.end_sec || 0}:${index}`
+  ).trim();
+
 const prioritizeClipLibraryPoolForSlot = ({ block, slotRole = "", assetWindows = [] }) => {
-  const clipLibraryScoped = (assetWindows || []).filter((candidate) => {
+  const safeAssetWindows = assetWindows || [];
+  const clipLibraryScoped = safeAssetWindows.filter((candidate) => {
     if (!candidate.from_clip_library) return false;
     const sceneMatch = Number(candidate.scene_index || 0) === Number(block.scene_index || 0);
     const blockMatch = String(candidate.block_id || "") && String(candidate.block_id || "") === String(block.block_id || "");
@@ -787,7 +935,80 @@ const prioritizeClipLibraryPoolForSlot = ({ block, slotRole = "", assetWindows =
   if (clipLibraryScoped.length) {
     return clipLibraryScoped;
   }
-  return assetWindows || [];
+  return safeAssetWindows;
+};
+
+const pickCriticalSlotFallbackCandidate = ({
+  block = {},
+  slotRole = "",
+  candidatePool = [],
+  usage = {},
+  expectedLocation = "",
+  visualIntent = "",
+} = {}) => {
+  const sameIntent = (candidate = {}) =>
+    String(candidate.visual_intent || "").toLowerCase() === String(visualIntent || "").toLowerCase();
+  const sameLocation = (candidate = {}) => {
+    if (!expectedLocation) return true;
+    const city = resolveCandidateCity({ candidate, expectedLocation });
+    return city && isSameLocation(city, expectedLocation);
+  };
+  const roleAllowed = (candidate = {}) => {
+    const roles = candidate.narrative_roles_supported || [];
+    return !slotRole || !roles.length || roles.includes(slotRole);
+  };
+  const notReused = (candidate = {}) => {
+    const clipLibraryId = String(candidate.clip_library_id || "");
+    const reuseKey = getCandidateReuseAssetKey(candidate);
+    if (clipLibraryId && Number(usage.usedClipLibraryIds?.get(clipLibraryId) || 0) > 0) return false;
+    if (reuseKey && Number(usage.usedAssetIds?.get(reuseKey) || 0) > 0) return false;
+    return true;
+  };
+
+  const fromClipLibrary = (candidate = {}) => candidate.from_clip_library === true;
+  const fromRawApproved = (candidate = {}) => candidate.from_clip_library !== true && candidate.editorial_approved === true;
+
+  const orderedPools = [
+    // 1) clip library mesma cidade + mesmo intent + mesmo bloco/cena
+    (candidatePool || []).filter((candidate) =>
+      fromClipLibrary(candidate)
+      && sameLocation(candidate)
+      && sameIntent(candidate)
+      && roleAllowed(candidate)
+      && candidatePassesCriticalEditorialGate({ candidate, block })
+      && (
+        Number(candidate.scene_index || 0) === Number(block.scene_index || 0)
+        || (String(candidate.block_id || "") && String(candidate.block_id || "") === String(block.block_id || ""))
+      )
+      && notReused(candidate)
+    ),
+    // 2) clip library mesma cidade + mesmo intent (cross-scene)
+    (candidatePool || []).filter((candidate) =>
+      fromClipLibrary(candidate)
+      && sameLocation(candidate)
+      && sameIntent(candidate)
+      && roleAllowed(candidate)
+      && candidatePassesCriticalEditorialGate({ candidate, block })
+      && notReused(candidate)
+    ),
+    // 3) asset cru aprovado mesma cidade + intent
+    (candidatePool || []).filter((candidate) =>
+      fromRawApproved(candidate)
+      && sameLocation(candidate)
+      && sameIntent(candidate)
+      && roleAllowed(candidate)
+      && candidatePassesCriticalEditorialGate({ candidate, block })
+      && notReused(candidate)
+    ),
+  ];
+
+  for (const pool of orderedPools) {
+    if (pool.length) {
+      return pool
+        .sort((left, right) => Number(right.editorial_confidence || right.confidence || 0) - Number(left.editorial_confidence || left.confidence || 0))[0];
+    }
+  }
+  return null;
 };
 
 const selectWithDiversityQuota = ({
@@ -854,22 +1075,32 @@ const pickAdjacencyDiversityAlternative = ({
     return selected;
   }
   const blockId = String(block.block_id || block.id || block.scene_index || "");
-  const lastInBlock = [...(clips || [])]
+  const recentBlockClips = [...(clips || [])]
     .reverse()
-    .find((clip) => String(clip.block_id || clip.scene_index || "") === blockId);
-  if (!lastInBlock) return selected;
+    .filter((clip) => String(clip.block_id || clip.scene_index || "") === blockId)
+    .slice(0, 3);
+  if (!recentBlockClips.length) return selected;
 
   const selectedSignature = buildVisualSignature(selected.candidate);
-  const selectedAssetId = selected.candidate.asset_id;
-  const repeatedAdjacency = selectedSignature === String(lastInBlock.visual_signature || "")
-    || selectedAssetId === String(lastInBlock.asset?.asset_id || lastInBlock.asset_id || "");
+  const selectedAssetId = getCandidateReuseAssetKey(selected.candidate);
+  const selectedClipLibraryId = String(selected.candidate.clip_library_id || "");
+  const repeatedAdjacency = recentBlockClips.some((clip) =>
+    (selectedClipLibraryId && selectedClipLibraryId === String(clip.clip_library_id || ""))
+    || (selectedAssetId && selectedAssetId === String(clip.source_asset_id || clip.asset_id || clip.asset?.asset_id || ""))
+    || (selectedSignature && selectedSignature === String(clip.visual_signature || ""))
+  );
   if (!repeatedAdjacency) return selected;
 
   const alternative = (ranked || []).find((entry) => {
     if (!entry?.candidate || entry.hard_blocked) return false;
-    if (String(entry.candidate.asset_id || "") === String(selectedAssetId || "")) return false;
+    const candidateClipLibraryId = String(entry.candidate.clip_library_id || "");
+    const candidateAssetId = getCandidateReuseAssetKey(entry.candidate);
     const signature = buildVisualSignature(entry.candidate);
-    return signature && signature !== selectedSignature;
+    return !recentBlockClips.some((clip) =>
+      (candidateClipLibraryId && candidateClipLibraryId === String(clip.clip_library_id || ""))
+      || (candidateAssetId && candidateAssetId === String(clip.source_asset_id || clip.asset_id || clip.asset?.asset_id || ""))
+      || (signature && signature === String(clip.visual_signature || ""))
+    );
   });
   return alternative || selected;
 };
@@ -1031,6 +1262,49 @@ const summarizeRejectedReasons = (ranked = []) => {
     (item.rejected_reasons || []).forEach((reason) => counts.set(reason, (counts.get(reason) || 0) + 1));
   });
   return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([reason]) => reason);
+};
+
+const repairHardBoundaryLagInPlace = ({
+  clips = [],
+  hardBoundaryValidation = {},
+  hardBoundaryPolicy = {},
+} = {}) => {
+  if (!Array.isArray(clips) || !clips.length) return [];
+  const maxLag = Number(hardBoundaryPolicy.max_topic_switch_latency_sec || 0.5);
+  const actions = [];
+  (hardBoundaryValidation.violations || []).forEach((violation) => {
+    const lag = Number(violation.lag_sec || 0);
+    const boundarySec = Number(violation.boundary_sec || 0);
+    const firstClipIndex = Number(violation.first_clip_index || 0);
+    if (!firstClipIndex || lag <= maxLag) return;
+    const clip = clips.find((item) => Number(item.clip_index || 0) === firstClipIndex);
+    if (!clip) return;
+    const duration = Number(clip.clip_duration_seconds || Math.max(0.2, Number(clip.timeline_end_sec || 0) - Number(clip.timeline_start_sec || 0)));
+    const previousClip = clips.find((item) => Number(item.clip_index || 0) === firstClipIndex - 1);
+
+    if (previousClip) {
+      const prevStart = Number(previousClip.timeline_start_sec || 0);
+      const boundedPrevEnd = round3(Math.max(prevStart + 0.1, boundarySec));
+      previousClip.timeline_end_sec = boundedPrevEnd;
+      previousClip.clip_end_narrated_at = boundedPrevEnd;
+      previousClip.clip_duration_seconds = round3(Math.max(0.1, boundedPrevEnd - prevStart));
+      previousClip.source_end_seconds = round3(Number(previousClip.source_start_seconds || 0) + Number(previousClip.clip_duration_seconds || 0));
+    }
+
+    clip.timeline_start_sec = round3(boundarySec);
+    clip.clip_start_narrated_at = round3(boundarySec);
+    clip.timeline_end_sec = round3(boundarySec + duration);
+    clip.clip_end_narrated_at = round3(boundarySec + duration);
+    clip.source_end_seconds = round3(Number(clip.source_start_seconds || 0) + duration);
+    clip.timeline_repair_actions = unique([...(clip.timeline_repair_actions || []), "hard_boundary_lag_repair"]);
+    actions.push({
+      boundary_id: violation.boundary_id || "",
+      clip_index: firstClipIndex,
+      from_lag_sec: lag,
+      to_start_sec: round3(boundarySec),
+    });
+  });
+  return actions;
 };
 
 const evaluateHardBoundaryDeterministic = ({ clips = [], microBlocks = [], hardBoundaryPolicy = getHardBoundaryPolicy() }) => {
@@ -1214,10 +1488,6 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
       .map((entry) => Number(entry.scene_index || 0))
     : [];
 
-  if (!allowPlaceholderFallback && blockingSceneIndexes.length) {
-    throw new Error(`Timeline blocked: missing publishable assets for scene(s) ${blockingSceneIndexes.join(", ")}.`);
-  }
-
   const eligibleApprovedAssets = allowPlaceholderFallback
     ? approvedAssets
     : approvedAssets.filter((asset) => isPublishableAsset(asset, { mockMode: false }));
@@ -1267,6 +1537,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
     usedLocalPaths: new Map(),
     usedWindowIds: new Map(),
     usedProviders: new Map(),
+    usedClipLibraryIds: new Map(),
     usedBlockAssetIds: new Map(),
     usedVisualSignatures: new Map(),
     usedBlockVisualSignatures: new Map(),
@@ -1313,6 +1584,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         slotRole,
         assetWindows,
       });
+      const expectedLocation = block.expected_location || block.location?.city || (block.topic_type === "city" ? block.macro_topic : "");
       const candidates = filterCandidatesByHardRules({
         block,
         assetWindows: candidatePool,
@@ -1331,9 +1603,23 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         slotRole,
         criticalSlot,
       });
+      const strictCriticalFallbackCandidate = criticalSlot && diversityFilter.bypass_required
+        ? pickCriticalSlotFallbackCandidate({
+            block,
+            slotRole,
+            candidatePool,
+            usage,
+            expectedLocation,
+            visualIntent: block.visual_intent || "",
+          })
+        : null;
       const candidatesForRanking = diversityFilter.allowed_candidates.length
         ? diversityFilter.allowed_candidates
-        : (candidates || []).map((candidate) => enrichCandidateIdentity({ candidate, slotRole, block }));
+        : (
+          strictCriticalFallbackCandidate
+            ? [enrichCandidateIdentity({ candidate: strictCriticalFallbackCandidate, slotRole, block })]
+            : (candidates || []).map((candidate) => enrichCandidateIdentity({ candidate, slotRole, block }))
+        );
       const ranked = await rankCandidates({
         block: {
           ...block,
@@ -1354,9 +1640,21 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         slotStartSec: slot.start,
         slotEndSec: slot.end,
       });
-      const approvedDegradeCandidate = assetWindows.find((item) => item.editorial_approved === true)
+      const approvedDegradePool = (assetWindows || [])
+        .filter((item) => item.editorial_approved === true)
+        .filter((item) => {
+          if (!expectedLocation) return true;
+          const city = resolveCandidateCity({ candidate: item, expectedLocation });
+          return Boolean(city && isSameLocation(city, expectedLocation));
+        })
+        .filter((item) => {
+          if (!FOOD_VISUAL_INTENTS.has(String(block.visual_intent || "").toLowerCase())) return true;
+          return candidateHasThemeEvidence({ block, candidate: item });
+        })
+        .sort((left, right) => Number(right.editorial_confidence || right.confidence || 0) - Number(left.editorial_confidence || left.confidence || 0));
+      const approvedDegradeCandidate = approvedDegradePool[0]
         ? {
-            candidate: assetWindows.find((item) => item.editorial_approved === true),
+            candidate: approvedDegradePool[0],
             score: -8,
             features: {},
             selection_reason: "approved_pool_degrade",
@@ -1406,10 +1704,28 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         clips,
         microMoment: slot.micro_moment || null,
       });
-      const selected = adjacencySelection;
-
+      let selected = adjacencySelection;
       if (!selected?.candidate) {
-        throw new Error(`Timeline blocked: no publishable candidate available for scene ${block.scene_index}.`);
+        const emergencyByScene = assetWindows.find((item) =>
+          item.editorial_approved === true
+          && Number(item.scene_index || 0) === Number(block.scene_index || 0)
+        );
+        const emergencyByBlock = assetWindows.find((item) =>
+          item.editorial_approved === true
+          && String(item.block_id || "").trim()
+          && String(item.block_id || "").trim() === String(block.block_id || "").trim()
+        );
+        const emergencyGlobal = assetWindows.find((item) => item.editorial_approved === true);
+        const emergencyCandidate = emergencyByScene || emergencyByBlock || emergencyGlobal;
+        if (!emergencyCandidate) {
+          throw new Error(`Timeline blocked: no publishable candidate available for scene ${block.scene_index}.`);
+        }
+        selected = {
+          candidate: emergencyCandidate,
+          score: -9,
+          features: {},
+          selection_reason: "emergency_cross_scene_fallback",
+        };
       }
 
       let candidate = selected.candidate || fallbackCandidate;
@@ -1468,6 +1784,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
       if (criticalSlot) {
         const criticalUnsafe = !candidate
           || candidate.critical_slot_allowed === false
+          || !candidatePassesCriticalEditorialGate({ candidate, block })
           || (slotRole === "closing_payoff" && candidate.closing_allowed === false)
           || String(candidate.visual_truth_status || "").toLowerCase() === "uncertain"
           || String(candidate.visual_truth_status || "").toLowerCase() === "wrong";
@@ -1477,6 +1794,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
               Number(item.scene_index || 0) === Number(block.scene_index || 0)
               && item.editorial_approved === true
               && item.critical_slot_allowed !== false
+              && candidatePassesCriticalEditorialGate({ candidate: item, block })
               && ["exact", "regional"].includes(String(item.visual_truth_status || "").toLowerCase())
               && (slotRole !== "opening_establishing" || item.opening_allowed !== false)
               && (slotRole !== "closing_payoff" || item.closing_allowed !== false)
@@ -1489,6 +1807,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
               .filter((item) =>
                 item.editorial_approved === true
                 && item.critical_slot_allowed !== false
+                && candidatePassesCriticalEditorialGate({ candidate: item, block })
                 && item.closing_allowed !== false
                 && ["exact", "regional"].includes(String(item.visual_truth_status || "").toLowerCase())
               )
@@ -1499,7 +1818,6 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
           }
         }
       }
-      const expectedLocation = block.expected_location || block.location?.city || (block.topic_type === "city" ? block.macro_topic : "");
       if (isBoundaryFirstSlot && hardBoundaryPolicy.require_location_on_hard_boundary && expectedLocation) {
         const candidateCity = resolveCandidateCity({ candidate, expectedLocation });
         if (!candidateCity || !isSameLocation(candidateCity, expectedLocation)) {
@@ -1586,6 +1904,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
       clips.push({
         clip_index: clips.length + 1,
         scene_index: block.scene_index,
+        fallback_missing_scene_assets: blockingSceneIndexes.includes(Number(block.scene_index || 0)),
         scene_role: block.role || "body",
         scene_order: block.scene_order,
         title: block.topic,
@@ -1638,6 +1957,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         asset_semantic_text: candidate.description || candidate.semantic_text || candidate.asset?.semantic_text || candidate.asset?.query || "",
         asset_window_id: candidate.id,
         asset_id: candidate.asset_id,
+        source_asset_id: getCandidateReuseAssetKey(candidate),
         clip_library_id: candidate.clip_library_id || "",
         from_clip_library: candidate.from_clip_library === true,
         asset_window_key: `${candidate.asset_id}:${candidate.start_sec}:${candidate.end_sec}`,
@@ -1648,6 +1968,13 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         detected_visual_categories: detectedVisualCategories,
         detected_objects: candidate.detected_objects || [],
         visual_intent_match: candidate.visual_intent_match === true || Number(chosenFeatures?.visualIntentMatchScore || 0) > 0,
+        semantic_relevance_score: Number(candidate.semantic_relevance_score || 0),
+        editorial_evidence_score: Number(candidate.editorial_evidence_score || 0),
+        semantic_risk_score: Number(candidate.semantic_risk_score || 0),
+        identity_class: String(candidate.identity_class || ""),
+        editorial_utility: String(candidate.editorial_utility || ""),
+        visual_type: String(candidate.visual_type || ""),
+        risk_flags: Array.isArray(candidate.risk_flags) ? candidate.risk_flags : [],
         macro_block_id: block.parent_id,
         micro_block_id: block.id,
         block_id: block.block_id,
@@ -1686,11 +2013,15 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         narrative_role_selected: slotRole,
         critical_slot: criticalSlot,
         editorial_slot_ok: candidate.editorial_approved === true
-          && (!criticalSlot || candidate.critical_slot_allowed !== false)
+          && (!criticalSlot || (candidate.critical_slot_allowed !== false && candidatePassesCriticalEditorialGate({ candidate, block })))
           && (slotRole !== "opening_establishing" || candidate.opening_allowed !== false)
           && (slotRole !== "closing_payoff" || candidate.closing_allowed !== false),
         editorial_slot_violation_codes: unique([
           ...(criticalSlot && candidate.critical_slot_allowed === false ? ["critical_slot_not_allowed"] : []),
+          ...(criticalSlot && Number(candidate.semantic_relevance_score || 0) < CRITICAL_SLOT_MIN_SEMANTIC_RELEVANCE ? ["critical_slot_low_semantic_relevance"] : []),
+          ...(criticalSlot && Number(candidate.editorial_evidence_score || 0) < CRITICAL_SLOT_MIN_EDITORIAL_EVIDENCE ? ["critical_slot_low_editorial_evidence"] : []),
+          ...(criticalSlot && Number(candidate.semantic_risk_score || 0) > CRITICAL_SLOT_MAX_SEMANTIC_RISK ? ["critical_slot_semantic_risk_high"] : []),
+          ...(criticalSlot && (candidate.risk_flags || []).map((item) => String(item || "").toLowerCase()).includes("geography_mismatch_risk") ? ["critical_slot_geography_risk"] : []),
           ...(slotRole === "opening_establishing" && candidate.opening_allowed === false ? ["opening_not_allowed"] : []),
           ...(slotRole === "closing_payoff" && candidate.closing_allowed === false ? ["closing_not_allowed"] : []),
           ...(candidate.editorial_approved !== true ? ["not_editorially_approved"] : []),
@@ -1710,6 +2041,11 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         timeline_repair_actions: unique(timelineRepairActions),
         source_tier: candidate.source_tier || "free",
         approved_window_id: candidate.approved_window_id || candidate.id,
+        approval_provenance: {
+          approved_window_id: String(candidate.approved_window_id || candidate.id || ""),
+          clip_library_id: String(candidate.clip_library_id || ""),
+          origin_approved_window_id: String(candidate.origin_approved_window_id || candidate.asset?.origin_approved_window_id || ""),
+        },
         theme_evidence_present: themeEvidenceMatched,
         content_slot_type: candidate.content_slot_type || "",
         content_slot_id: candidate.content_slot_id || "",
@@ -1732,7 +2068,15 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
 
   const uniqueAssetCount = new Set(clips.map((clip) => clip.asset?.local_path || clip.asset?.source_url).filter(Boolean)).size;
   const semanticScores = clips.map((clip) => Number(clip.timeline_score || 0));
-  const hardBoundaryValidation = evaluateHardBoundaryDeterministic({ clips, microBlocks, hardBoundaryPolicy });
+  let hardBoundaryValidation = evaluateHardBoundaryDeterministic({ clips, microBlocks, hardBoundaryPolicy });
+  const boundaryRepairActions = repairHardBoundaryLagInPlace({
+    clips,
+    hardBoundaryValidation,
+    hardBoundaryPolicy,
+  });
+  if (boundaryRepairActions.length) {
+    hardBoundaryValidation = evaluateHardBoundaryDeterministic({ clips, microBlocks, hardBoundaryPolicy });
+  }
 
   const timelineSyncMetricsBase = computeTimelineSyncMetrics({
     clips,
@@ -1773,6 +2117,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
     micro_coverage_gaps: microCoverageGaps,
     micro_repair_rounds_used: microRepairRoundsUsed,
     timeline_repair_actions: sequenceRepair.actions || [],
+    hard_boundary_repair_actions: boundaryRepairActions,
     diversity_blocks: diversityAudit.blocks,
     low_diversity_block_count: Number(diversityAudit.low_diversity_block_count || 0),
     low_diversity_blocks: diversityAudit.low_diversity_blocks || [],
@@ -1862,5 +2207,7 @@ module.exports = {
     getNarrationTextBetween,
     mapClipLibraryRecordToCandidate,
     prioritizeClipLibraryPoolForSlot,
+    candidateRespectsDiversityQuotas,
+    pickAdjacencyDiversityAlternative,
   },
 };

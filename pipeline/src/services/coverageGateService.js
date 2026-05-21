@@ -5,6 +5,12 @@ const COVERAGE_STATUS = {
   PARTIAL: "partial",
   INSUFFICIENT: "insufficient",
 };
+const COVERAGE_LEVEL = {
+  MANDATORY: "mandatory",
+  ACCEPTABLE: "acceptable",
+  COSMETIC: "cosmetic",
+};
+const LOW_EVIDENCE_SLOT_TYPES = new Set(["transition_broll", "wide_establishing", "fallback_safe"]);
 
 const unique = (values = []) => [...new Set((values || []).filter(Boolean))];
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
@@ -42,6 +48,40 @@ const buildCoverageSlotMap = (slotCoverageEntry = {}) =>
       return acc;
     }, {});
 
+const resolveCoverageLevelForSlot = (slot = {}) => {
+  const slotType = normalize(slot.slot_type || "");
+  const criticality = normalize(slot.criticality || "");
+  const required = slot.required === true;
+  const requiresProof = slot.requires_visual_proof === true;
+  if (required && (requiresProof || ["high", "critical"].includes(criticality))) {
+    return COVERAGE_LEVEL.MANDATORY;
+  }
+  if (required || requiresProof || criticality === "medium") {
+    return COVERAGE_LEVEL.ACCEPTABLE;
+  }
+  if (LOW_EVIDENCE_SLOT_TYPES.has(slotType)) {
+    return COVERAGE_LEVEL.COSMETIC;
+  }
+  return COVERAGE_LEVEL.COSMETIC;
+};
+
+const inferCoverageFailureCause = ({
+  selectedCount = 0,
+  eligibleCount = 0,
+  coverageCount = 0,
+  minCount = 1,
+  avgSemanticRelevanceScore = 0,
+  avgEditorialEvidenceScore = 0,
+} = {}) => {
+  if (coverageCount >= minCount) return "none";
+  if (selectedCount <= 0 && eligibleCount <= 0) return "search_insufficiency";
+  if (selectedCount > 0 && eligibleCount <= 0) return "semantic_ambiguity";
+  if (eligibleCount > 0 && coverageCount <= 0) return "editorial_insufficiency";
+  if (avgSemanticRelevanceScore > 0 && avgSemanticRelevanceScore < 0.45) return "semantic_ambiguity";
+  if (avgEditorialEvidenceScore > 0 && avgEditorialEvidenceScore < 0.5) return "editorial_insufficiency";
+  return "planner_permissive";
+};
+
 const evaluateBlockCoverage = ({
   blockPackage = {},
   slotCoverageEntry = {},
@@ -60,6 +100,17 @@ const evaluateBlockCoverage = ({
   const missingVisualNeeds = [];
   const coverageGaps = [];
   const excessSlots = [];
+  const failureCauseCounts = {
+    search_insufficiency: 0,
+    semantic_ambiguity: 0,
+    editorial_insufficiency: 0,
+    planner_permissive: 0,
+  };
+  const levelStats = {
+    [COVERAGE_LEVEL.MANDATORY]: { required_total: 0, covered_total: 0, missing_slots: [] },
+    [COVERAGE_LEVEL.ACCEPTABLE]: { required_total: 0, covered_total: 0, missing_slots: [] },
+    [COVERAGE_LEVEL.COSMETIC]: { required_total: 0, covered_total: 0, missing_slots: [] },
+  };
 
   requiredSlots.forEach((slot) => {
     const slotId = String(slot.slot_id || "").trim();
@@ -67,22 +118,47 @@ const evaluateBlockCoverage = ({
     const selectedCount = Number(covered?.selected_count || 0);
     const eligibleCount = Number(covered?.eligible_count || 0);
     const coverageCount = Number(covered?.coverage_count || 0);
+    const avgSemanticRelevanceScore = Number(covered?.avg_semantic_relevance_score || 0);
+    const avgEditorialEvidenceScore = Number(covered?.avg_editorial_evidence_score || 0);
     const minCount = Number(slot.min_count || covered?.min_count || 1);
     const requiresProof = slot.requires_visual_proof === true;
     const isCovered = coverageCount >= minCount;
+    const slotLevel = resolveCoverageLevelForSlot(slot);
+
+    levelStats[slotLevel].required_total += 1;
+    if (isCovered) {
+      levelStats[slotLevel].covered_total += 1;
+    } else {
+      levelStats[slotLevel].missing_slots.push(slot.slot_type);
+    }
 
     if (isCovered) {
       coveredRequiredSlots.push(slot.slot_type);
     } else {
+      const failureCause = inferCoverageFailureCause({
+        selectedCount,
+        eligibleCount,
+        coverageCount,
+        minCount,
+        avgSemanticRelevanceScore,
+        avgEditorialEvidenceScore,
+      });
+      if (failureCause !== "none") {
+        failureCauseCounts[failureCause] = Number(failureCauseCounts[failureCause] || 0) + 1;
+      }
       missingSlots.push(slot.slot_type);
       coverageGaps.push({
         slot_id: slot.slot_id,
         slot_type: slot.slot_type,
+        coverage_level: slotLevel,
         min_count: minCount,
         selected_count: selectedCount,
         eligible_count: eligibleCount,
         coverage_count: coverageCount,
         requires_visual_proof: requiresProof,
+        avg_semantic_relevance_score: round3(avgSemanticRelevanceScore),
+        avg_editorial_evidence_score: round3(avgEditorialEvidenceScore),
+        failure_cause: failureCause,
       });
       missingVisualNeeds.push(slot.slot_type);
     }
@@ -119,6 +195,21 @@ const evaluateBlockCoverage = ({
 
   const requiredCoverageRatio = round3(coveredRequiredSlots.length / Math.max(1, requiredSlots.length));
   const criticalCoverageRatio = round3(coveredCriticalSlots.length / Math.max(1, criticalSlots.length));
+  const mandatoryCoverageRatio = round3(
+    levelStats[COVERAGE_LEVEL.MANDATORY].required_total
+      ? (levelStats[COVERAGE_LEVEL.MANDATORY].covered_total / levelStats[COVERAGE_LEVEL.MANDATORY].required_total)
+      : 1
+  );
+  const acceptableCoverageRatio = round3(
+    levelStats[COVERAGE_LEVEL.ACCEPTABLE].required_total
+      ? (levelStats[COVERAGE_LEVEL.ACCEPTABLE].covered_total / levelStats[COVERAGE_LEVEL.ACCEPTABLE].required_total)
+      : 1
+  );
+  const cosmeticSupportRatio = round3(
+    levelStats[COVERAGE_LEVEL.COSMETIC].required_total
+      ? (levelStats[COVERAGE_LEVEL.COSMETIC].covered_total / levelStats[COVERAGE_LEVEL.COSMETIC].required_total)
+      : 1
+  );
   const distinctVisualFamilies = Number(funnelEntry.distinct_visual_families || 0);
   const approvedCount = Number(funnelEntry.approved_count || 0);
   const weakOnlyCount = weakOnlySlots.length;
@@ -127,7 +218,9 @@ const evaluateBlockCoverage = ({
 
   let coverageStatus = COVERAGE_STATUS.INSUFFICIENT;
   if (
-    requiredCoverageRatio >= 1
+    mandatoryCoverageRatio >= 1
+    && acceptableCoverageRatio >= 0.85
+    && requiredCoverageRatio >= 1
     && criticalCoverageRatio >= 1
     && weakOnlyCount === 0
     && excessSlots.length === 0
@@ -135,13 +228,28 @@ const evaluateBlockCoverage = ({
     && distinctVisualFamilies >= minFamiliesTarget
   ) {
     coverageStatus = COVERAGE_STATUS.STRONG;
-  } else if (requiredCoverageRatio >= 0.5 || criticalCoverageRatio >= 0.5 || approvedCount > 0) {
+  } else if (
+    mandatoryCoverageRatio >= 0.75
+    || acceptableCoverageRatio >= 0.6
+    || requiredCoverageRatio >= 0.5
+    || criticalCoverageRatio >= 0.5
+    || approvedCount > 0
+  ) {
     coverageStatus = COVERAGE_STATUS.PARTIAL;
   }
 
   const maxRepairRounds = Math.max(1, Number(config.COVERAGE_GATE_MAX_REPAIR_ROUNDS_PER_BLOCK || 2));
   const repairRoundsUsed = Number(funnelEntry.repair_rounds_used || 0);
-  const needsRepair = coverageStatus !== COVERAGE_STATUS.STRONG && repairRoundsUsed < maxRepairRounds;
+  const partialCoverageCanPass = coverageStatus === COVERAGE_STATUS.PARTIAL
+    && (
+      (mandatoryCoverageRatio >= 1 && acceptableCoverageRatio >= 0.7)
+      || (requiredCoverageRatio >= 0.75 && criticalCoverageRatio >= 1)
+      || approvedCount >= Math.max(8, requiredSlots.length * 2)
+      || repairRoundsUsed >= maxRepairRounds
+    );
+  const needsRepair = coverageStatus !== COVERAGE_STATUS.STRONG
+    && !partialCoverageCanPass
+    && repairRoundsUsed < maxRepairRounds;
   const allowPartialAdvance = Boolean(config.COVERAGE_GATE_ALLOW_PARTIAL);
   const canAdvance = coverageStatus === COVERAGE_STATUS.STRONG
     || (coverageStatus === COVERAGE_STATUS.PARTIAL && allowPartialAdvance && !needsRepair);
@@ -164,6 +272,26 @@ const evaluateBlockCoverage = ({
     critical_slots_covered: coveredCriticalSlots.length,
     required_coverage_ratio: requiredCoverageRatio,
     critical_coverage_ratio: criticalCoverageRatio,
+    coverage_levels: {
+      mandatory: {
+        required_total: levelStats[COVERAGE_LEVEL.MANDATORY].required_total,
+        covered_total: levelStats[COVERAGE_LEVEL.MANDATORY].covered_total,
+        coverage_ratio: mandatoryCoverageRatio,
+        missing_slots: unique(levelStats[COVERAGE_LEVEL.MANDATORY].missing_slots),
+      },
+      acceptable: {
+        required_total: levelStats[COVERAGE_LEVEL.ACCEPTABLE].required_total,
+        covered_total: levelStats[COVERAGE_LEVEL.ACCEPTABLE].covered_total,
+        coverage_ratio: acceptableCoverageRatio,
+        missing_slots: unique(levelStats[COVERAGE_LEVEL.ACCEPTABLE].missing_slots),
+      },
+      cosmetic: {
+        required_total: levelStats[COVERAGE_LEVEL.COSMETIC].required_total,
+        covered_total: levelStats[COVERAGE_LEVEL.COSMETIC].covered_total,
+        coverage_ratio: cosmeticSupportRatio,
+        missing_slots: unique(levelStats[COVERAGE_LEVEL.COSMETIC].missing_slots),
+      },
+    },
     approved_windows_count: approvedCount,
     distinct_visual_families: distinctVisualFamilies,
     weak_only_slots: unique(weakOnlySlots),
@@ -176,6 +304,9 @@ const evaluateBlockCoverage = ({
     max_repair_rounds: maxRepairRounds,
     can_advance: canAdvance,
     advance_mode: advanceMode,
+    failure_cause_counts: failureCauseCounts,
+    primary_failure_cause: Object.entries(failureCauseCounts)
+      .sort((left, right) => Number(right[1] || 0) - Number(left[1] || 0))[0]?.[0] || "none",
   };
 };
 
@@ -219,6 +350,13 @@ const evaluateCoverageGate = ({
       partial_ratio: round3(counts.partial / Math.max(1, counts.total)),
       insufficient_ratio: round3(counts.insufficient / Math.max(1, counts.total)),
       repair_required_ratio: round3(counts.repair_required / Math.max(1, counts.total)),
+      failure_causes: blocks.reduce((acc, block) => {
+        const causes = block.failure_cause_counts || {};
+        Object.keys(causes).forEach((key) => {
+          acc[key] = Number(acc[key] || 0) + Number(causes[key] || 0);
+        });
+        return acc;
+      }, {}),
     },
   };
 };

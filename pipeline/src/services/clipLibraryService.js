@@ -7,6 +7,17 @@ const { runFfmpeg, probeMedia } = require("../utils/mediaUtils");
 
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
 const unique = (values = []) => [...new Set((values || []).filter(Boolean))];
+const MIN_CLIP_SECONDS = 0.8;
+const sourceDurationCache = new Map();
+
+const getMicroClipDurations = () =>
+  unique(
+    String(config.CLIP_LIBRARY_TARGET_DURATIONS || "3,5,15")
+      .split(",")
+      .map((item) => Number(String(item || "").trim()))
+      .filter((value) => Number.isFinite(value) && value >= 1.5)
+      .map((value) => round3(value))
+  ).sort((left, right) => left - right);
 
 const safeJsonParse = (raw, fallback) => {
   try {
@@ -42,6 +53,102 @@ const keywordOverlapScore = (leftText = "", rightText = "") => {
   const intersection = left.filter((token) => right.includes(token)).length;
   const union = unique([...left, ...right]).length;
   return union > 0 ? intersection / union : 0;
+};
+
+const normalizeInlineText = (value = "") =>
+  String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const truncateText = (value = "", maxLength = 220) => {
+  const normalized = normalizeInlineText(value);
+  if (!normalized || normalized.length <= maxLength) return normalized;
+  const clipped = normalized.slice(0, maxLength);
+  const punctuationIndex = Math.max(clipped.lastIndexOf(". "), clipped.lastIndexOf("; "), clipped.lastIndexOf(", "));
+  const safe = punctuationIndex >= 80 ? clipped.slice(0, punctuationIndex) : clipped;
+  return `${safe.trim()}...`;
+};
+
+const pickSemanticName = ({ landmarks = [], location = {}, visualIntent = "", shotType = "" } = {}) => {
+  const landmarkNames = (landmarks || []).map((entry) => entry?.name || entry).filter(Boolean);
+  if (landmarkNames.length) return normalizeInlineText(landmarkNames[0]);
+  if (location?.city && visualIntent) {
+    return normalizeInlineText(`${location.city} ${String(visualIntent || "").replace(/_/g, " ")}`);
+  }
+  if (location?.city) return normalizeInlineText(location.city);
+  if (visualIntent && shotType) return normalizeInlineText(`${String(visualIntent || "").replace(/_/g, " ")} ${shotType}`);
+  return normalizeInlineText(String(visualIntent || "").replace(/_/g, " ") || shotType || "travel scene");
+};
+
+const pickSemanticPhrase = ({ summary = "", semanticName = "", tags = [], entities = [], shotType = "" } = {}) => {
+  const normalizedSummary = normalizeInlineText(summary);
+  if (normalizedSummary) {
+    const words = normalizedSummary.split(" ").slice(0, 12).join(" ");
+    return truncateText(words, 96);
+  }
+  return truncateText(
+    [semanticName, shotType, ...(tags || []).slice(0, 2), ...(entities || []).slice(0, 1)].filter(Boolean).join(" "),
+    96
+  );
+};
+
+const buildClipSemanticMetadata = ({
+  microWindow = {},
+  asset = {},
+  tagsSemanticas = [],
+  entities = [],
+  location = {},
+  shotType = "",
+  visualIntent = "",
+} = {}) => {
+  const baseSummary = truncateText(
+    microWindow.summary
+      || microWindow.description
+      || asset.analysis_summary
+      || asset.semantic_text
+      || "",
+    220
+  );
+  const semanticName = pickSemanticName({
+    landmarks: microWindow.landmarks || [],
+    location,
+    visualIntent,
+    shotType,
+  });
+  const semanticPhrase = pickSemanticPhrase({
+    summary: baseSummary,
+    semanticName,
+    tags: tagsSemanticas,
+    entities,
+    shotType,
+  });
+  const semanticSummary = baseSummary || truncateText(
+    [semanticName, String(visualIntent || "").replace(/_/g, " "), ...(tagsSemanticas || []).slice(0, 3), ...(entities || []).slice(0, 2)].filter(Boolean).join(" "),
+    220
+  );
+  const semanticText = normalizeInlineText(
+    [semanticPhrase, semanticSummary, semanticName, visualIntent, ...(tagsSemanticas || []), ...(entities || [])].filter(Boolean).join(" ")
+  );
+
+  return {
+    semantic_name: semanticName,
+    semantic_phrase: semanticPhrase,
+    semantic_summary: semanticSummary,
+    semantic_text: semanticText,
+    semantic_source: normalizeInlineText(microWindow.analysis_provider || asset.analysis_provider || microWindow.visual_evidence_source || "window_context"),
+  };
+};
+
+const mergeClipMetadata = (existingMetadata = {}, nextMetadata = {}) => {
+  const merged = { ...(existingMetadata || {}) };
+  Object.entries(nextMetadata || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    if (typeof value === "string" && !String(value).trim()) return;
+    if (Array.isArray(value) && !value.length) return;
+    if (typeof value === "object" && !Array.isArray(value) && !Object.keys(value).length) return;
+    merged[key] = value;
+  });
+  return merged;
 };
 
 let db = null;
@@ -86,6 +193,17 @@ const ensureDb = () => {
   return db;
 };
 
+const closeClipLibraryDb = () => {
+  if (!db) return;
+  try {
+    db.close();
+  } catch {
+    // noop
+  } finally {
+    db = null;
+  }
+};
+
 const buildClipSignature = ({
   assetId = "",
   sourceVideoPath = "",
@@ -112,6 +230,14 @@ const getClipOutputPath = ({ videoId = "", assetId = "", clipId = "" }) => {
 
 const mapRowToClip = (row) => {
   if (!row) return null;
+  const metadata = safeJsonParse(row.metadata_json, {});
+  const semanticSummary = metadata.semantic_summary || metadata.summary || metadata.description || "";
+  const semanticPhrase = metadata.semantic_phrase || "";
+  const semanticName = metadata.semantic_name || "";
+  const semanticText = normalizeInlineText(
+    metadata.semantic_text
+      || [semanticPhrase, semanticSummary, semanticName, row.visual_intent || "", ...safeJsonParse(row.tags_semanticas_json, []), ...safeJsonParse(row.entities_json, [])].join(" ")
+  );
   return {
     clip_id: row.clip_id,
     clip_signature: row.clip_signature,
@@ -134,12 +260,66 @@ const mapRowToClip = (row) => {
     shot_type: row.shot_type || "",
     confidence: Number(row.confidence || 0),
     visual_intent: row.visual_intent || "",
+    semantic_name: semanticName,
+    semantic_phrase: semanticPhrase,
+    semantic_summary: semanticSummary,
+    semantic_text: semanticText,
     approval_context: safeJsonParse(row.approval_context_json, {}),
     usage_count: Number(row.usage_count || 0),
     last_used_at: row.last_used_at || "",
     history: safeJsonParse(row.history_json, []),
-    metadata: safeJsonParse(row.metadata_json, {}),
+    metadata,
   };
+};
+
+const expandWindowToMicroclips = (window = {}) => {
+  const start = round3(Math.max(0, Number(window.start_seconds ?? window.start_sec ?? 0)));
+  const end = round3(Math.max(start + MIN_CLIP_SECONDS, Number(window.end_seconds ?? window.end_sec ?? start + MIN_CLIP_SECONDS)));
+  const windowDuration = round3(Math.max(MIN_CLIP_SECONDS, end - start));
+  const maxSegmentsPerWindow = Math.max(1, Number(config.CLIP_LIBRARY_MAX_MICROCLIPS_PER_WINDOW || 8));
+  const targetDurations = getMicroClipDurations();
+
+  const candidates = [{
+    ...window,
+    start_seconds: start,
+    end_seconds: end,
+    duration_seconds: windowDuration,
+    clip_variant: "full_window",
+    clip_variant_rank: 0,
+  }];
+
+  for (const durationTarget of targetDurations) {
+    if (windowDuration <= durationTarget + 0.35) continue;
+    const segmentCount = Math.max(2, Math.floor(windowDuration / durationTarget));
+    const segmentStride = windowDuration / segmentCount;
+
+    for (let index = 0; index < segmentCount; index += 1) {
+      const segmentStart = round3(start + (index * segmentStride));
+      const segmentEnd = round3(Math.min(end, segmentStart + durationTarget));
+      if (segmentEnd - segmentStart < MIN_CLIP_SECONDS) continue;
+      candidates.push({
+        ...window,
+        start_seconds: segmentStart,
+        end_seconds: segmentEnd,
+        duration_seconds: round3(segmentEnd - segmentStart),
+        clip_variant: `${durationTarget}s_slice`,
+        clip_variant_rank: targetDurations.indexOf(durationTarget) + 1,
+      });
+      if (candidates.length >= maxSegmentsPerWindow) break;
+    }
+    if (candidates.length >= maxSegmentsPerWindow) break;
+  }
+
+  const deduped = [];
+  const signatures = new Set();
+  for (const entry of candidates) {
+    const signature = `${round3(entry.start_seconds)}:${round3(entry.end_seconds)}`;
+    if (signatures.has(signature)) continue;
+    signatures.add(signature);
+    deduped.push(entry);
+    if (deduped.length >= maxSegmentsPerWindow) break;
+  }
+  return deduped;
 };
 
 const getClipById = async ({ clipId = "" }) => {
@@ -157,25 +337,57 @@ const appendHistory = (history = [], entry = {}) =>
     },
   ];
 
+const getSourceDurationSeconds = async (inputPath = "") => {
+  const key = String(inputPath || "");
+  if (!key) return 0;
+  if (sourceDurationCache.has(key)) return Number(sourceDurationCache.get(key) || 0);
+  const mediaInfo = await probeMedia(key).catch(() => ({ duration: 0 }));
+  const duration = Number(mediaInfo?.duration || 0);
+  sourceDurationCache.set(key, duration);
+  return duration;
+};
+
+const clampClipBounds = async ({ inputPath = "", sourceStartSec = 0, sourceEndSec = 0 }) => {
+  const rawStart = Math.max(0, Number(sourceStartSec || 0));
+  const rawEnd = Math.max(rawStart + 0.2, Number(sourceEndSec || 0));
+  const duration = await getSourceDurationSeconds(inputPath);
+
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return {
+      start: round3(rawStart),
+      end: round3(rawEnd),
+      duration: round3(Math.max(0.2, rawEnd - rawStart)),
+    };
+  }
+
+  const usableTail = Math.max(0.25, duration - 0.05);
+  const safeStart = Math.min(rawStart, Math.max(0, usableTail - 0.2));
+  const safeEnd = Math.min(rawEnd, usableTail);
+  const safeDuration = Math.max(0.2, safeEnd - safeStart);
+  return {
+    start: round3(safeStart),
+    end: round3(safeStart + safeDuration),
+    duration: round3(safeDuration),
+  };
+};
+
 const extractClipFile = async ({
   inputPath = "",
   outputPath = "",
   sourceStartSec = 0,
   sourceEndSec = 0,
 }) => {
-  const start = Math.max(0, Number(sourceStartSec || 0));
-  const end = Math.max(start + 0.2, Number(sourceEndSec || 0));
-  const duration = round3(Math.max(0.2, end - start));
+  const bounds = await clampClipBounds({
+    inputPath,
+    sourceStartSec,
+    sourceEndSec,
+  });
+  const start = bounds.start;
+  const end = bounds.end;
+  const duration = bounds.duration;
   await fs.ensureDir(path.dirname(outputPath));
 
-  await runFfmpeg([
-    "-y",
-    "-ss",
-    String(round3(start)),
-    "-i",
-    inputPath,
-    "-t",
-    String(duration),
+  const commonArgs = [
     "-vf",
     `scale=${config.OUTPUT_WIDTH}:${config.OUTPUT_HEIGHT}:force_original_aspect_ratio=decrease,pad=${config.OUTPUT_WIDTH}:${config.OUTPUT_HEIGHT}:(ow-iw)/2:(oh-ih)/2`,
     "-r",
@@ -192,7 +404,31 @@ const extractClipFile = async ({
     "yuv420p",
     "-an",
     outputPath,
-  ]);
+  ];
+
+  try {
+    await runFfmpeg([
+      "-y",
+      "-ss",
+      String(round3(start)),
+      "-i",
+      inputPath,
+      "-t",
+      String(duration),
+      ...commonArgs,
+    ]);
+  } catch {
+    await runFfmpeg([
+      "-y",
+      "-i",
+      inputPath,
+      "-ss",
+      String(round3(start)),
+      "-to",
+      String(round3(end)),
+      ...commonArgs,
+    ]);
+  }
 };
 
 const registerClip = async ({
@@ -216,8 +452,13 @@ const registerClip = async ({
   const sourceVideoPath = String(asset.local_path || "");
   if (!sourceVideoPath || !(await fs.pathExists(sourceVideoPath))) return null;
 
-  const normalizedStart = round3(Math.max(0, Number(sourceStartSec || 0)));
-  const normalizedEnd = round3(Math.max(normalizedStart + 0.2, Number(sourceEndSec || 0)));
+  const bounds = await clampClipBounds({
+    inputPath: sourceVideoPath,
+    sourceStartSec,
+    sourceEndSec,
+  });
+  const normalizedStart = bounds.start;
+  const normalizedEnd = bounds.end;
   const signature = buildClipSignature({
     assetId: asset.asset_id || asset.source_url || sourceVideoPath,
     sourceVideoPath,
@@ -246,6 +487,7 @@ const registerClip = async ({
         sourceEndSec: existing.source_end_sec,
       });
     }
+    const nextMetadata = mergeClipMetadata(existing.metadata, metadata);
     const nextHistory = appendHistory(existing.history, {
       event: "reused_existing_clip",
       scene_index: sceneIndex,
@@ -253,10 +495,10 @@ const registerClip = async ({
     });
     conn.prepare(`
       UPDATE clips
-      SET updated_at = ?, history_json = ?
+      SET updated_at = ?, history_json = ?, metadata_json = ?
       WHERE clip_id = ?
-    `).run(now, JSON.stringify(nextHistory), existing.clip_id);
-    return { ...existing, history: nextHistory };
+    `).run(now, JSON.stringify(nextHistory), JSON.stringify(nextMetadata), existing.clip_id);
+    return { ...existing, metadata: nextMetadata, history: nextHistory };
   }
 
   await extractClipFile({
@@ -334,37 +576,64 @@ const extractAndRegister = async ({
 }) => {
   const generatedClips = [];
   for (const window of windows || []) {
-    const sourceStartSec = Number(window.start_seconds ?? window.start_sec ?? 0);
-    const sourceEndSec = Number(window.end_seconds ?? window.end_sec ?? sourceStartSec + 0.2);
-    const clip = await registerClip({
-      videoId,
-      sceneIndex: Number(window.scene_index || sceneIndex || 0),
-      blockId: String(window.block_id || blockId || ""),
-      asset,
-      sourceStartSec,
-      sourceEndSec,
-      tagsSemanticas: unique([
-        ...(window.tags || []),
-        ...(window.detected_visual_categories || []),
-      ]),
-      entities: unique([
-        ...(window.detected_objects || []),
-        ...((window.landmarks || []).map((entry) => entry?.name || entry).filter(Boolean)),
-      ]),
-      location: window.location || {},
-      shotType: window.visual_features?.shot_type || window.shot_type || "",
-      confidence: Number(window.editorial_confidence || window.confidence || 0),
-      visualIntent: window.scene_visual_intent || window.visual_intent || "",
-      approvalContext,
-      initialStatus,
-      policyVersion,
-      metadata: {
-        approved_window_id: window.approved_window_id || window.id || "",
-        scene_function: window.scene_function || "",
-        visual_truth_status: window.visual_truth_status || "",
-      },
-    });
-    if (clip) generatedClips.push(clip);
+    const microclipWindows = expandWindowToMicroclips(window);
+    for (const microWindow of microclipWindows) {
+      const sourceStartSec = Number(microWindow.start_seconds ?? microWindow.start_sec ?? 0);
+      const sourceEndSec = Number(microWindow.end_seconds ?? microWindow.end_sec ?? sourceStartSec + MIN_CLIP_SECONDS);
+      const semanticMetadata = buildClipSemanticMetadata({
+        microWindow,
+        asset,
+        tagsSemanticas: unique([
+          ...(microWindow.tags || []),
+          ...(microWindow.detected_visual_categories || []),
+          String(microWindow.clip_variant || ""),
+        ]),
+        entities: unique([
+          ...(microWindow.detected_objects || []),
+          ...((microWindow.landmarks || []).map((entry) => entry?.name || entry).filter(Boolean)),
+        ]),
+        location: microWindow.location || {},
+        shotType: microWindow.visual_features?.shot_type || microWindow.shot_type || "",
+        visualIntent: microWindow.scene_visual_intent || microWindow.visual_intent || "",
+      });
+      const clip = await registerClip({
+        videoId,
+        sceneIndex: Number(microWindow.scene_index || sceneIndex || 0),
+        blockId: String(microWindow.block_id || blockId || ""),
+        asset,
+        sourceStartSec,
+        sourceEndSec,
+        tagsSemanticas: unique([
+          ...(microWindow.tags || []),
+          ...(microWindow.detected_visual_categories || []),
+          String(microWindow.clip_variant || ""),
+        ]),
+        entities: unique([
+          ...(microWindow.detected_objects || []),
+          ...((microWindow.landmarks || []).map((entry) => entry?.name || entry).filter(Boolean)),
+        ]),
+        location: microWindow.location || {},
+        shotType: microWindow.visual_features?.shot_type || microWindow.shot_type || "",
+        confidence: Number(microWindow.editorial_confidence || microWindow.confidence || 0),
+        visualIntent: microWindow.scene_visual_intent || microWindow.visual_intent || "",
+        approvalContext,
+        initialStatus,
+        policyVersion,
+        metadata: {
+          approved_window_id: microWindow.approved_window_id || microWindow.id || "",
+          scene_function: microWindow.scene_function || "",
+          visual_truth_status: microWindow.visual_truth_status || "",
+          clip_variant: microWindow.clip_variant || "full_window",
+          clip_variant_rank: Number(microWindow.clip_variant_rank || 0),
+          parent_window_start_sec: Number(window.start_seconds ?? window.start_sec ?? 0),
+          parent_window_end_sec: Number(window.end_seconds ?? window.end_sec ?? 0),
+          parent_window_summary: truncateText(window.summary || window.description || "", 220),
+          parent_window_description: truncateText(window.description || window.summary || "", 220),
+          ...semanticMetadata,
+        },
+      });
+      if (clip) generatedClips.push(clip);
+    }
   }
   return generatedClips;
 };
@@ -433,6 +702,8 @@ const searchApprovedClips = async ({
   blockId = "",
   visualIntent = "",
   keywords = [],
+  expectedLocation = "",
+  strictLocation = false,
   limit = config.CLIP_LIBRARY_MAX_SEARCH_RESULTS || 24,
 }) => {
   const conn = ensureDb();
@@ -466,24 +737,54 @@ const searchApprovedClips = async ({
   }
 
   const semanticQuery = [visualIntent, ...(keywords || [])].join(" ").trim();
-  const clips = rows.map(mapRowToClip);
-  if (!semanticQuery) return clips;
+  const normalizedExpectedLocation = normalizeLabel(expectedLocation);
+  const clips = rows
+    .map(mapRowToClip)
+    .filter((clip) => {
+      if (!normalizedExpectedLocation) return true;
+      const locationCity = normalizeLabel(clip?.location?.city || "");
+      const semanticHaystack = normalizeLabel([
+        clip?.semantic_text || "",
+        clip?.semantic_summary || "",
+        clip?.semantic_phrase || "",
+        clip?.semantic_name || "",
+        ...(clip?.tags_semanticas || []),
+        ...(clip?.entities || []),
+      ].join(" "));
+      const locationMatch = locationCity === normalizedExpectedLocation;
+      const semanticMatch = semanticHaystack.includes(normalizedExpectedLocation);
+      if (strictLocation) return Boolean(locationMatch || semanticMatch);
+      return true;
+    });
+
+  if (!semanticQuery && !normalizedExpectedLocation) return clips;
 
   return clips
     .map((clip) => {
       const haystack = [
+        clip.semantic_text,
+        clip.semantic_summary,
+        clip.semantic_phrase,
         clip.visual_intent,
         ...(clip.tags_semanticas || []),
         ...(clip.entities || []),
         clip.shot_type,
       ].join(" ");
+      const semanticHaystack = normalizeLabel(haystack);
+      const locationCity = normalizeLabel(clip?.location?.city || "");
+      const locationBoost = normalizedExpectedLocation
+        && (locationCity === normalizedExpectedLocation || semanticHaystack.includes(normalizedExpectedLocation))
+        ? 0.25
+        : 0;
       return {
         ...clip,
         _semantic_score: keywordOverlapScore(semanticQuery, haystack),
+        _location_boost: locationBoost,
       };
     })
     .sort((left, right) =>
-      Number(right._semantic_score || 0) - Number(left._semantic_score || 0)
+      Number(right._location_boost || 0) - Number(left._location_boost || 0)
+      || Number(right._semantic_score || 0) - Number(left._semantic_score || 0)
       || Number(right.confidence || 0) - Number(left.confidence || 0)
       || Number(left.usage_count || 0) - Number(right.usage_count || 0)
     );
@@ -539,11 +840,12 @@ module.exports = {
   bulkUpdateStatusByAssetAndWindow,
   markClipUsed,
   summarizeClipLibrary,
+  closeClipLibraryDb,
   __test__: {
     buildClipSignature,
     buildClipId,
+    buildClipSemanticMetadata,
     keywordOverlapScore,
     mapRowToClip,
   },
 };
-

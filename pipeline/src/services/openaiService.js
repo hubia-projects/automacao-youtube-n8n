@@ -3,6 +3,7 @@ const path = require("path");
 const OpenAI = require("openai");
 const { config } = require("../config/env");
 const { logger } = require("../utils/logger");
+const { consumeExternalCallBudget, isProviderDisabledInLocalTest } = require("./externalApiControlService");
 
 const OPENAI_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_REQUEST_TIMEOUT_MS || 45000);
 const OPENAI_TTS_TIMEOUT_MS = Number(process.env.OPENAI_TTS_TIMEOUT_MS || 90000);
@@ -15,7 +16,8 @@ const openaiClient = config.OPENAI_API_KEY
     })
   : null;
 
-const hasOpenAi = () => Boolean(openaiClient && config.OPENAI_API_KEY);
+const hasOpenAi = () =>
+  Boolean(openaiClient && config.OPENAI_API_KEY) && !isProviderDisabledInLocalTest("openai");
 
 const safeJsonParse = (raw, fallback) => {
   try {
@@ -62,9 +64,15 @@ const imagePathToDataUrl = (imagePath) => {
   return `data:${mimeType};base64,${fileBuffer.toString("base64")}`;
 };
 
-const transcribeWithWordTimestamps = async ({ audioPath }) => {
+const transcribeWithWordTimestamps = async ({ audioPath, videoId = "" }) => {
   if (!hasOpenAi()) return null;
   if (!fs.existsSync(audioPath)) return null;
+  const budget = consumeExternalCallBudget({
+    provider: "openai",
+    videoId,
+    operation: "transcribe_with_word_timestamps",
+  });
+  if (!budget.allowed) return null;
 
   try {
     const file = fs.createReadStream(audioPath);
@@ -126,8 +134,14 @@ const transcribeWithWordTimestamps = async ({ audioPath }) => {
   }
 };
 
-const generateIdeasWithOpenAI = async ({ count = 5 }) => {
+const generateIdeasWithOpenAI = async ({ count = 5, videoId = "" }) => {
   if (!hasOpenAi()) return null;
+  const budget = consumeExternalCallBudget({
+    provider: "openai",
+    videoId,
+    operation: "generate_ideas",
+  });
+  if (!budget.allowed) return null;
 
   const system = `Você é um estrategista de YouTube para conteúdo faceless de viagem. Gere ideias com alta retenção e risco factual baixo.`;
   const user = `Gere ${count} ideias para vídeos longos (10-15 min) no nicho viagem (países, cidades, rankings, curiosidades, custo de vida, destinos subestimados, lugares bonitos, conteúdo prático).\n\nRetorne JSON estrito no formato:\n{\n  "ideas": [\n    {\n      "idea_id": "string",\n      "topic": "string",\n      "angle": "string",\n      "scores": {\n        "search_demand": 0-100,\n        "evergreen": 0-100,\n        "retention": 0-100,\n        "monetization": 0-100,\n        "visual_assets": 0-100,\n        "factual_risk": 0-100\n      },\n      "notes": "string"\n    }\n  ]\n}`;
@@ -150,11 +164,45 @@ const generateIdeasWithOpenAI = async ({ count = 5 }) => {
   }
 };
 
-const generateScriptPackageWithOpenAI = async ({ topic, angle }) => {
+const buildScriptDurationHint = (targetDurationSeconds = 0) => {
+  const numericTarget = Number(targetDurationSeconds || 0);
+  if (!(numericTarget > 0)) {
+    return {
+      scriptRequirement: "roteiro completo para 10-15 minutos",
+      durationInstruction: "",
+    };
+  }
+
+  const minutes = numericTarget % 60 === 0
+    ? String(Math.round(numericTarget / 60))
+    : (numericTarget / 60).toFixed(1);
+  const targetWords = Math.max(180, Math.round(numericTarget * 2.3));
+  const minWords = Math.max(160, targetWords - 40);
+  const maxWords = targetWords + 40;
+
+  return {
+    scriptRequirement: `roteiro completo para aproximadamente ${minutes} minutos (${minWords} a ${maxWords} palavras de narracao)`,
+    durationInstruction: `Duracao alvo: aproximadamente ${minutes} minutos. O campo script_text deve ter entre ${minWords} e ${maxWords} palavras de narracao corrida. Nunca entregue menos de ${minWords} palavras no script_text. Se precisar, expanda exemplos concretos, transicoes e detalhes visuais para atingir essa faixa sem enrolacao.`,
+  };
+};
+
+const generateScriptPackageWithOpenAI = async ({
+  topic,
+  angle,
+  targetDurationSeconds = 0,
+  videoId = "",
+}) => {
   if (!hasOpenAi()) return null;
+  const budget = consumeExternalCallBudget({
+    provider: "openai",
+    videoId,
+    operation: "generate_script_package",
+  });
+  if (!budget.allowed) return null;
 
   const system = `Você é roteirista especialista em vídeos faceless para YouTube. Escreva em português do Brasil com alta retenção.`;
-  const user = `Tema: ${topic}\nÂngulo: ${angle || "educativo/documental"}\n\nGere JSON estrito com:\n{\n  "video_objective": "",\n  "intro_hook": "",\n  "research_json": {"facts": [""], "risks": [""], "sources": [""]},\n  "outline_json": {"sections": [{"title": "", "objective": ""}]},\n  "script_text": "roteiro completo para 10-15 minutos",\n  "visual_suggestions": [{"section": "", "shots": [""]}],\n  "factual_notes": [""],\n  "seo_keywords": [""],\n  "youtube_title_options": [""],\n  "youtube_description": "",\n  "tags": [""],\n  "chapters": ["00:00 Introdução"]\n}`;
+  const durationHint = buildScriptDurationHint(targetDurationSeconds);
+  const user = `Tema: ${topic}\nÂngulo: ${angle || "educativo/documental"}\n${durationHint.durationInstruction ? `\n${durationHint.durationInstruction}` : ""}\n\nGere JSON estrito com:\n{\n  "video_objective": "",\n  "intro_hook": "",\n  "research_json": {"facts": [""], "risks": [""], "sources": [""]},\n  "outline_json": {"sections": [{"title": "", "objective": ""}]},\n  "script_text": "${durationHint.scriptRequirement}",\n  "visual_suggestions": [{"section": "", "shots": [""]}],\n  "factual_notes": [""],\n  "seo_keywords": [""],\n  "youtube_title_options": [""],\n  "youtube_description": "",\n  "tags": [""],\n  "chapters": ["00:00 Introdução"]\n}`;
 
   try {
     const response = await openaiClient.chat.completions.create({
@@ -173,8 +221,14 @@ const generateScriptPackageWithOpenAI = async ({ topic, angle }) => {
   }
 };
 
-const generateMetadataWithOpenAI = async ({ topic, scriptText }) => {
+const generateMetadataWithOpenAI = async ({ topic, scriptText, videoId = "" }) => {
   if (!hasOpenAi()) return null;
+  const budget = consumeExternalCallBudget({
+    provider: "openai",
+    videoId,
+    operation: "generate_metadata",
+  });
+  if (!budget.allowed) return null;
 
   try {
     const response = await openaiClient.chat.completions.create({
@@ -200,9 +254,15 @@ const generateMetadataWithOpenAI = async ({ topic, scriptText }) => {
   }
 };
 
-const transcribeWithOpenAI = async ({ audioPath, format = "srt" }) => {
+const transcribeWithOpenAI = async ({ audioPath, format = "srt", videoId = "" }) => {
   if (!hasOpenAi()) return null;
   if (!fs.existsSync(audioPath)) return null;
+  const budget = consumeExternalCallBudget({
+    provider: "openai",
+    videoId,
+    operation: "transcribe_audio",
+  });
+  if (!budget.allowed) return null;
 
   try {
     const file = fs.createReadStream(audioPath);
@@ -221,8 +281,14 @@ const transcribeWithOpenAI = async ({ audioPath, format = "srt" }) => {
   }
 };
 
-const ttsWithOpenAI = async ({ text }) => {
+const ttsWithOpenAI = async ({ text, videoId = "" }) => {
   if (!hasOpenAi()) return null;
+  const budget = consumeExternalCallBudget({
+    provider: "openai",
+    videoId,
+    operation: "tts",
+  });
+  if (!budget.allowed) return null;
   try {
     logger.info("OpenAI TTS: iniciando síntese", {
       text_length: String(text || "").length,
@@ -254,9 +320,20 @@ const ttsWithOpenAI = async ({ text }) => {
   }
 };
 
-const describeImagesWithOpenAI = async ({ prompt, imagePaths = [], detail = "low" }) => {
+const describeImagesWithOpenAI = async ({
+  prompt,
+  imagePaths = [],
+  detail = "low",
+  videoId = "",
+}) => {
   if (!hasOpenAi()) return null;
   if (!Array.isArray(imagePaths) || !imagePaths.length) return null;
+  const budget = consumeExternalCallBudget({
+    provider: "openai",
+    videoId,
+    operation: "describe_images",
+  });
+  if (!budget.allowed) return null;
 
   try {
     const response = await openaiClient.chat.completions.create({
@@ -291,8 +368,23 @@ const describeImagesWithOpenAI = async ({ prompt, imagePaths = [], detail = "low
 };
 
 const basicOpenAIHealthcheck = async () => {
+  if (isProviderDisabledInLocalTest("openai")) {
+    return {
+      configured: true,
+      ok: true,
+      message: "OpenAI desativado em LOCAL_TEST_MODE",
+    };
+  }
   if (!hasOpenAi()) return { configured: false, ok: false, message: "OPENAI_API_KEY ausente" };
   try {
+    const budget = consumeExternalCallBudget({
+      provider: "openai",
+      videoId: "",
+      operation: "healthcheck",
+    });
+    if (!budget.allowed) {
+      return { configured: true, ok: true, message: "OpenAI bloqueado pelo circuit breaker" };
+    }
     const response = await openaiClient.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: "Responda apenas: ok" }],

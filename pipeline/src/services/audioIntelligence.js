@@ -223,7 +223,7 @@ const analyzeAudio = async ({ videoId }) => {
   let provider = "none";
 
   try {
-    const whisperData = await transcribeWithWordTimestamps({ audioPath: state.audio_path });
+    const whisperData = await transcribeWithWordTimestamps({ audioPath: state.audio_path, videoId });
     if (whisperData && whisperData.words && whisperData.words.length > 3) {
       audioIntelligence = whisperData;
       provider = "openai_whisper_word_timestamps";

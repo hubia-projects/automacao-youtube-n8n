@@ -11,7 +11,10 @@ const { validateRenderQuality } = require("./renderQualityService");
 const { renderVideo } = require("./renderService");
 const { generateAssets } = require("./assetsService");
 const { buildEditorialRegenerationPlan } = require("./editorialRepairPlanner");
+const { markNeedsManualReview } = require("./manualReviewService");
 const { getThemeRequiredCategoriesForIntent } = require("../config/editorialPolicy");
+const { appendPipelineEvent } = require("./pipelineEventLogService");
+const { getExternalApiStats } = require("./externalApiControlService");
 
 const DEFAULT_QA_THRESHOLD = 0.78;
 const FOOD_VISUAL_INTENTS = new Set(["gastronomy", "market", "wine", "pastry", "restaurant", "cafe", "street_food"]);
@@ -35,7 +38,7 @@ const QA_RUNTIME_PROFILES = {
   prod_strict: "prod_strict",
   mock_relaxed: "mock_relaxed",
 };
-const QA_REPORTS_ROOT = path.join(config.PIPELINE_ROOT, "test_reports");
+const QA_REPORTS_ROOT = config.TEST_REPORTS_ROOT;
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
 const sha256File = async (filePath = "") => {
@@ -175,7 +178,7 @@ const generateContactSheetAndAudit = async ({ videoId, renderPath, duration, har
   await fs.writeJson(visualAuditPath, { video_id: videoId, render_path: renderPath, timestamps: audit, clip_audit: [], boundary_audit: [], overlay_audit: [], resolution_audit: {}, final_decision: {} }, { spaces: 2 });
   return { contactSheetPath, visualAuditPath, auditRows: audit };
 };
-const classifyFramesWithVision = async ({ renderPath, sampleTimestamps }) => {
+const classifyFramesWithVision = async ({ renderPath, sampleTimestamps, videoId = "" }) => {
   if (!hasOpenAi() || config.SEMANTIC_SYNC_MODE !== "high-quality") return new Map();
   const limitedTimestamps = sampleTimestamps.slice(0, 24);
   const framesDir = `${renderPath}.semantic-qa`;
@@ -194,6 +197,7 @@ const classifyFramesWithVision = async ({ renderPath, sampleTimestamps }) => {
       prompt: `Classifique cada frame em ordem para QA semantico de video de turismo e gastronomia. Retorne JSON estrito: {"frames":[{"frame_index":1,"topic":"","location":{"city":"","country":"","confidence":0},"landmarks":[{"name":"","confidence":0}],"neutral":false,"confidence":0}]}. Nao invente cidade se nao houver evidencia visual clara.`,
       imagePaths: framePaths,
       detail: "low",
+      videoId,
     });
 
     const byTimestamp = new Map();
@@ -221,7 +225,13 @@ const classifyFramesWithVision = async ({ renderPath, sampleTimestamps }) => {
   }
 };
 
-const classifyFrameWithVisionAtTimestamp = async ({ renderPath, timestampSec, evidenceDir, label }) => {
+const classifyFrameWithVisionAtTimestamp = async ({
+  renderPath,
+  timestampSec,
+  evidenceDir,
+  label,
+  videoId = "",
+}) => {
   const framePath = path.join(evidenceDir, `${label}-${String(timestampSec).replace(/\./g, "_")}.jpg`);
   await fs.ensureDir(path.dirname(framePath));
   await extractVideoFrame({ inputPath: renderPath, outputPath: framePath, timeSeconds: Math.max(0, timestampSec), width: 960, height: 540 });
@@ -233,6 +243,7 @@ const classifyFrameWithVisionAtTimestamp = async ({ renderPath, timestampSec, ev
     prompt: `Analise o frame e retorne JSON estrito: {"topic":"","location":{"city":"","country":"","confidence":0},"landmarks":[{"name":"","confidence":0}],"overlay_text":"","overlay_visible":false,"overlay_contrast_ok":false,"confidence":0}.`,
     imagePaths: [framePath],
     detail: "low",
+    videoId,
   }).catch(() => null);
 
   return {
@@ -813,11 +824,35 @@ const validateTimelineAlignment = async ({ videoId }) => {
 };
 
 
-const validateOverlayRenderedFrames = async ({ renderPath, overlays = [], evidenceDir }) => {
+const validateOverlayRenderedFrames = async ({
+  renderPath,
+  overlays = [],
+  evidenceDir,
+  overlayApplyStatus = "",
+  videoId = "",
+}) => {
   const results = [];
+  const normalizedStatus = String(overlayApplyStatus || "").toLowerCase();
+  if (normalizedStatus === "failed") {
+    return (overlays || []).map((overlay) => ({
+      text: overlay.text || "",
+      timestamp: round3(Number(overlay.start_seconds || 0) + 0.5),
+      state_overlay_exists: true,
+      frame_overlay_detected: false,
+      frame_path: "",
+      status: "fail",
+      reason: "overlay_apply_failed",
+    }));
+  }
   for (const overlay of overlays) {
     const ts = round3(Number(overlay.start_seconds || 0) + 0.5);
-    const vision = await classifyFrameWithVisionAtTimestamp({ renderPath, timestampSec: ts, evidenceDir, label: `overlay-${overlay.type || 'overlay'}` });
+    const vision = await classifyFrameWithVisionAtTimestamp({
+      renderPath,
+      timestampSec: ts,
+      evidenceDir,
+      label: `overlay-${overlay.type || "overlay"}`,
+      videoId,
+    });
     const detected = Boolean(vision.overlay_visible || (vision.overlay_text || '').trim());
     results.push({
       text: overlay.text || '',
@@ -826,12 +861,13 @@ const validateOverlayRenderedFrames = async ({ renderPath, overlays = [], eviden
       frame_overlay_detected: detected,
       frame_path: vision.frame_path,
       status: detected ? 'pass' : 'fail',
+      reason: detected ? "detected" : "not_detected_on_frame",
     });
   }
   return results;
 };
 
-const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir }) => {
+const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir, videoId = "" }) => {
   const rows = [];
   const mediaInfo = await probeMedia(renderPath).catch(() => ({ duration: 0 }));
   const renderDuration = Math.max(0.2, Number(mediaInfo.duration || 0));
@@ -852,6 +888,7 @@ const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir })
         timestampSec: safeTs,
         evidenceDir,
         label: `clip-${clip.clip_index || 0}`,
+        videoId,
       });
       frameChecks.push({ ts: safeTs, vision });
     }
@@ -983,7 +1020,7 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
   );
   const sampleIntervalSec = Number(config.SEMANTIC_SYNC_QA_SAMPLE_INTERVAL_SEC || (config.SEMANTIC_SYNC_MODE === "high-quality" ? 1 : 2));
   const sampleTimestamps = buildQaSampleTimestamps({ duration: renderDuration, hardBoundaries, intervalSec: sampleIntervalSec });
-  const visionByTimestamp = await classifyFramesWithVision({ renderPath, sampleTimestamps });
+  const visionByTimestamp = await classifyFramesWithVision({ renderPath, sampleTimestamps, videoId });
 
   const samples = sampleTimestamps.map((timestamp) => {
     const expectedBlock = findNarrativeBlockAtTime(narrativeBlocks, timestamp);
@@ -1028,7 +1065,13 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
     let boundaryPass = false;
     for (const offset of checks) {
       const ts = round3(Math.min(Math.max(0, boundary.timestamp_sec + offset), Math.max(0, renderDuration - 0.1)));
-      const vision = await classifyFrameWithVisionAtTimestamp({ renderPath, timestampSec: ts, evidenceDir, label: `boundary-${boundary.boundary_id}` });
+      const vision = await classifyFrameWithVisionAtTimestamp({
+        renderPath,
+        timestampSec: ts,
+        evidenceDir,
+        label: `boundary-${boundary.boundary_id}`,
+        videoId,
+      });
       const detectedCity = vision.location?.city || "";
       const metadataCity = (findClipAtTime(timeline?.clips || [], ts)?.detected_location?.city) || "";
       const hasCityMatchFromVision = boundary.expected_topic_type === "city" && detectedCity && isSameLocation(detectedCity, boundary.expected_topic);
@@ -1107,29 +1150,98 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
 
 
 const isCriticalAuditRow = (row = {}) =>
-  Boolean(
-    row.is_hard_boundary_first_clip
-    || row.critical_slot
-    || ["hook_exact", "opening_establishing", "closing_payoff"].includes(String(row.narrative_role_selected || ""))
-  );
+  (() => {
+    const visualIntent = String(row.visual_intent || "").toLowerCase();
+    const genericIntroLike = ["generic_travel", "travel", "overview"].includes(visualIntent);
+    if (row.is_hard_boundary_first_clip) return true;
+    if (row.critical_slot) {
+      if (genericIntroLike && !String(row.micro_id || "").trim()) return false;
+      return true;
+    }
+    if (["hook_exact", "opening_establishing", "closing_payoff"].includes(String(row.narrative_role_selected || ""))) {
+      return !genericIntroLike;
+    }
+    return false;
+  })();
 
 const evaluateApprovedPoolAudit = ({ state = {}, timeline = {} }) => {
   const approvedWindows = Array.isArray(state.assets_json?.approved_windows) ? state.assets_json.approved_windows : [];
   const approvedIds = new Set(approvedWindows.map((item) => item.approved_window_id || item.id).filter(Boolean));
+  const approvedClipIds = new Set([
+    ...((state.assets_json?.clip_library?.approved_clip_ids || []).map((item) => String(item || "").trim()).filter(Boolean)),
+    ...((state.clip_library_summary?.approved_clip_ids || []).map((item) => String(item || "").trim()).filter(Boolean)),
+  ]);
   const clips = Array.isArray(timeline.clips) ? timeline.clips : [];
   const clipRows = clips.map((clip) => ({
     clip_index: Number(clip.clip_index || 0),
     approved_window_id: clip.approved_window_id || clip.asset_window_id || "",
+    clip_library_id: String(clip.clip_library_id || "").trim(),
+    origin_approved_window_id: String(
+      clip.approval_provenance?.origin_approved_window_id
+      || clip.origin_approved_window_id
+      || ""
+    ).trim(),
   }));
-  const invalidRows = clipRows.filter((row) => row.approved_window_id && approvedIds.size && !approvedIds.has(row.approved_window_id));
-  const missingRows = clipRows.filter((row) => !row.approved_window_id);
-  const timelineUsesApprovedPoolOnly = invalidRows.length === 0 && missingRows.length === 0;
+  const validRows = [];
+  const invalidRows = [];
+
+  clipRows.forEach((row) => {
+    const approvedWindowId = String(row.approved_window_id || "").trim();
+    const clipLibraryId = String(row.clip_library_id || "").trim();
+    const originApprovedWindowId = String(row.origin_approved_window_id || "").trim();
+    const looksLikeClipLibrary = approvedWindowId.startsWith("cliplib:") || clipLibraryId;
+    const resolvedClipId = clipLibraryId || (approvedWindowId.startsWith("cliplib:") ? approvedWindowId.replace(/^cliplib:/, "").trim() : "");
+
+    if (!approvedWindowId) {
+      invalidRows.push({ ...row, reason: "missing_approved_window_id" });
+      return;
+    }
+
+    if (approvedIds.size && approvedIds.has(approvedWindowId)) {
+      validRows.push({ ...row, source: "approved_windows" });
+      return;
+    }
+
+    if (looksLikeClipLibrary) {
+      const clipApproved = resolvedClipId && approvedClipIds.has(resolvedClipId);
+      const originTracked = originApprovedWindowId && (!approvedIds.size || approvedIds.has(originApprovedWindowId));
+      if (clipApproved && originTracked) {
+        validRows.push({ ...row, source: "clip_library" });
+        return;
+      }
+      invalidRows.push({
+        ...row,
+        reason: !clipApproved
+          ? "clip_library_id_not_approved"
+          : "clip_library_origin_not_tracked",
+      });
+      return;
+    }
+
+    invalidRows.push({ ...row, reason: "approved_window_not_in_pool" });
+  });
+
+  const timelineUsesApprovedPoolOnly = invalidRows.length === 0;
+  const missingRows = invalidRows.filter((row) => row.reason === "missing_approved_window_id");
+  const invalidRowsByReason = invalidRows.reduce((acc, row) => {
+    const reason = String(row.reason || "unknown");
+    acc[reason] = Number(acc[reason] || 0) + 1;
+    return acc;
+  }, {});
+  const validClipLibraryCount = validRows.filter((row) => row.source === "clip_library").length;
+  const invalidClipLibraryCount = invalidRows.filter((row) =>
+    ["clip_library_id_not_approved", "clip_library_origin_not_tracked"].includes(String(row.reason || ""))
+  ).length;
   return {
     timeline_uses_approved_pool_only: timelineUsesApprovedPoolOnly,
     invalid_clip_count: invalidRows.length,
     missing_approved_window_id_count: missingRows.length,
+    valid_clip_library_count: validClipLibraryCount,
+    invalid_clip_library_count: invalidClipLibraryCount,
+    invalid_rows_by_reason: invalidRowsByReason,
     invalid_rows: invalidRows.slice(0, 20),
     approved_pool_size: approvedIds.size,
+    approved_clip_library_pool_size: approvedClipIds.size,
   };
 };
 
@@ -1307,6 +1419,18 @@ const buildEditorialFailureCodes = ({
   if (issues.some((issue) => issue.type === "block_coverage_partial")) {
     codes.push("BLOCK_COVERAGE_PARTIAL");
   }
+  if (issues.some((issue) => issue.type === "coverage_search_insufficiency")) {
+    codes.push("COVERAGE_SEARCH_INSUFFICIENCY");
+  }
+  if (issues.some((issue) => issue.type === "coverage_semantic_ambiguity")) {
+    codes.push("COVERAGE_SEMANTIC_AMBIGUITY");
+  }
+  if (issues.some((issue) => issue.type === "coverage_editorial_insufficiency")) {
+    codes.push("COVERAGE_EDITORIAL_INSUFFICIENCY");
+  }
+  if (issues.some((issue) => issue.type === "coverage_planner_permissive")) {
+    codes.push("COVERAGE_PLANNER_PERMISSIVE");
+  }
   if (issues.some((issue) => issue.type === "critical_slot_only_generic")) {
     codes.push("CRITICAL_SLOT_ONLY_GENERIC");
   }
@@ -1334,7 +1458,36 @@ const normalizeIssueSeverity = ({ issue = {}, technicalScore = 0 }) => {
   return issue;
 };
 
+const hasNoProgressAfterRepair = ({ beforeValidation = {}, afterValidation = {} }) => {
+  const beforeCodes = new Set([
+    ...((beforeValidation.editorial_failure_codes || []).map((code) => String(code || "").trim()).filter(Boolean)),
+    ...((beforeValidation.publish_blocked_codes || []).map((code) => String(code || "").trim()).filter(Boolean)),
+  ]);
+  const afterCodes = new Set([
+    ...((afterValidation.editorial_failure_codes || []).map((code) => String(code || "").trim()).filter(Boolean)),
+    ...((afterValidation.publish_blocked_codes || []).map((code) => String(code || "").trim()).filter(Boolean)),
+  ]);
+  return (
+    afterValidation.needs_regeneration === true
+    && beforeCodes.size > 0
+    && beforeCodes.size === afterCodes.size
+    && [...beforeCodes].every((code) => afterCodes.has(code))
+  );
+};
+
 const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
+  const stageStartedAt = Date.now();
+  await appendPipelineEvent({
+    videoId,
+    stage: "qa",
+    event: "start",
+    status: "running",
+    payload: {
+      mock_mode: Boolean(mockMode),
+    },
+  }).catch(() => null);
+
+  try {
   const state = await loadState(videoId);
   const renderPath = state.render_path;
   const timeline = state.render_timeline || {};
@@ -1362,10 +1515,15 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     clips: timeline.clips || [],
   });
   const diversityScore = scoreTimelineDiversity(timeline.clips || []);
+  const overlayApplyStatus = String(timeline.overlay_apply_status || "unknown");
+  const overlayApplyError = String(timeline.overlay_apply_error || "");
+  const overlayOutputPath = String(timeline.overlay_output_path || "");
   const overlayValidation = await validateOverlayRenderedFrames({
     renderPath,
     overlays: state?.overlays || [],
+    overlayApplyStatus,
     evidenceDir: path.join(QA_REPORTS_ROOT, `${videoId}-visual-evidence`),
+    videoId,
   });
   const baseIssues = collectTimelineIssues({ timeline, technical, visual, diversityScore })
     .map((issue) => normalizeIssueSeverity({ issue, technicalScore: Number(technical.technical_score || 0) }));
@@ -1377,6 +1535,13 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
   }
   if (overlayValidation.some((item) => item.status !== "pass")) {
     baseIssues.push({ type: "overlay_not_rendered", severity: "medium" });
+  }
+  if (overlayApplyStatus === "failed") {
+    baseIssues.push({
+      type: "overlay_apply_failed",
+      severity: "critical",
+      message: overlayApplyError || "overlay_apply_failed",
+    });
   }
   const visualIntentCoverage = evaluateVisualIntentCoverage({ state, timeline });
   const issues = [...baseIssues, ...visualIntentCoverage.issues];
@@ -1398,6 +1563,7 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     clips: timeline.clips || [],
     renderPath,
     evidenceDir: path.join(QA_REPORTS_ROOT, `${videoId}-visual-evidence`),
+    videoId,
   });
   const approvedPoolAudit = evaluateApprovedPoolAudit({ state, timeline });
   const sceneEditorialReadiness = Array.isArray(state.assets_json?.scene_editorial_readiness)
@@ -1411,6 +1577,19 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     .filter((scene) => String(scene.coverage_status || "").toLowerCase() === "partial")
     .map((scene) => Number(scene.scene_index || 0))
     .filter((sceneIndex) => sceneIndex > 0);
+  const coverageFailureScenesByCause = (sceneEditorialReadiness || []).reduce((acc, scene) => {
+    const coverageStatus = String(scene.coverage_status || "").toLowerCase();
+    if (!["insufficient", "partial"].includes(coverageStatus)) return acc;
+    const isBlockingScene = Boolean(scene.blocking === true || (scene.blocking_reasons || []).length);
+    const needsCoverageRepair = Boolean(scene.coverage_needs_repair === true || scene.coverage_can_advance === false);
+    if (!isBlockingScene && !needsCoverageRepair) return acc;
+    const cause = String(scene.coverage_primary_failure_cause || "unknown");
+    const sceneIndex = Number(scene.scene_index || 0);
+    if (!sceneIndex) return acc;
+    acc[cause] = acc[cause] || [];
+    acc[cause].push(sceneIndex);
+    return acc;
+  }, {});
   const qaProfile = getEditorialQaProfile();
   const qaRuntimeProfile = resolveQaRuntimeProfile({ mockMode });
   const strictRuntimeProfile = qaRuntimeProfile === QA_RUNTIME_PROFILES.prod_strict;
@@ -1451,6 +1630,34 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
       type: "block_coverage_partial",
       severity: "high",
       scene_indexes: unique(partialCoverageScenes),
+    });
+  }
+  if ((coverageFailureScenesByCause.search_insufficiency || []).length) {
+    issues.push({
+      type: "coverage_search_insufficiency",
+      severity: "high",
+      scene_indexes: unique(coverageFailureScenesByCause.search_insufficiency || []),
+    });
+  }
+  if ((coverageFailureScenesByCause.semantic_ambiguity || []).length) {
+    issues.push({
+      type: "coverage_semantic_ambiguity",
+      severity: "high",
+      scene_indexes: unique(coverageFailureScenesByCause.semantic_ambiguity || []),
+    });
+  }
+  if ((coverageFailureScenesByCause.editorial_insufficiency || []).length) {
+    issues.push({
+      type: "coverage_editorial_insufficiency",
+      severity: "critical",
+      scene_indexes: unique(coverageFailureScenesByCause.editorial_insufficiency || []),
+    });
+  }
+  if ((coverageFailureScenesByCause.planner_permissive || []).length) {
+    issues.push({
+      type: "coverage_planner_permissive",
+      severity: "high",
+      scene_indexes: unique(coverageFailureScenesByCause.planner_permissive || []),
     });
   }
   const criticalScenesPassingVisualAudit = new Set(
@@ -1589,6 +1796,13 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     visual_intent_distribution: visualIntentCoverage.visual_intent_distribution,
     qa_profile: String(config.EDITORIAL_QA_PROFILE || "strict").toLowerCase(),
     qa_runtime_profile: qaRuntimeProfile,
+    overlay_apply_status: overlayApplyStatus,
+    overlay_apply_error: overlayApplyError,
+    overlay_output_path: overlayOutputPath,
+    tts_primary_provider: String(state.tts_primary_provider || "multivozes"),
+    tts_effective_provider: String(state.tts_effective_provider || state.audio_provider || ""),
+    tts_fallback_used: state.tts_fallback_used === true,
+    tts_error_class: String(state.tts_error_class || ""),
     editorial_failure_codes: editorialFailureCodes,
     publish_blocked: strictRuntimeProfile ? !isPublishable : false,
     publish_blocked_codes: strictRuntimeProfile
@@ -1648,6 +1862,7 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
       timeline_uses_approved_pool_only: approvedPoolAudit.timeline_uses_approved_pool_only,
       failure_codes: editorialFailureCodes,
       provider_reliability: providerReliability,
+      coverage_failure_scenes_by_cause: coverageFailureScenesByCause,
     },
   };
 
@@ -1681,9 +1896,37 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
       provider_reliability: validationResult.provider_reliability || {},
     },
     editorial_observability_history: observabilityHistory,
+    external_api_stats: getExternalApiStats({ videoId }),
     error_message: "",
   }, { currentStep: "render_validated", status: "render_validated" });
+
+  await appendPipelineEvent({
+    videoId,
+    stage: "qa",
+    event: "end",
+    status: "ok",
+    payload: {
+      duration_ms: Date.now() - stageStartedAt,
+      is_publishable: Boolean(validationResult.is_publishable),
+      needs_regeneration: Boolean(validationResult.needs_regeneration),
+      final_hard_boundary_status: String(validationResult.final_hard_boundary_status || "unknown"),
+      failure_codes: validationResult.editorial_failure_codes || [],
+    },
+  }).catch(() => null);
   return validationResult;
+  } catch (error) {
+    await appendPipelineEvent({
+      videoId,
+      stage: "qa",
+      event: "end",
+      status: "error",
+      payload: {
+        duration_ms: Date.now() - stageStartedAt,
+        error_message: String(error?.message || "qa_validation_failed"),
+      },
+    }).catch(() => null);
+    throw error;
+  }
 };
 
 const fixRenderSync = async ({ videoId, mockMode = false }) => {
@@ -1710,6 +1953,13 @@ const fixRenderSync = async ({ videoId, mockMode = false }) => {
   const attemptsByReason = { ...(state.render_sync_fix_attempts_by_reason || {}) };
   const reasonAttempts = Number(attemptsByReason[dominantReason] || 0);
   if (attempts >= 2 || reasonAttempts >= 2) {
+    if (!mockMode) {
+      await markNeedsManualReview({
+        videoId,
+        source: "fix_render_sync_max_attempts",
+        note: `QA reprovou repetidamente por ${dominantReason}.`,
+      }).catch(() => null);
+    }
     return {
       ...validation,
       needs_manual_review: true,
@@ -1722,11 +1972,45 @@ const fixRenderSync = async ({ videoId, mockMode = false }) => {
   const localRepairPlan = state.assets_json?.local_repair_plan || {};
   const localSceneIndexes = Array.isArray(localRepairPlan.scene_indexes_to_refresh) ? localRepairPlan.scene_indexes_to_refresh : [];
   const localRepairByScene = Array.isArray(localRepairPlan.repair_by_scene) ? localRepairPlan.repair_by_scene : [];
+  const assetBlockingSceneIndexes = Array.isArray(state.assets_json?.blocking_scene_indexes)
+    ? state.assets_json.blocking_scene_indexes
+    : [];
+  const issueSceneIndexes = Array.isArray(validation.issues)
+    ? validation.issues
+      .map((issue) => Number(issue?.scene_index || issue?.sceneIndex || 0))
+      .filter((sceneIndex) => sceneIndex > 0)
+    : [];
+  const clipIndexesToReplace = Array.isArray(validation.clip_indexes_to_replace) ? validation.clip_indexes_to_replace : [];
+  const clipIndexToSceneMap = new Map(
+    (state.render_timeline?.clips || [])
+      .map((clip) => [Number(clip.clip_index || 0), Number(clip.scene_index || 0)])
+      .filter(([clipIndex, sceneIndex]) => clipIndex > 0 && sceneIndex > 0)
+  );
+  const sceneIndexesFromClipIssues = clipIndexesToReplace
+    .map((clipIndex) => clipIndexToSceneMap.get(Number(clipIndex || 0)) || 0)
+    .filter((sceneIndex) => sceneIndex > 0);
   const sceneIndexes = unique([
     ...(qaSceneIndexes || []).map((sceneIndex) => Number(sceneIndex || 0)).filter((sceneIndex) => sceneIndex > 0),
     ...(localSceneIndexes || []).map((sceneIndex) => Number(sceneIndex || 0)).filter((sceneIndex) => sceneIndex > 0),
+    ...(assetBlockingSceneIndexes || []).map((sceneIndex) => Number(sceneIndex || 0)).filter((sceneIndex) => sceneIndex > 0),
+    ...issueSceneIndexes,
+    ...sceneIndexesFromClipIssues,
   ]);
   const repairPlanByScene = [...qaRepairPlanByScene, ...localRepairByScene];
+  if (!sceneIndexes.length) {
+    if (!mockMode) {
+      await markNeedsManualReview({
+        videoId,
+        source: "fix_render_sync_no_targets",
+        note: "QA reprovou, mas não gerou cenas alvo para reparo automático.",
+      }).catch(() => null);
+    }
+    return {
+      ...validation,
+      needs_manual_review: true,
+      fix_skipped_reason: "no_repair_targets",
+    };
+  }
   if (sceneIndexes.length) {
     await generateAssets({
       videoId,
@@ -1741,6 +2025,23 @@ const fixRenderSync = async ({ videoId, mockMode = false }) => {
 
   await renderVideo({ videoId, mockMode });
   const revalidated = await validateRender({ videoId, mockMode });
+  const noProgress = hasNoProgressAfterRepair({
+    beforeValidation: validation,
+    afterValidation: revalidated,
+  });
+
+  if (noProgress && !mockMode) {
+    const afterCodes = [
+      ...((revalidated.editorial_failure_codes || []).map((code) => String(code || "").trim()).filter(Boolean)),
+      ...((revalidated.publish_blocked_codes || []).map((code) => String(code || "").trim()).filter(Boolean)),
+    ];
+    await markNeedsManualReview({
+      videoId,
+      source: "fix_render_sync_no_progress",
+      note: `Sem progresso após reparo automático. Falhas persistentes: ${[...new Set(afterCodes)].join(", ")}.`,
+    }).catch(() => null);
+  }
+
   await updateState(videoId, {
     render_sync_fix_attempts: attempts + 1,
     render_sync_fix_attempts_by_reason: {
@@ -1751,10 +2052,14 @@ const fixRenderSync = async ({ videoId, mockMode = false }) => {
     last_sync_fix_reason: dominantReason,
     last_sync_fix_scene_indexes: validation.scene_indexes_to_refresh || [],
     last_sync_fix_clip_indexes: validation.clip_indexes_to_replace || [],
-    render_validation: revalidated,
+    render_validation: noProgress
+      ? { ...revalidated, needs_manual_review: true }
+      : revalidated,
   }, { currentStep: "render_fix_attempted", status: "render_fix_attempted" });
 
-  return revalidated;
+  return noProgress
+    ? { ...revalidated, needs_manual_review: true, fix_skipped_reason: "no_progress_after_fix_round" }
+    : revalidated;
 };
 
 module.exports = {
@@ -1783,5 +2088,6 @@ module.exports = {
     getEditorialQaProfile,
     buildEditorialFailureCodes,
     buildProviderReliabilitySnapshot,
+    hasNoProgressAfterRepair,
   },
 };

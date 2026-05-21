@@ -9,6 +9,8 @@
     "dev": "node --watch src/index.js",
     "docker:up": "docker compose up -d && yarn sync:n8n",
     "docker:up:build": "docker compose up -d --build && yarn sync:n8n",
+    "docker:multivozes:restart": "powershell -ExecutionPolicy Bypass -File scripts/restart-multivozes.ps1",
+    "docker:multivozes:rebuild": "powershell -ExecutionPolicy Bypass -File scripts/restart-multivozes.ps1 -Build",
     "auth:youtube:url": "node scripts/youtube-oauth.js url",
     "auth:youtube:exchange": "node scripts/youtube-oauth.js exchange",
     "auth:youtube:check": "node -e \"const { basicYoutubeHealthcheck } = require('./src/services/youtubeService'); basicYoutubeHealthcheck().then((result) => console.log(JSON.stringify(result, null, 2))).catch((error) => { console.error(error.stack || error.message); process.exit(1); });\"",
@@ -65,6 +67,10 @@
     "test:repair-planner": "node tests/repair-planner-service-test.js",
     "test:assets-limitations-improvements": "node tests/assets-limitations-improvements-test.js",
     "test:final-editorial-closure": "node tests/final-editorial-closure-test.js",
+    "test:local-script-fallback": "node tests/local-script-fallback-test.js",
+    "test:external-api-circuit-breaker": "node tests/external-api-circuit-breaker-test.js",
+    "test:fix-sync-no-progress": "node tests/fix-sync-no-progress-test.js",
+    "test:prod-strict-gate": "node tests/prod-strict-gate-determinism-test.js",
     "test:gemini:standalone": "node ../test-gemini.js"
   },
   

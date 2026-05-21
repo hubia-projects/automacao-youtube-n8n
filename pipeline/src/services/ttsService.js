@@ -13,17 +13,16 @@ const {
   shouldAttemptMultivozesAutoStart,
   waitForMultivozesReady,
 } = require("./multivozesRuntimeService");
+const { appendPipelineEvent } = require("./pipelineEventLogService");
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const OPENAI_TTS_MAX_CHARS_PER_CHUNK = Number(process.env.OPENAI_TTS_MAX_CHARS_PER_CHUNK || 1200);
+const MULTIVOZES_CHUNK_MAX_CHARS = Number(process.env.MULTIVOZES_CHUNK_MAX_CHARS || 420);
+const MULTIVOZES_CHUNK_RETRIES = Math.max(1, Number(process.env.MULTIVOZES_CHUNK_RETRIES || 3));
 
-const MULTIVOZES_TEST_VOICES = [
-  "pt-BR-FranciscaNeural",
-  "pt-BR-AntonioNeural",
-  "pt-BR-ThalitaNeural",
-  "pt-BR-ThalitaMultilingualNeural",
-];
+const MULTIVOZES_TEST_VOICES = ["alloy", "pt-BR-FranciscaNeural", "pt-BR-AntonioNeural"];
+let cachedMultivozesVoices = null;
 
 const hasMultivozes = () => Boolean(config.MULTIVOZES_BR_ENGINE && config.MULTIVOZES_BR_BASE_URL);
 const hasElevenLabs = () => Boolean(config.ELEVENLABS_API_KEY);
@@ -34,6 +33,40 @@ const isLocalhostMultivozesBaseUrl = () => /^https?:\/\/(localhost|127\.0\.0\.1)
 
 const pickRandomMultivozesVoice = () =>
   MULTIVOZES_TEST_VOICES[Math.floor(Math.random() * MULTIVOZES_TEST_VOICES.length)];
+
+const listMultivozesVoices = async () => {
+  if (cachedMultivozesVoices) return cachedMultivozesVoices;
+  const response = await axios.get(`${getMultivozesBaseUrl()}/voices`, {
+    headers: { Authorization: `Bearer ${config.MULTIVOZES_BR_ENGINE}` },
+    timeout: 20000,
+  });
+  const aliases = Array.isArray(response.data?.data)
+    ? response.data.data.map((entry) => String(entry?.alias || "").trim()).filter(Boolean)
+    : [];
+  const voices = Array.isArray(response.data?.data)
+    ? response.data.data.map((entry) => String(entry?.voice || "").trim()).filter(Boolean)
+    : [];
+  cachedMultivozesVoices = {
+    aliases,
+    voices,
+  };
+  return cachedMultivozesVoices;
+};
+
+const pickPreferredMultivozesVoice = async () => {
+  const configuredVoice = String(config.MULTIVOZES_DEFAULT_VOICE || "").trim();
+  if (configuredVoice) return configuredVoice;
+  try {
+    const catalog = await listMultivozesVoices();
+    const ptAlias = (catalog.aliases || []).find((alias) => /alloy|br|pt/i.test(alias));
+    if (ptAlias) return ptAlias;
+    const ptVoice = (catalog.voices || []).find((voice) => /^pt-BR-/i.test(voice));
+    if (ptVoice) return ptVoice;
+  } catch {
+    // ignore and fallback to static list
+  }
+  return pickRandomMultivozesVoice();
+};
 
 const formatProviderError = (error) => {
   const message = String(error?.message || "").trim();
@@ -165,7 +198,7 @@ const concatenateAudioChunks = async ({ chunkPaths = [], outputPath }) => {
   }
 };
 
-const synthesizeOpenAiInChunks = async ({ text, outputPath }) => {
+const synthesizeOpenAiInChunks = async ({ text, outputPath, videoId = "" }) => {
   const chunks = splitTextForTts(text);
   if (!chunks.length) return null;
 
@@ -182,7 +215,7 @@ const synthesizeOpenAiInChunks = async ({ text, outputPath }) => {
         text_length: chunkText.length,
       });
 
-      const chunkBuffer = await ttsWithOpenAI({ text: chunkText });
+      const chunkBuffer = await ttsWithOpenAI({ text: chunkText, videoId });
       if (!chunkBuffer) {
         logger.warn("OpenAI TTS chunked: falha ao sintetizar bloco", {
           chunk_index: index + 1,
@@ -233,15 +266,16 @@ const ttsWithElevenLabs = async ({ text }) => {
 const ttsWithMultivozes = async ({ text, voice }) => {
   if (!hasMultivozes()) return null;
 
-  const selectedVoice = voice || pickRandomMultivozesVoice();
+  const selectedVoice = String(voice || "").trim();
+  const payload = {
+    model: "tts-1",
+    input: text,
+    response_format: "mp3",
+  };
+  if (selectedVoice) payload.voice = selectedVoice;
   const response = await axios.post(
     `${getMultivozesBaseUrl()}/audio/speech`,
-    {
-      model: "tts-1",
-      input: text,
-      voice: selectedVoice,
-      response_format: "mp3",
-    },
+    payload,
     {
       headers: {
         Authorization: `Bearer ${config.MULTIVOZES_BR_ENGINE}`,
@@ -255,7 +289,7 @@ const ttsWithMultivozes = async ({ text, voice }) => {
 
   return {
     buffer: Buffer.from(response.data),
-    voice: selectedVoice,
+    voice: selectedVoice || String(config.MULTIVOZES_DEFAULT_VOICE || "").trim() || "default",
   };
 };
 
@@ -292,13 +326,18 @@ const isTransientMultivozesError = (error) => {
   return status >= 500 || ["ETIMEDOUT", "ECONNRESET", "EAI_AGAIN"].includes(code);
 };
 
-const synthesizeWithMultivozesWithAutoStart = async ({ text }) => {
+const synthesizeWithMultivozesWithAutoStart = async ({ text, voiceOverride = "" }) => {
+  const preferredVoice = String(voiceOverride || "").trim() || await pickPreferredMultivozesVoice().catch(() => "");
   try {
-    return await ttsWithMultivozes({ text });
+    return await ttsWithMultivozes({ text, voice: preferredVoice });
   } catch (error) {
     if (isTransientMultivozesError(error)) {
       await new Promise((resolve) => setTimeout(resolve, 1200));
-      return ttsWithMultivozes({ text });
+      try {
+        return await ttsWithMultivozes({ text, voice: preferredVoice });
+      } catch {
+        return ttsWithMultivozes({ text });
+      }
     }
 
     if (!shouldAttemptMultivozesAutoStart(error)) {
@@ -311,11 +350,76 @@ const synthesizeWithMultivozesWithAutoStart = async ({ text }) => {
     }
 
     await waitForMultivozesReady(async () => probeMultivozesModels());
-    return ttsWithMultivozes({ text });
+    return ttsWithMultivozes({ text, voice: preferredVoice });
+  }
+};
+
+const synthesizeMultivozesChunkWithRetries = async ({ text, voice = "" }) => {
+  let lastError = null;
+  for (let attempt = 0; attempt < MULTIVOZES_CHUNK_RETRIES; attempt += 1) {
+    try {
+      return await synthesizeWithMultivozesWithAutoStart({
+        text,
+        voiceOverride: attempt === 0 ? voice : "",
+      });
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 800 + (attempt * 600)));
+    }
+  }
+  throw lastError || new Error("Falha ao sintetizar chunk no Multivozes.");
+};
+
+const synthesizeMultivozesInChunks = async ({ text, outputPath }) => {
+  const chunks = splitTextForTts(text, MULTIVOZES_CHUNK_MAX_CHARS);
+  if (!chunks.length) return null;
+
+  const preferredVoice = await pickPreferredMultivozesVoice().catch(() => "");
+  const chunksDir = `${outputPath}.multivozes.chunks`;
+  const chunkPaths = [];
+  await fs.emptyDir(chunksDir);
+
+  try {
+    for (let index = 0; index < chunks.length; index += 1) {
+      const chunkText = chunks[index];
+      logger.info("Multivozes chunked: sintetizando bloco", {
+        chunk_index: index + 1,
+        total_chunks: chunks.length,
+        text_length: chunkText.length,
+      });
+      const chunkResponse = await synthesizeMultivozesChunkWithRetries({
+        text: chunkText,
+        voice: preferredVoice,
+      });
+      if (!chunkResponse?.buffer) {
+        throw new Error(`Chunk ${index + 1} sem áudio no Multivozes.`);
+      }
+      const chunkPath = `${chunksDir}/chunk-${String(index + 1).padStart(3, "0")}.mp3`;
+      await fs.writeFile(chunkPath, chunkResponse.buffer);
+      chunkPaths.push(chunkPath);
+    }
+    await concatenateAudioChunks({ chunkPaths, outputPath });
+    return {
+      chunks: chunkPaths.length,
+      voice: preferredVoice || "default",
+    };
+  } finally {
+    await fs.remove(chunksDir).catch(() => null);
   }
 };
 
 const generateAudio = async ({ videoId, mockMode = false, provider = "multivozes" }) => {
+  const stageStartedAt = Date.now();
+  await appendPipelineEvent({
+    videoId,
+    stage: "audio",
+    event: "start",
+    status: "running",
+    payload: {
+      provider: String(provider || "multivozes"),
+      mock_mode: Boolean(mockMode),
+    },
+  }).catch(() => null);
   const state = await loadState(videoId);
   if (!state.script_text) {
     throw new Error("script_text não encontrado. Gere o roteiro antes do áudio.");
@@ -329,14 +433,37 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "multivozes
   let audioWritten = false;
   let usedProvider = "mock";
   let usedVoice = "";
+  let ttsErrorClass = "";
 
   if (!mockMode && provider === "multivozes") {
     try {
-      const multivozesResponse = await synthesizeWithMultivozesWithAutoStart({ text });
-      audioBuffer = multivozesResponse?.buffer || null;
-      usedVoice = multivozesResponse?.voice || "";
-      if (audioBuffer) usedProvider = "multivozes";
+      const shouldUseChunkedMultivozes = text.length > MULTIVOZES_CHUNK_MAX_CHARS;
+      if (shouldUseChunkedMultivozes) {
+        const chunkedResult = await synthesizeMultivozesInChunks({ text, outputPath: paths.audioPath });
+        if (chunkedResult) {
+          audioWritten = true;
+          usedProvider = "multivozes_chunked";
+          usedVoice = chunkedResult.voice || "default";
+        }
+      }
+      if (!audioWritten) {
+        const multivozesResponse = await synthesizeWithMultivozesWithAutoStart({ text });
+        audioBuffer = multivozesResponse?.buffer || null;
+        usedVoice = multivozesResponse?.voice || "";
+        if (audioBuffer) usedProvider = "multivozes";
+      }
     } catch (error) {
+      ttsErrorClass = String(error?.code || error?.response?.status || "multivozes_runtime_error");
+      await appendPipelineEvent({
+        videoId,
+        stage: "audio",
+        event: "multivozes_failure",
+        status: "warning",
+        payload: {
+          error_class: ttsErrorClass,
+          message: formatProviderError(error),
+        },
+      }).catch(() => null);
       logger.warn("Multivozes falhou, tentando OpenAI TTS fallback", { message: formatProviderError(error) });
     }
   }
@@ -355,7 +482,7 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "multivozes
 
   if (!audioBuffer && !mockMode) {
     if (shouldUseChunkedOpenAi) {
-      const chunkedResult = await synthesizeOpenAiInChunks({ text, outputPath: paths.audioPath });
+      const chunkedResult = await synthesizeOpenAiInChunks({ text, outputPath: paths.audioPath, videoId });
       if (chunkedResult) {
         audioWritten = true;
         usedProvider = provider === "openai" ? "openai_chunked" : "openai_tts_chunked_fallback";
@@ -364,7 +491,7 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "multivozes
     }
 
     if (!audioWritten) {
-      audioBuffer = await ttsWithOpenAI({ text });
+      audioBuffer = await ttsWithOpenAI({ text, videoId });
       if (audioBuffer) {
         usedProvider = provider === "openai" ? "openai" : "openai_tts_fallback";
         usedVoice = "alloy";
@@ -383,12 +510,17 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "multivozes
   }
 
   const duration = await getAudioDuration(paths.audioPath, text);
+  const fallbackUsed = provider === "multivozes" && !String(usedProvider || "").toLowerCase().startsWith("multivozes");
 
   const nextState = await updateState(
     videoId,
     {
       audio_path: paths.audioPath,
       duration_seconds: Math.round(duration || 0),
+      tts_primary_provider: String(provider || "multivozes"),
+      tts_effective_provider: String(usedProvider || ""),
+      tts_fallback_used: fallbackUsed,
+      tts_error_class: String(ttsErrorClass || ""),
       error_message: "",
     },
     {
@@ -403,6 +535,19 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "multivozes
     icon: "🎙️",
     lines: [`Provider usado: ${usedProvider}${usedVoice ? ` (${usedVoice})` : ""}.`],
   }).catch(() => null);
+  await appendPipelineEvent({
+    videoId,
+    stage: "audio",
+    event: "end",
+    status: "ok",
+    payload: {
+      duration_ms: Date.now() - stageStartedAt,
+      tts_primary_provider: String(provider || "multivozes"),
+      tts_effective_provider: String(usedProvider || ""),
+      tts_fallback_used: fallbackUsed,
+      tts_error_class: String(ttsErrorClass || ""),
+    },
+  }).catch(() => null);
 
   return {
     video_id: videoId,
@@ -410,6 +555,10 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "multivozes
     duration_seconds: nextState.duration_seconds,
     provider: usedProvider,
     voice: usedVoice || null,
+    tts_primary_provider: String(provider || "multivozes"),
+    tts_effective_provider: String(usedProvider || ""),
+    tts_fallback_used: fallbackUsed,
+    tts_error_class: String(ttsErrorClass || ""),
     state_path: nextState.state_path,
   };
 };

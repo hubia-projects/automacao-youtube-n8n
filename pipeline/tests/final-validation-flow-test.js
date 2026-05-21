@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { config } = require("../src/config/env");
 const { updateState, loadState } = require("../src/services/stateService");
 const { generateScript } = require("../src/services/scriptService");
 const { generateAudio } = require("../src/services/ttsService");
@@ -313,7 +314,7 @@ const run = async () => {
     },
   };
 
-  const reportDir = path.join(process.cwd(), "test_reports");
+  const reportDir = config.TEST_REPORTS_ROOT;
   fs.mkdirSync(reportDir, { recursive: true });
   const reportPath = path.join(reportDir, `${videoId}-summary.json`);
   fs.writeFileSync(reportPath, JSON.stringify(summary, null, 2), "utf8");

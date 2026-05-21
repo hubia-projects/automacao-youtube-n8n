@@ -4,6 +4,7 @@ const { config } = require("../config/env");
 const { runFfmpeg } = require("../utils/mediaUtils");
 
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 const escapeDrawtext = (value = "") =>
   String(value || "")
@@ -47,23 +48,78 @@ const buildBlockOverlays = ({
     });
 };
 
-const buildOverlayFilter = ({ overlays = [] }) => {
+const buildOverlayLayout = ({ videoWidth = Number(config.OUTPUT_WIDTH || 1920), videoHeight = Number(config.OUTPUT_HEIGHT || 1080) } = {}) => {
+  const width = Math.max(640, Number(videoWidth || config.OUTPUT_WIDTH || 1920));
+  const height = Math.max(360, Number(videoHeight || config.OUTPUT_HEIGHT || 1080));
+  const boxX = Math.round(width * 0.06);
+  const boxY = Math.round(height * 0.08);
+  const boxW = Math.round(width * 0.42);
+  const boxH = Math.round(clamp(height * 0.085, 72, 132));
+  const textX = Math.round(width * 0.09);
+  const textY = Math.round(boxY + (boxH * 0.58));
+  const fontSize = Math.round(clamp(height * 0.039, 30, 54));
+  return {
+    width,
+    height,
+    boxX,
+    boxY,
+    boxW,
+    boxH,
+    textX,
+    textY,
+    fontSize,
+  };
+};
+
+const buildOverlayFilter = ({ overlays = [], videoWidth = Number(config.OUTPUT_WIDTH || 1920), videoHeight = Number(config.OUTPUT_HEIGHT || 1080) }) => {
   const fontPath = process.platform === "win32"
     ? "C\\:/Windows/Fonts/arial.ttf"
     : "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
+  const layout = buildOverlayLayout({ videoWidth, videoHeight });
 
   const parts = [];
   overlays.forEach((overlay) => {
     const start = Number(overlay.start_seconds || 0);
     const end = Number(overlay.end_seconds || start + 2.5);
     const enable = `between(t,${start.toFixed(3)},${end.toFixed(3)})`;
-    parts.push(`drawbox=x=w*0.06:y=h*0.08:w=w*0.42:h=92:color=black@0.45:t=fill:enable='${enable}'`);
-    parts.push(`drawtext=fontfile='${fontPath}':text='${escapeDrawtext(overlay.text || "")}':fontcolor=white:fontsize=42:x=w*0.09:y=h*0.115:enable='${enable}'`);
+    parts.push(`drawbox=x=${layout.boxX}:y=${layout.boxY}:w=${layout.boxW}:h=${layout.boxH}:color=black@0.45:t=fill:enable='${enable}'`);
+    parts.push(`drawtext=fontfile='${fontPath}':text='${escapeDrawtext(overlay.text || "")}':fontcolor=white:fontsize=${layout.fontSize}:x=${layout.textX}:y=${layout.textY}:enable='${enable}'`);
   });
   return parts.join(",");
 };
 
-const applyOverlaysToVideo = async ({ inputPath, outputPath, overlays = [], fps = config.OUTPUT_FPS || 30, videoBitrate = config.VIDEO_BITRATE || "6M", maxVideoBitrate = config.MAX_VIDEO_BITRATE || "8M" }) => {
+const preflightOverlayFilter = async ({ overlays = [], videoWidth = Number(config.OUTPUT_WIDTH || 1920), videoHeight = Number(config.OUTPUT_HEIGHT || 1080) }) => {
+  if (!overlays.length) return { ok: true, status: "skipped" };
+  const filter = buildOverlayFilter({ overlays, videoWidth, videoHeight });
+  await runFfmpeg([
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    `color=c=black:s=${Math.max(640, Number(videoWidth || 1920))}x${Math.max(360, Number(videoHeight || 1080))}:d=1`,
+    "-vf",
+    filter,
+    "-frames:v",
+    "1",
+    "-f",
+    "null",
+    "-",
+  ]);
+  return { ok: true, status: "ok" };
+};
+
+const applyOverlaysToVideo = async ({
+  inputPath,
+  outputPath,
+  overlays = [],
+  fps = config.OUTPUT_FPS || 30,
+  videoBitrate = config.VIDEO_BITRATE || "6M",
+  maxVideoBitrate = config.MAX_VIDEO_BITRATE || "8M",
+  videoWidth = Number(config.OUTPUT_WIDTH || 1920),
+  videoHeight = Number(config.OUTPUT_HEIGHT || 1080),
+  runPreflight = true,
+}) => {
   if (!overlays.length) {
     if (inputPath !== outputPath) {
       await fs.copy(inputPath, outputPath, { overwrite: true });
@@ -71,7 +127,11 @@ const applyOverlaysToVideo = async ({ inputPath, outputPath, overlays = [], fps 
     return outputPath;
   }
 
-  const filter = buildOverlayFilter({ overlays });
+  if (runPreflight) {
+    await preflightOverlayFilter({ overlays, videoWidth, videoHeight });
+  }
+
+  const filter = buildOverlayFilter({ overlays, videoWidth, videoHeight });
   await runFfmpeg([
     "-y",
     "-i",
@@ -111,4 +171,6 @@ module.exports = {
   applyOverlaysToVideo,
   buildBlockOverlays,
   buildOverlayFilter,
+  buildOverlayLayout,
+  preflightOverlayFilter,
 };

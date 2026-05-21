@@ -1,4 +1,8 @@
 const assert = require("assert");
+process.env.PRE_RENDER_EDITORIAL_FAIL_FAST = "true";
+process.env.QA_RUNTIME_PROFILE_PROD = "prod_strict";
+process.env.EDITORIAL_STRONG_ONLY_PRE_RENDER = "true";
+process.env.COVERAGE_GATE_ALLOW_PARTIAL = "false";
 const { __test__: assetsTest } = require("../src/services/assetsService");
 const { approveAssetsForVisualPlan } = require("../src/services/assetApprovalService");
 const { __test__: timelineRepairTest, findLocalRecutCandidate } = require("../src/services/timelineRepairExecutorService");

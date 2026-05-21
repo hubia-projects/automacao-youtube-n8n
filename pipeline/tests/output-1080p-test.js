@@ -1,11 +1,12 @@
 const assert = require("assert");
 const path = require("path");
 const fs = require("fs-extra");
+const { config } = require("../src/config/env");
 const { runFfmpeg } = require("../src/utils/mediaUtils");
 const { validateRenderQuality } = require("../src/services/renderQualityService");
 
 const run = async () => {
-  const tempDir = path.join(process.cwd(), "output", "tests-render-quality");
+  const tempDir = path.join(config.OUTPUT_ROOT, "tests-render-quality");
   await fs.ensureDir(tempDir);
   const renderPath = path.join(tempDir, "full-hd-check.mp4");
 

@@ -3,13 +3,16 @@ const path = require("path");
 const axios = require("axios");
 const { config } = require("../config/env");
 const { logger } = require("../utils/logger");
+const { consumeExternalCallBudget, isProviderDisabledInLocalTest } = require("./externalApiControlService");
 
 const GEMINI_VISION_TIMEOUT_MS = Math.max(10000, Number(config.GEMINI_VISION_TIMEOUT_MS || 45000));
 const DEFAULT_GEMINI_LITE_MODEL = String(config.GEMINI_VISION_MODEL_LITE || "gemini-2.5-flash-lite");
 const GEMINI_VISION_MAX_RETRIES = Math.max(0, Number(config.GEMINI_VISION_MAX_RETRIES || 2));
 const GEMINI_VISION_RETRY_BASE_MS = Math.max(200, Number(config.GEMINI_VISION_RETRY_BASE_MS || 1200));
 
-const hasGemini = () => Boolean(config.GEMINI_API_KEY && config.GEMINI_VISION_ENABLED !== false);
+const hasGemini = () =>
+  Boolean(config.GEMINI_API_KEY && config.GEMINI_VISION_ENABLED !== false)
+  && !isProviderDisabledInLocalTest("gemini");
 const getGeminiBaseUrl = () => String(config.GEMINI_BASE_URL || "").replace(/\/+$/, "");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -118,12 +121,16 @@ const callGeminiWithFallback = async ({
   parts = [],
   timeoutMs = GEMINI_VISION_TIMEOUT_MS,
   responseMimeType = "",
+  maxRetries = GEMINI_VISION_MAX_RETRIES,
+  retryBaseMs = GEMINI_VISION_RETRY_BASE_MS,
 }) => {
   const models = buildModelList({ model, fallbackModels });
   let lastError = null;
+  const retries = Math.max(0, Number(maxRetries || 0));
+  const retryDelayBaseMs = Math.max(100, Number(retryBaseMs || GEMINI_VISION_RETRY_BASE_MS));
 
   for (const candidateModel of models) {
-    for (let attempt = 0; attempt <= GEMINI_VISION_MAX_RETRIES; attempt += 1) {
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
       try {
         const response = await callGeminiGenerateContent({
           model: candidateModel,
@@ -140,8 +147,8 @@ const callGeminiWithFallback = async ({
       } catch (error) {
         lastError = error;
         const retryable = isRetryableGeminiError(error);
-        if (!retryable || attempt >= GEMINI_VISION_MAX_RETRIES) break;
-        const delayMs = GEMINI_VISION_RETRY_BASE_MS * (2 ** attempt);
+        if (!retryable || attempt >= retries) break;
+        const delayMs = retryDelayBaseMs * (2 ** attempt);
         await sleep(delayMs);
       }
     }
@@ -168,9 +175,18 @@ const describeImagesWithGemini = async ({
   model = DEFAULT_GEMINI_LITE_MODEL,
   fallbackModels = [],
   timeoutMs = GEMINI_VISION_TIMEOUT_MS,
+  maxRetries = GEMINI_VISION_MAX_RETRIES,
+  retryBaseMs = GEMINI_VISION_RETRY_BASE_MS,
+  videoId = "",
 }) => {
   if (!hasGemini()) return null;
   if (!Array.isArray(imagePaths) || !imagePaths.length) return null;
+  const budget = consumeExternalCallBudget({
+    provider: "gemini",
+    videoId,
+    operation: "describe_images",
+  });
+  if (!budget.allowed) return null;
 
   const resolvedModel = String(model || DEFAULT_GEMINI_LITE_MODEL).trim();
   if (!resolvedModel) return null;
@@ -185,6 +201,8 @@ const describeImagesWithGemini = async ({
       ],
       timeoutMs,
       responseMimeType: "application/json",
+      maxRetries,
+      retryBaseMs,
     });
 
     const payload = extractJsonPayload(rawText);
@@ -211,9 +229,16 @@ const generateTextWithGemini = async ({
   model = DEFAULT_GEMINI_LITE_MODEL,
   fallbackModels = [],
   timeoutMs = GEMINI_VISION_TIMEOUT_MS,
+  videoId = "",
 }) => {
   if (!hasGemini()) return null;
   if (!String(prompt || "").trim()) return null;
+  const budget = consumeExternalCallBudget({
+    provider: "gemini",
+    videoId,
+    operation: "generate_text",
+  });
+  if (!budget.allowed) return null;
 
   const { rawText, model: modelUsed } = await callGeminiWithFallback({
     model,
@@ -230,11 +255,22 @@ const generateTextWithGemini = async ({
 };
 
 const basicGeminiHealthcheck = async () => {
+  if (isProviderDisabledInLocalTest("gemini")) {
+    return { configured: true, ok: true, message: "Gemini desativado em LOCAL_TEST_MODE" };
+  }
   if (!hasGemini()) {
     return { configured: false, ok: false, message: "GEMINI_API_KEY ausente" };
   }
 
   try {
+    const budget = consumeExternalCallBudget({
+      provider: "gemini",
+      videoId: "",
+      operation: "healthcheck",
+    });
+    if (!budget.allowed) {
+      return { configured: true, ok: true, message: "Gemini bloqueado pelo circuit breaker" };
+    }
     const response = await axios.get(`${getGeminiBaseUrl()}/models`, {
       headers: { "x-goog-api-key": config.GEMINI_API_KEY },
       timeout: 20000,
