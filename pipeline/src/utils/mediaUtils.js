@@ -1,8 +1,45 @@
 const path = require("path");
 const fs = require("fs-extra");
-const { execFile } = require("child_process");
-const ffmpegPath = require("ffmpeg-static");
-const ffprobePath = require("ffprobe-static").path;
+const { execFile, spawnSync } = require("child_process");
+const bundledFfmpegPath = require("ffmpeg-static");
+const bundledFfprobePath = require("ffprobe-static").path;
+
+const hasUsableBinaryPath = (candidatePath) => {
+  if (!candidatePath) {
+    return false;
+  }
+
+  try {
+    fs.accessSync(candidatePath, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const resolveBinaryPath = (bundledPath, binaryName) => {
+  if (hasUsableBinaryPath(bundledPath)) {
+    return bundledPath;
+  }
+
+  const lookup = spawnSync("which", [binaryName], {
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  const candidate = String(lookup.stdout || "")
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .find(Boolean);
+
+  if (lookup.status === 0 && hasUsableBinaryPath(candidate)) {
+    return candidate;
+  }
+
+  return bundledPath || binaryName;
+};
+
+const ffmpegBinaryPath = resolveBinaryPath(bundledFfmpegPath, "ffmpeg");
+const ffprobeBinaryPath = resolveBinaryPath(bundledFfprobePath, "ffprobe");
 
 const runProcess = (command, args, options = {}) =>
   new Promise((resolve, reject) => {
@@ -34,14 +71,14 @@ const runFfmpeg = async (args, options = {}) => {
     ? normalizedArgs
     : ["-hide_banner", "-loglevel", "error", ...normalizedArgs];
 
-  return runProcess(ffmpegPath, ffmpegArgs, {
+  return runProcess(ffmpegBinaryPath, ffmpegArgs, {
     maxBuffer: 50 * 1024 * 1024,
     ...options,
   });
 };
 
 const probeMedia = async (filePath) => {
-  const { stdout } = await runProcess(ffprobePath, [
+  const { stdout } = await runProcess(ffprobeBinaryPath, [
     "-v",
     "error",
     "-show_streams",
@@ -103,6 +140,12 @@ const createPlaceholderImage = async ({ outputPath, width = 1920, height = 1080,
 
 const extractVideoFrame = async ({ inputPath, outputPath, timeSeconds = 0, width = 960, height = 540 }) => {
   await fs.ensureDir(path.dirname(outputPath));
+  const extension = String(path.extname(outputPath || "")).toLowerCase();
+  const isJpegOutput = extension === ".jpg" || extension === ".jpeg";
+  const filterGraph = isJpegOutput
+    ? `scale=${width}:${height}:force_original_aspect_ratio=decrease,format=yuvj420p`
+    : `scale=${width}:${height}:force_original_aspect_ratio=decrease`;
+
   await runFfmpeg([
     "-y",
     "-ss",
@@ -111,10 +154,11 @@ const extractVideoFrame = async ({ inputPath, outputPath, timeSeconds = 0, width
     inputPath,
     "-frames:v",
     "1",
+    ...(isJpegOutput ? ["-pix_fmt", "yuvj420p", "-strict", "unofficial"] : []),
     "-q:v",
     "2",
     "-vf",
-    `scale=${width}:${height}:force_original_aspect_ratio=decrease`,
+    filterGraph,
     outputPath,
   ]);
   return outputPath;
@@ -142,6 +186,9 @@ const extractFrameRawRgb = async ({ inputPath, timeSeconds = 0, width = 64, heig
 };
 
 module.exports = {
+  hasUsableBinaryPath,
+  ffmpegBinaryPath,
+  ffprobeBinaryPath,
   runFfmpeg,
   probeMedia,
   createPlaceholderImage,

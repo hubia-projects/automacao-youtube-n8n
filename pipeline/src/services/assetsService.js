@@ -6,8 +6,12 @@ const { loadState, ensureVideoStructure, updateState } = require("./stateService
 const { sendWorkflowStatus } = require("./telegramService");
 const { buildVisualPlan } = require("../utils/visualPlan");
 const { createPlaceholderImage, extractVideoFrame, probeMedia, getResolutionLabel } = require("../utils/mediaUtils");
-const { hasOpenAi, describeImagesWithOpenAI } = require("./openaiService");
-const { hasGemini, describeImagesWithGemini } = require("./geminiService");
+const {
+  hasGemini,
+  describeImagesWithGemini,
+  generateImageWithGemini,
+  generateVideoWithGemini,
+} = require("./geminiService");
 const { getCachedAudioIntelligence } = require("./audioIntelligence");
 const { enrichVisualPlan } = require("./narrativeBlockPlanner");
 const { analyzeLocalVideo } = require("./localVideoUnderstandingService");
@@ -48,6 +52,8 @@ const PREFERRED_VIDEO_DURATION_SECONDS = 16;
 const MAX_ANALYSIS_WINDOWS = config.SEMANTIC_SYNC_MODE === "high-quality" ? 10 : 6;
 const ANALYSIS_WINDOW_SECONDS = config.SEMANTIC_SYNC_MODE === "high-quality" ? 3 : 4;
 const ANALYSIS_STRIDE_SECONDS = config.SEMANTIC_SYNC_MODE === "high-quality" ? 1.5 : 2;
+const ASSET_QUERY_SEARCH_CONCURRENCY = Math.max(1, Math.min(6, Number(config.ASSET_QUERY_SEARCH_CONCURRENCY || 3)));
+const ASSET_SEMANTIC_ANALYSIS_CONCURRENCY = Math.max(1, Math.min(4, Number(config.ASSET_SEMANTIC_ANALYSIS_CONCURRENCY || 2)));
 const GEMINI_ESCALATION_MIN_CONFIDENCE = Number(config.GEMINI_VISION_ESCALATION_MIN_CONFIDENCE || 0.62);
 const GEMINI_ESCALATION_MAX_GENERIC_RATIO = Number(config.GEMINI_VISION_ESCALATION_MAX_GENERIC_RATIO || 0.5);
 const GEMINI_ASSET_ANALYSIS_TIMEOUT_MS = Math.max(8000, Math.min(20000, Number(config.GEMINI_VISION_TIMEOUT_MS || 45000)));
@@ -70,8 +76,36 @@ const SCARCITY_BUDGET = {
 const CRITICAL_SLOT_MIN_PROVIDER_RELIABILITY = Number(config.CRITICAL_SLOT_MIN_PROVIDER_RELIABILITY || 0.45);
 const CRITICAL_SLOT_PREFERRED_PROVIDER_RELIABILITY = Number(config.CRITICAL_SLOT_PREFERRED_PROVIDER_RELIABILITY || 0.6);
 const AUTO_REPAIR_MAX_ROUNDS = Math.max(0, Number(process.env.ASSET_AUTO_REPAIR_MAX_ROUNDS || 1));
+const GENERATED_VERTEX_PROVIDER = "vertex_ai_generated";
+const GENERATED_VERTEX_SOURCE_PREFIX = "vertex-ai-generated://";
 
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
+const mapWithConcurrency = async (items = [], concurrency = 1, mapper = async (item) => item) => {
+  const safeItems = Array.isArray(items) ? items : [];
+  const results = new Array(safeItems.length);
+  let nextIndex = 0;
+
+  const worker = async () => {
+    while (true) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      if (currentIndex >= safeItems.length) return;
+
+      try {
+        const value = await mapper(safeItems[currentIndex], currentIndex);
+        results[currentIndex] = { status: "fulfilled", value };
+      } catch (reason) {
+        results[currentIndex] = { status: "rejected", reason };
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(Math.max(1, concurrency), Math.max(1, safeItems.length)) }, () => worker())
+  );
+
+  return results;
+};
 const normalizeTokenSafe = (value = "") =>
   String(value || "")
     .normalize("NFD")
@@ -178,6 +212,125 @@ const mergeSceneScopedEntries = ({ existingEntries = [], nextEntries = [], scene
   ]);
 };
 
+const dedupeRawAssets = (items = []) => {
+  const seen = new Set();
+  return sortSceneScopedEntries((items || []).filter((item) => {
+    const key = String(item?.local_path || item?.source_url || "").trim();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }));
+};
+
+const inferRecoveredProviderFromPath = (localPath = "") => {
+  const fileName = path.basename(String(localPath || "")).toLowerCase();
+  if (fileName.includes("-vertex.")) return GENERATED_VERTEX_PROVIDER;
+  if (fileName.includes("-fallback-")) return "local_fallback";
+  if (fileName.includes("-pexels.")) return "pexels";
+  if (fileName.includes("-pixabay.")) return "pixabay";
+
+  const providerMatch = fileName.match(/-([a-z0-9_]+)\.[^.]+$/i);
+  return providerMatch ? String(providerMatch[1] || "").toLowerCase() : "recovered_raw";
+};
+
+const inferRecoveredSourceTier = (provider = "") => {
+  if (provider === GENERATED_VERTEX_PROVIDER) return "generated";
+  if (provider === "local_fallback") return "generated";
+  return "free";
+};
+
+const inferRecoveredSourceUrl = ({ provider = "", localPath = "" } = {}) => {
+  const fileName = path.basename(String(localPath || ""));
+  if (provider === GENERATED_VERTEX_PROVIDER) return `${GENERATED_VERTEX_SOURCE_PREFIX}${fileName}`;
+  if (provider === "local_fallback") return "generated-local";
+  return `recovered-local://${fileName}`;
+};
+
+const restoreRawItemsFromDisk = async ({
+  paths = {},
+  existingItems = [],
+  visualPlan = [],
+  sceneIndexes = [],
+} = {}) => {
+  const rawAssetsDir = String(paths.rawAssetsDir || "").trim();
+  if (!rawAssetsDir) return dedupeRawAssets(existingItems);
+
+  const targetSceneIndexes = new Set(normalizeSceneIndexes(sceneIndexes));
+  const mergedItems = [];
+  const existingByPath = new Map();
+
+  for (const item of Array.isArray(existingItems) ? existingItems : []) {
+    const localPath = String(item.local_path || "").trim();
+    if (!localPath) continue;
+
+    const resolvedPath = path.resolve(localPath);
+    if (!await fs.pathExists(resolvedPath).catch(() => false)) continue;
+
+    const normalizedItem = { ...item, local_path: resolvedPath };
+    existingByPath.set(resolvedPath, normalizedItem);
+    mergedItems.push(normalizedItem);
+  }
+
+  const fileNames = await fs.readdir(rawAssetsDir).catch(() => []);
+  for (const fileName of fileNames.sort()) {
+    const sceneMatch = String(fileName || "").match(/^scene-(\d+)-/i);
+    const sceneIndex = Number(sceneMatch?.[1] || 0);
+    if (!sceneIndex) continue;
+    if (targetSceneIndexes.size && !targetSceneIndexes.has(sceneIndex)) continue;
+
+    const resolvedPath = path.resolve(path.join(rawAssetsDir, fileName));
+    const stats = await fs.stat(resolvedPath).catch(() => null);
+    if (!stats?.isFile()) continue;
+    if (existingByPath.has(resolvedPath)) continue;
+
+    const scene = (visualPlan || []).find((entry) => Number(entry.scene_index || 0) === sceneIndex) || {};
+    const provider = inferRecoveredProviderFromPath(resolvedPath);
+    const assetType = /\.(mp4|mov|webm|m4v)$/i.test(fileName) ? "video" : "image";
+    const mediaInfo = await probeMedia(resolvedPath).catch(() => ({ width: 0, height: 0, duration: 0 }));
+    const width = Number(mediaInfo.width || 0);
+    const height = Number(mediaInfo.height || 0);
+
+    if (width > 0 && height > 0 && !isHorizontal({ width, height })) continue;
+
+    mergedItems.push({
+      scene_index: sceneIndex,
+      provider,
+      asset_type: assetType,
+      type: assetType,
+      query: Array.isArray(scene.keywords) ? scene.keywords.join(" ") : "",
+      query_used: Array.isArray(scene.keywords) ? scene.keywords.join(" ") : "",
+      search_reason: "recovered_from_raw_dir",
+      semantic_text: scene.narration_excerpt || scene.title || (Array.isArray(scene.keywords) ? scene.keywords.join(" ") : ""),
+      provider_tags: provider === GENERATED_VERTEX_PROVIDER ? ["generated", "vertex_ai", "recovered"] : [],
+      provider_title: provider === GENERATED_VERTEX_PROVIDER
+        ? "Recovered Vertex AI asset"
+        : provider === "local_fallback"
+          ? "Recovered local fallback asset"
+          : "Recovered raw asset",
+      source_tier: inferRecoveredSourceTier(provider),
+      curated_asset: false,
+      generated_placeholder: false,
+      source_url: inferRecoveredSourceUrl({ provider, localPath: resolvedPath }),
+      local_path: resolvedPath,
+      resolution: {
+        width,
+        height,
+        label: getResolutionLabel({ width, height }),
+      },
+      duration_estimate: assetType === "video"
+        ? Number(mediaInfo.duration || scene.target_duration_seconds || MIN_VIDEO_DURATION_SECONDS)
+        : Number(scene.target_duration_seconds || 6),
+      source_duration_seconds: Number(mediaInfo.duration || 0),
+      is_fallback: provider === "local_fallback",
+      ai_generated: provider === GENERATED_VERTEX_PROVIDER,
+      vertex_video_pending: false,
+      orientation: "horizontal",
+    });
+  }
+
+  return dedupeRawAssets(mergedItems);
+};
+
 const extractFallbackPlanSceneIndex = (line = "") => Number(String(line).match(/Cena\s+(\d+)/i)?.[1] || 0);
 
 const mergeFallbackPlan = ({ existingFallbackPlan = [], nextFallbackPlan = [], sceneIndexes = [] }) => {
@@ -210,6 +363,31 @@ const matchApprovedWindowsForAsset = ({ approvedWindows = [], asset = {} }) => {
     if (sourceUrl && metadataOriginalUrl && metadataOriginalUrl === sourceUrl) return true;
     return false;
   });
+};
+
+const hasWeakFallbackAnalysis = (asset = {}) => {
+  const analysisProvider = String(asset.analysis_provider || "").toLowerCase();
+  const semanticText = String(asset.semantic_text || asset.analysis_summary || "").toLowerCase();
+  return analysisProvider === "metadata_fallback"
+    && semanticText.includes("visual evidence unavailable - weak fallback");
+};
+
+const buildReusableAnalysisPayload = (asset = {}) => {
+  if (String(asset.provider || "") === GENERATED_VERTEX_PROVIDER && hasWeakFallbackAnalysis(asset)) {
+    return null;
+  }
+
+  const analysisWindows = Array.isArray(asset.analysis_windows) ? asset.analysis_windows : [];
+  if (!analysisWindows.length) return null;
+
+  return {
+    semantic_text: asset.semantic_text || asset.analysis_summary || "",
+    analysis_summary: asset.analysis_summary || asset.semantic_text || "",
+    analysis_tags: Array.isArray(asset.analysis_tags) ? asset.analysis_tags : [],
+    analysis_windows: analysisWindows,
+    analysis_provider: asset.analysis_provider || asset.provider || "metadata_fallback",
+    analysis_window_seconds: Number(asset.analysis_window_seconds || ANALYSIS_WINDOW_SECONDS),
+  };
 };
 
 const getSceneSourceUrlSet = (items = [], sceneIndex = 0) =>
@@ -976,6 +1154,86 @@ const buildFallbackAnalysisPayload = ({ asset, scene }) => {
   };
 };
 
+const buildGeneratedSceneAlignedPayload = ({ asset, scene }) => {
+  const baseSummary = String(
+    scene.narration_excerpt
+    || scene.title
+    || asset.query
+    || asset.semantic_text
+    || "ai generated scene aligned b-roll"
+  ).trim();
+  const baseTags = unique([
+    ...(Array.isArray(scene.keywords) ? scene.keywords : []),
+    scene.visual_intent || "",
+    scene.role || "",
+    ...(Array.isArray(asset.provider_tags) ? asset.provider_tags : []),
+  ]).slice(0, 12);
+  const locationHint = String(scene.expected_location || scene.location?.city || "").trim();
+  const windows = buildAnalysisWindowBlueprints({ assetDuration: asset.source_duration_seconds || asset.duration_estimate || 0 }).map((window) => {
+    const baseWindow = {
+      window_index: window.window_index,
+      start_seconds: window.start_seconds,
+      end_seconds: window.end_seconds,
+      sample_time_seconds: window.sample_time_seconds,
+      description: baseSummary,
+      summary: baseSummary,
+      tags: baseTags,
+      location: {
+        city: locationHint,
+        country: "",
+        confidence: locationHint ? 0.72 : 0,
+      },
+      landmarks: [],
+      location_type: String(scene.topic_type || scene.visual_intent || "").trim(),
+      visual_features: {
+        shot_type: String(scene.role || "").toLowerCase() === "intro" ? "wide" : "medium",
+        camera_motion: "tracking",
+        dominant_colors: [],
+        has_people: /people|walking|crowd|person|pedestrian/i.test(`${baseSummary} ${baseTags.join(" ")}`),
+        has_water: /river|rio|coast|ocean|waterfront|mar|water/i.test(`${baseSummary} ${baseTags.join(" ")}`),
+        has_architecture: true,
+      },
+      quality: {
+        sharpness: 0.84,
+        stability: 0.82,
+        brightness: 0.76,
+        usable: true,
+      },
+      confidence: 0.8,
+      identity_class: "generated_scene_alignment",
+      editorial_utility: "supporting_broll",
+      visual_type: String(scene.visual_intent || "").trim(),
+      risk_flags: [],
+      semantic_relevance_score: 0.82,
+      editorial_evidence_score: 0.78,
+      semantic_risk_score: 0.12,
+      method: "ai_generated_scene_alignment",
+      visual_evidence_source: "ai_generated_scene_alignment",
+      visual_observation_origin: "real_vision",
+      generic_visual: false,
+    };
+    const evidence = evaluateVisualEvidence({ scene, window: baseWindow, asset });
+    return {
+      ...baseWindow,
+      detected_visual_categories: evidence.detected_visual_categories,
+      detected_objects: [],
+      visual_intent_match: evidence.visual_intent_match,
+      required_evidence_found: evidence.required_evidence_found,
+      missing_required_visual_evidence: evidence.missing_required_visual_evidence,
+      generic_visual: evidence.generic_visual === true ? false : baseWindow.generic_visual,
+    };
+  });
+
+  return {
+    semantic_text: baseSummary,
+    analysis_summary: baseSummary,
+    analysis_tags: baseTags,
+    analysis_windows: windows,
+    analysis_provider: "ai_generated_scene_alignment",
+    analysis_window_seconds: ANALYSIS_WINDOW_SECONDS,
+  };
+};
+
 const mergeAnalysisPayload = ({ asset, scene, payload = {} }) => {
   const fallback = buildFallbackAnalysisPayload({ asset, scene });
   const analysisWindows = Array.isArray(payload.analysis_windows) && payload.analysis_windows.length
@@ -1194,6 +1452,29 @@ const shouldEscalateGeminiAnalysis = ({ analysisPayload = {} }) => {
 const analyzeDownloadedAssetSemantics = async ({ asset, scene, paths }) => {
   const fallbackPayload = buildFallbackAnalysisPayload({ asset, scene });
   const videoId = path.basename(String(paths?.base || ""));
+  const assetAnalysisMaxWindows = Math.max(
+    1,
+    Math.min(Number(config.LOCAL_VIDEO_UNDERSTANDING_MAX_WINDOWS || MAX_ANALYSIS_WINDOWS), MAX_ANALYSIS_WINDOWS)
+  );
+  const reusablePayload = buildReusableAnalysisPayload(asset);
+
+  if (reusablePayload && asset.local_path && await fs.pathExists(asset.local_path).catch(() => false)) {
+    return {
+      ...asset,
+      ...mergeAnalysisPayload({ asset, scene, payload: reusablePayload }),
+    };
+  }
+
+  if (asset.ai_generated === true && String(asset.provider || "") === GENERATED_VERTEX_PROVIDER) {
+    return {
+      ...asset,
+      ...mergeAnalysisPayload({
+        asset,
+        scene,
+        payload: buildGeneratedSceneAlignedPayload({ asset, scene }),
+      }),
+    };
+  }
 
   if (asset.asset_type !== "video" || !asset.local_path) {
     return {
@@ -1205,7 +1486,7 @@ const analyzeDownloadedAssetSemantics = async ({ asset, scene, paths }) => {
   const localPayload = await analyzeLocalVideo({
     inputPath: asset.local_path,
     windowSeconds: config.LOCAL_VIDEO_UNDERSTANDING_WINDOW_SECONDS || ANALYSIS_WINDOW_SECONDS,
-    maxWindows: config.LOCAL_VIDEO_UNDERSTANDING_MAX_WINDOWS || MAX_ANALYSIS_WINDOWS,
+    maxWindows: assetAnalysisMaxWindows,
     mode: config.LOCAL_VIDEO_UNDERSTANDING_MODE || "frames",
     assetMetadata: asset,
     sceneContext: scene,
@@ -1305,16 +1586,6 @@ const analyzeDownloadedAssetSemantics = async ({ asset, scene, paths }) => {
       }
     }
 
-    if (!response && hasOpenAi()) {
-      response = await describeImagesWithOpenAI({
-        prompt,
-        imagePaths: framePaths,
-        detail: "low",
-        videoId,
-      });
-      if (response) provider = "openai_vision";
-    }
-
     await fs.remove(analysisDir).catch(() => null);
 
     return {
@@ -1358,8 +1629,196 @@ const downloadFile = async (url, outputPath) => {
   return outputPath;
 };
 
-const createSceneFallbackAsset = async ({ scene, paths }) => {
+const buildGeneratedScenePrompt = ({ scene = {}, query = "", mediaType = "image" } = {}) => {
+  const queryText = String(query || scene.title || scene.narration_excerpt || "").trim();
+  const locationHint = String(scene.expected_location || scene.location?.city || scene.block_label || "").trim();
+  const narration = String(scene.narration_excerpt || "").trim();
+  const keywords = Array.isArray(scene.keywords) ? scene.keywords.slice(0, 8).filter(Boolean).join(", ") : "";
+  const visualIntent = String(scene.visual_intent || scene.role || "").trim();
+
+  return [
+    mediaType === "video"
+      ? "Crie um b-roll de video realista em 16:9 para um documentario curto no YouTube."
+      : "Crie uma imagem realista em 16:9 para b-roll editorial de um video do YouTube.",
+    queryText ? `Assunto principal: ${queryText}.` : "",
+    narration ? `Contexto narrativo: ${narration}.` : "",
+    locationHint ? `Localizacao ou contexto: ${locationHint}.` : "",
+    visualIntent ? `Intencao visual: ${visualIntent}.` : "",
+    keywords ? `Palavras-chave: ${keywords}.` : "",
+    mediaType === "video"
+      ? "Movimento suave de camera, cena limpa, sem texto, sem logo, sem marca d'agua."
+      : "Cena limpa, sem texto, sem logo, sem marca d'agua, nitida e cinematografica.",
+  ].filter(Boolean).join(" ");
+};
+
+const buildGeneratedSceneMedia = async ({
+  scene = {},
+  paths = {},
+  sequence = 1,
+  query = "",
+  videoId = "",
+  allowGeneratedMedia = false,
+  preferVideo = false,
+} = {}) => {
+  if (!(config.AI_GENERATED_PLACEHOLDER_ENABLED || allowGeneratedMedia) || !hasGemini()) return null;
+
+  const queryText = String(query || scene.narration_excerpt || scene.title || (scene.keywords || []).join(" ") || "").trim();
+  if (!queryText) return null;
+
+  const scenePrefix = `scene-${String(scene.scene_index).padStart(2, "0")}-${String(sequence).padStart(2, "0")}`;
+  const sceneSlug = slugify(queryText || `scene-${scene.scene_index}`) || `scene-${scene.scene_index}`;
+  const generatedSourceUrl = `${GENERATED_VERTEX_SOURCE_PREFIX}${sceneSlug}`;
+  const imageOutputPath = path.join(paths.rawAssetsDir, `${scenePrefix}-${sceneSlug}-vertex.png`);
+  const videoOutputPath = path.join(paths.rawAssetsDir, `${scenePrefix}-${sceneSlug}-vertex.mp4`);
+  let imageResult = null;
+  let videoResult = null;
+
+  const tryVideoFirst = preferVideo === true;
+  const allowVideoFallback = Boolean(config.GEMINI_VIDEO_FALLBACK_ENABLED || preferVideo);
+
+  if (allowVideoFallback) {
+    try {
+      videoResult = await generateVideoWithGemini({
+        prompt: buildGeneratedScenePrompt({ scene, query: queryText, mediaType: "video" }),
+        videoId,
+        outputPath: videoOutputPath,
+        durationSeconds: Math.max(MIN_VIDEO_DURATION_SECONDS, Math.min(8, Number(scene.target_duration_seconds || 6))),
+      });
+    } catch (error) {
+      logger.warn("Vertex video fallback generation failed", {
+        scene_index: scene.scene_index,
+        message: String(error?.message || error),
+      });
+    }
+  }
+
+  if (!tryVideoFirst || !videoResult?.path) {
+    try {
+      imageResult = await generateImageWithGemini({
+        prompt: buildGeneratedScenePrompt({ scene, query: queryText, mediaType: "image" }),
+        videoId,
+        outputPath: imageOutputPath,
+      });
+    } catch (error) {
+      logger.warn("Vertex image fallback generation failed", {
+        scene_index: scene.scene_index,
+        message: String(error?.message || error),
+      });
+    }
+  }
+
+  if (videoResult?.path && await fs.pathExists(videoResult.path)) {
+    return {
+      localPath: videoResult.path,
+      assetType: "video",
+      provider: GENERATED_VERTEX_PROVIDER,
+      providerTags: ["generated", "vertex_ai", "video"],
+      providerTitle: "Vertex AI generated scene video",
+      sourceUrl: generatedSourceUrl,
+      sourceTier: "generated",
+      isFallback: false,
+      aiGenerated: true,
+      videoRequest: videoResult,
+      mimeType: videoResult.mime_type || "video/mp4",
+    };
+  }
+
+  if (imageResult?.path && await fs.pathExists(imageResult.path)) {
+    return {
+      localPath: imageResult.path,
+      assetType: "image",
+      provider: GENERATED_VERTEX_PROVIDER,
+      providerTags: ["generated", "vertex_ai", videoResult?.operation_name ? "veo_requested" : "image"],
+      providerTitle: "Vertex AI generated scene image",
+      sourceUrl: generatedSourceUrl,
+      sourceTier: "generated",
+      isFallback: false,
+      aiGenerated: true,
+      videoRequest: videoResult,
+      mimeType: imageResult.mime_type || "image/png",
+    };
+  }
+
+  if (videoResult?.operation_name) {
+    return {
+      localPath: "",
+      assetType: "video",
+      provider: GENERATED_VERTEX_PROVIDER,
+      providerTags: ["generated", "vertex_ai", "veo_requested"],
+      providerTitle: "Vertex AI generated scene video request",
+      sourceUrl: generatedSourceUrl,
+      sourceTier: "generated",
+      isFallback: false,
+      aiGenerated: true,
+      videoRequest: videoResult,
+      mimeType: "video/mp4",
+    };
+  }
+
+  return null;
+};
+
+const createSceneFallbackAsset = async ({
+  scene,
+  paths,
+  videoId = "",
+  allowGeneratedMedia = false,
+  preferVideo = false,
+  skipLocalPlaceholder = false,
+} = {}) => {
   const refreshToken = Date.now();
+  const generatedMedia = await buildGeneratedSceneMedia({
+    scene,
+    paths,
+    sequence: refreshToken,
+    query: scene.keywords.join(" ") || scene.title || scene.narration_excerpt || "",
+    videoId,
+    allowGeneratedMedia,
+    preferVideo,
+  });
+
+  if (generatedMedia?.localPath) {
+    const mediaInfo = await probeMedia(generatedMedia.localPath).catch(() => ({ width: 0, height: 0, duration: 0 }));
+    const width = Number(mediaInfo.width || PREFERRED_WIDTH);
+    const height = Number(mediaInfo.height || PREFERRED_HEIGHT);
+
+    return {
+      scene_index: scene.scene_index,
+      provider: generatedMedia.provider,
+      asset_type: generatedMedia.assetType,
+      type: generatedMedia.assetType,
+      query: scene.keywords.join(" "),
+      semantic_text: scene.narration_excerpt || scene.title || scene.keywords.join(" "),
+      provider_tags: generatedMedia.providerTags,
+      provider_title: generatedMedia.providerTitle,
+      source_url: generatedMedia.sourceUrl,
+      local_path: generatedMedia.localPath,
+      resolution: {
+        width,
+        height,
+        label: getResolutionLabel({ width, height }),
+      },
+      duration_estimate:
+        generatedMedia.assetType === "video"
+          ? Number(mediaInfo.duration || scene.target_duration_seconds || MIN_VIDEO_DURATION_SECONDS)
+          : Number(scene.target_duration_seconds || 6),
+      source_duration_seconds: Number(mediaInfo.duration || 0),
+      source_tier: generatedMedia.sourceTier,
+      is_fallback: generatedMedia.isFallback,
+      ai_generated: generatedMedia.aiGenerated,
+      generated_placeholder: false,
+      vertex_video_operation_name: generatedMedia.videoRequest?.operation_name || "",
+      vertex_video_console_url: generatedMedia.videoRequest?.console_url || "",
+      vertex_video_polling_hint: generatedMedia.videoRequest?.polling_hint || "",
+      vertex_video_pending: Boolean(generatedMedia.videoRequest?.operation_name && !generatedMedia.videoRequest?.path),
+      orientation: "horizontal",
+    };
+  }
+
+  if (skipLocalPlaceholder) {
+    return null;
+  }
+
   const outputPath = path.join(
     paths.rawAssetsDir,
     `scene-${String(scene.scene_index).padStart(2, "0")}-fallback-${refreshToken}.png`
@@ -1387,6 +1846,10 @@ const createSceneFallbackAsset = async ({ scene, paths }) => {
     },
     duration_estimate: Number(scene.target_duration_seconds || 6),
     is_fallback: true,
+    vertex_video_operation_name: generatedMedia?.videoRequest?.operation_name || "",
+    vertex_video_console_url: generatedMedia?.videoRequest?.console_url || "",
+    vertex_video_polling_hint: generatedMedia?.videoRequest?.polling_hint || "",
+    vertex_video_pending: Boolean(generatedMedia?.videoRequest?.operation_name),
     orientation: "horizontal",
   };
 };
@@ -1644,60 +2107,103 @@ const cacheSearchResultsWithFilters = async ({ query, cache, filters = {} }) => 
   return candidates;
 };
 
-const downloadSceneCandidate = async ({ candidate, scene, paths, sequence }) => {
+const downloadSceneCandidate = async ({ candidate, scene, paths, sequence, videoId = "" }) => {
   const extension = candidate.asset_type === "video" ? "mp4" : "jpg";
   const fileName = `scene-${String(scene.scene_index).padStart(2, "0")}-${String(sequence).padStart(2, "0")}-${slugify(candidate.provider)}.${extension}`;
   const localPath = path.join(paths.rawAssetsDir, fileName);
+  let effectiveCandidate = candidate;
+  let effectiveLocalPath = localPath;
 
   if (candidate.generated_placeholder) {
-    await createPlaceholderImage({ outputPath: localPath, seed: sequence });
+    const generatedMedia = await buildGeneratedSceneMedia({
+      scene,
+      paths,
+      sequence,
+      query: candidate.query || candidate.semantic_text || scene.narration_excerpt || scene.title || "",
+      videoId,
+    });
+
+    if (generatedMedia?.localPath) {
+      effectiveLocalPath = generatedMedia.localPath;
+      effectiveCandidate = {
+        ...candidate,
+        provider: generatedMedia.provider,
+        asset_type: generatedMedia.assetType,
+        type: generatedMedia.assetType,
+        provider_tags: unique([...(candidate.provider_tags || []), ...(generatedMedia.providerTags || [])]),
+        provider_title: generatedMedia.providerTitle || candidate.provider_title,
+        source_tier: generatedMedia.sourceTier || candidate.source_tier || "generated",
+        generated_placeholder: false,
+        source_url: generatedMedia.sourceUrl || candidate.source_url,
+        ai_generated: generatedMedia.aiGenerated === true,
+        is_fallback: generatedMedia.isFallback === true,
+        vertex_video_operation_name: generatedMedia.videoRequest?.operation_name || "",
+        vertex_video_console_url: generatedMedia.videoRequest?.console_url || "",
+        vertex_video_polling_hint: generatedMedia.videoRequest?.polling_hint || "",
+        vertex_video_pending: Boolean(generatedMedia.videoRequest?.operation_name && !generatedMedia.videoRequest?.path),
+      };
+    } else {
+      await createPlaceholderImage({ outputPath: localPath, seed: sequence });
+      effectiveCandidate = {
+        ...candidate,
+        vertex_video_operation_name: generatedMedia?.videoRequest?.operation_name || "",
+        vertex_video_console_url: generatedMedia?.videoRequest?.console_url || "",
+        vertex_video_polling_hint: generatedMedia?.videoRequest?.polling_hint || "",
+        vertex_video_pending: Boolean(generatedMedia?.videoRequest?.operation_name),
+      };
+    }
   } else if (candidate.local_path && await fs.pathExists(candidate.local_path)) {
     await fs.copy(candidate.local_path, localPath);
   } else {
     await downloadFile(candidate.source_url, localPath);
   }
-  const mediaInfo = await probeMedia(localPath).catch(() => ({ width: 0, height: 0, duration: 0 }));
-  const width = Number(mediaInfo.width || candidate.width || 0);
-  const height = Number(mediaInfo.height || candidate.height || 0);
+  const mediaInfo = await probeMedia(effectiveLocalPath).catch(() => ({ width: 0, height: 0, duration: 0 }));
+  const width = Number(mediaInfo.width || effectiveCandidate.width || 0);
+  const height = Number(mediaInfo.height || effectiveCandidate.height || 0);
 
   if (!isHorizontal({ width, height })) {
-    await fs.remove(localPath).catch(() => null);
+    await fs.remove(effectiveLocalPath).catch(() => null);
     return null;
   }
 
   return {
     scene_index: scene.scene_index,
-    provider: candidate.provider,
-    asset_type: candidate.asset_type,
-    type: candidate.asset_type,
-    query: candidate.query,
-    query_used: candidate.query_used || candidate.query,
-    search_reason: candidate.search_reason || "",
-    block_intro_candidate: /hard_boundary_block_intro_asset|intro establishing shot/i.test(`${candidate.search_reason || ""} ${candidate.query_used || ""}`),
-    chapter_card_candidate: /hard_boundary_chapter_card_clip|chapter transition card/i.test(`${candidate.search_reason || ""} ${candidate.query_used || ""}`),
-    pre_download_score: Number(candidate.pre_download_score || 0),
-    intent_match: candidate.intent_match === true,
-    generic_asset: candidate.generic_asset === true,
-    rejection_reason: candidate.rejection_reason || "",
-    semantic_text: candidate.semantic_text || candidate.query,
-    provider_tags: candidate.provider_tags || [],
-    provider_title: candidate.provider_title || "",
-    source_tier: candidate.source_tier || "free",
-    curated_asset: candidate.curated_asset === true,
-    generated_placeholder: candidate.generated_placeholder === true,
-    source_url: candidate.source_url,
-    local_path: localPath,
+    provider: effectiveCandidate.provider,
+    asset_type: effectiveCandidate.asset_type,
+    type: effectiveCandidate.asset_type,
+    query: effectiveCandidate.query,
+    query_used: effectiveCandidate.query_used || effectiveCandidate.query,
+    search_reason: effectiveCandidate.search_reason || "",
+    block_intro_candidate: /hard_boundary_block_intro_asset|intro establishing shot/i.test(`${effectiveCandidate.search_reason || ""} ${effectiveCandidate.query_used || ""}`),
+    chapter_card_candidate: /hard_boundary_chapter_card_clip|chapter transition card/i.test(`${effectiveCandidate.search_reason || ""} ${effectiveCandidate.query_used || ""}`),
+    pre_download_score: Number(effectiveCandidate.pre_download_score || 0),
+    intent_match: effectiveCandidate.intent_match === true,
+    generic_asset: effectiveCandidate.generic_asset === true,
+    rejection_reason: effectiveCandidate.rejection_reason || "",
+    semantic_text: effectiveCandidate.semantic_text || effectiveCandidate.query,
+    provider_tags: effectiveCandidate.provider_tags || [],
+    provider_title: effectiveCandidate.provider_title || "",
+    source_tier: effectiveCandidate.source_tier || "free",
+    curated_asset: effectiveCandidate.curated_asset === true,
+    generated_placeholder: effectiveCandidate.generated_placeholder === true,
+    source_url: effectiveCandidate.source_url,
+    local_path: effectiveLocalPath,
     resolution: {
       width,
       height,
       label: getResolutionLabel({ width, height }),
     },
     duration_estimate:
-      candidate.asset_type === "video"
-        ? Number(mediaInfo.duration || candidate.duration_estimate || scene.target_duration_seconds || 6)
+      effectiveCandidate.asset_type === "video"
+        ? Number(mediaInfo.duration || effectiveCandidate.duration_estimate || scene.target_duration_seconds || 6)
         : Number(scene.target_duration_seconds || 6),
-    source_duration_seconds: Number(mediaInfo.duration || candidate.duration_estimate || 0),
-    is_fallback: false,
+    source_duration_seconds: Number(mediaInfo.duration || effectiveCandidate.duration_estimate || 0),
+    is_fallback: effectiveCandidate.is_fallback === true,
+    ai_generated: effectiveCandidate.ai_generated === true,
+    vertex_video_operation_name: effectiveCandidate.vertex_video_operation_name || "",
+    vertex_video_console_url: effectiveCandidate.vertex_video_console_url || "",
+    vertex_video_polling_hint: effectiveCandidate.vertex_video_polling_hint || "",
+    vertex_video_pending: effectiveCandidate.vertex_video_pending === true,
     orientation: "horizontal",
   };
 };
@@ -1756,15 +2262,24 @@ const generateAssets = async ({
 
   const requestedSceneIndexes = normalizeSceneIndexes(sceneIndexes);
   const requestedSceneIndexSet = new Set(requestedSceneIndexes);
+  const generatedRepairMode = Boolean(!mockMode && allowPlaceholderAssets && Number(autoRepairRound || 0) > 0);
   const selectedScenes = requestedSceneIndexSet.size
     ? visualPlan.filter((scene) => requestedSceneIndexSet.has(Number(scene.scene_index || 0)))
     : visualPlan;
   const selectedSceneIndexes = selectedScenes.map((scene) => Number(scene.scene_index || 0));
   const selectiveRefresh = selectedSceneIndexes.length > 0 && selectedSceneIndexes.length < visualPlan.length;
   const preserveUntouchedScenes = Boolean(selectiveRefresh && preserveExisting);
-  const previousRawItems = Array.isArray(state.assets_json?.raw_items)
+  const storedRawItems = Array.isArray(state.assets_json?.raw_items)
     ? state.assets_json.raw_items
     : (Array.isArray(state.assets_json?.items) ? state.assets_json.items : []);
+  const previousRawItems = (preserveExisting || !storedRawItems.length)
+    ? await restoreRawItemsFromDisk({
+        paths,
+        existingItems: storedRawItems,
+        visualPlan,
+        sceneIndexes: selectedSceneIndexes,
+      })
+    : storedRawItems;
   const previousApprovedItems = Array.isArray(state.assets_json?.approved_items)
     ? state.assets_json.approved_items
     : (Array.isArray(state.assets_json?.items) ? state.assets_json.items : []);
@@ -1828,6 +2343,14 @@ const generateAssets = async ({
   const libraryBySourceUrl = mapLibraryBySourceUrl(library);
   const perSceneSequence = new Map();
 
+  if (preserveExisting) {
+    previousRawItems.forEach((item) => {
+      const sceneIndex = Number(item.scene_index || 0);
+      if (!sceneIndex) return;
+      perSceneSequence.set(sceneIndex, Number(perSceneSequence.get(sceneIndex) || 0) + 1);
+    });
+  }
+
   for (const blockPackage of selectedBlockPackages) {
     const blockScenes = scenesByBlockId.get(String(blockPackage.block_id || "")) || [];
     const representativeScene = getRepresentativeSceneForBlock(blockScenes);
@@ -1859,22 +2382,23 @@ const generateAssets = async ({
       blockPackage,
       repairHints: blockRepairHints,
     });
-    const blockAssetCap = Math.max(3, Math.min(12, Number(maxAssets || 8)));
+    const repairBudgetMultiplier = generatedRepairMode ? 1.5 : 1;
+    const blockAssetCap = Math.max(1, Math.min(12, Math.round(Number(maxAssets || 8) * repairBudgetMultiplier)));
     activeBudgetProfile.raw_candidates_per_block = Math.min(
       Number(activeBudgetProfile.raw_candidates_per_block || ECONOMIC_BUDGET.raw_candidates_per_block),
-      Math.max(24, blockAssetCap * 8)
+      Math.max(blockAssetCap <= 2 ? 8 : 24, blockAssetCap * 8)
     );
     activeBudgetProfile.cheap_shortlist_per_block = Math.min(
       Number(activeBudgetProfile.cheap_shortlist_per_block || ECONOMIC_BUDGET.cheap_shortlist_per_block),
-      Math.max(10, blockAssetCap * 2)
+      Math.max(blockAssetCap <= 2 ? 4 : 10, blockAssetCap * 2)
     );
     activeBudgetProfile.vision_finalists_per_block = Math.min(
       Number(activeBudgetProfile.vision_finalists_per_block || ECONOMIC_BUDGET.vision_finalists_per_block),
-      Math.max(4, blockAssetCap)
+      Math.max(1, blockAssetCap)
     );
     activeBudgetProfile.max_repair_rounds_per_block = Math.min(
       Number(activeBudgetProfile.max_repair_rounds_per_block || ECONOMIC_BUDGET.max_repair_rounds_per_block),
-      blockAssetCap <= 6 ? 1 : 2
+      blockAssetCap <= 2 ? 0 : blockAssetCap <= 6 ? 1 : 2
     );
 
     const queryPlan = buildBlockQueryPlan({
@@ -1892,7 +2416,7 @@ const generateAssets = async ({
       slot?.requires_visual_proof === true
       && ["high", "critical"].includes(String(slot?.criticality || "").toLowerCase())
     );
-    const maxQueriesPerBlock = Math.max(6, Math.min(18, blockAssetCap * 2));
+    const maxQueriesPerBlock = Math.max(blockAssetCap <= 2 ? 3 : 6, Math.min(22, blockAssetCap * 2 + (generatedRepairMode ? 2 : 0)));
     const boostedQueryDetails = buildCriticalBoostQueries({
       queryDetails: queryPlan.queryDetails || [],
       blockPackage,
@@ -1949,39 +2473,46 @@ const generateAssets = async ({
     let shortlist = [];
     let finalists = [];
     let repairRoundsUsed = 0;
-    const downloadedItems = [];
-    const seenUrls = new Set();
+    const downloadedItems = preserveExisting
+      ? dedupeRawAssets(previousRawItems.filter((item) => activeSceneIndexes.includes(Number(item.scene_index || 0))))
+      : [];
+    const seenUrls = new Set(downloadedItems.map((item) => String(item.source_url || "").trim()).filter(Boolean));
 
     if (!mockMode) {
-      for (const queryDetail of queryDetailsForExecution) {
-        const candidates = await cacheSearchResultsWithFilters({
-          query: queryDetail.query,
-          cache: searchCache,
-          filters: {},
-        });
-        const filteredByNegatives = candidates.filter((candidate) => !matchesNegativeKeyword({
-          candidate,
-          negativeKeywords: queryPlan.negativeKeywords || [],
-        })).filter((candidate) => !shouldSkipCandidateByRepairConstraints({ candidate, repairHints: blockRepairHints }));
-        const scored = filteredByNegatives
-          .map((candidate) => ({
-            ...candidate,
-            query_used: queryDetail.query,
+      const queryCandidateResults = await mapWithConcurrency(
+        queryDetailsForExecution,
+        ASSET_QUERY_SEARCH_CONCURRENCY,
+        async (queryDetail) => {
+          const candidates = await cacheSearchResultsWithFilters({
             query: queryDetail.query,
-            slot_id: queryDetail.slot_id || "",
-            slot_type: queryDetail.slot_type || "",
-            content_need: queryDetail.content_need || queryDetail.slot_type || "",
-            slot_priority: Number(queryDetail.priority || 1),
-            search_reason: queryDetail.reason || "",
-            negative_keywords: queryPlan.negativeKeywords || [],
-            ...scorePreDownloadCandidate({
-              candidate: { ...candidate, query_used: queryDetail.query },
-              scene: representativeScene,
-            }),
-          }))
-          .filter((candidate) => !candidate.pre_download_rejected);
-        rawCandidates.push(...scored);
-      }
+            cache: searchCache,
+            filters: {},
+          });
+          return candidates.filter((candidate) => !matchesNegativeKeyword({
+            candidate,
+            negativeKeywords: queryPlan.negativeKeywords || [],
+          })).filter((candidate) => !shouldSkipCandidateByRepairConstraints({ candidate, repairHints: blockRepairHints }))
+            .map((candidate) => ({
+              ...candidate,
+              query_used: queryDetail.query,
+              query: queryDetail.query,
+              slot_id: queryDetail.slot_id || "",
+              slot_type: queryDetail.slot_type || "",
+              content_need: queryDetail.content_need || queryDetail.slot_type || "",
+              slot_priority: Number(queryDetail.priority || 1),
+              search_reason: queryDetail.reason || "",
+              negative_keywords: queryPlan.negativeKeywords || [],
+              ...scorePreDownloadCandidate({
+                candidate: { ...candidate, query_used: queryDetail.query },
+                scene: representativeScene,
+              }),
+            }))
+            .filter((candidate) => !candidate.pre_download_rejected);
+        }
+      );
+      rawCandidates.push(
+        ...queryCandidateResults.flatMap((result) => (result.status === "fulfilled" ? result.value : []))
+      );
 
       rawCandidates = dedupeCandidatesByUrl(
         rawCandidates
@@ -2112,35 +2643,47 @@ const generateAssets = async ({
           });
         }
 
-        for (const plan of roundRepairPlans) {
-          if (!plan.query || attemptedRepairQueries.has(plan.query)) continue;
+        const uniqueRepairPlans = roundRepairPlans.filter((plan) => {
+          if (!plan.query || attemptedRepairQueries.has(plan.query)) return false;
           attemptedRepairQueries.add(plan.query);
-          const repairCandidates = await cacheSearchResultsWithFilters({
-            query: plan.query,
-            cache: searchCache,
-            filters: {},
-          });
-          const mapped = repairCandidates
-            .filter((candidate) => !matchesNegativeKeyword({ candidate, negativeKeywords: queryPlan.negativeKeywords || [] }))
-            .filter((candidate) => !shouldSkipCandidateByRepairConstraints({ candidate, repairHints: blockRepairHints }))
-            .map((candidate) => ({
-              ...candidate,
-              query_used: plan.query,
+          return true;
+        });
+
+        const repairCandidateResults = await mapWithConcurrency(
+          uniqueRepairPlans,
+          ASSET_QUERY_SEARCH_CONCURRENCY,
+          async (plan) => {
+            const repairCandidates = await cacheSearchResultsWithFilters({
               query: plan.query,
-              slot_id: plan.slot_id,
-              slot_type: plan.slot_type,
-              content_need: plan.content_need,
-              slot_priority: plan.slot_priority,
-              search_reason: plan.search_reason,
-              ...scorePreDownloadCandidate({
-                candidate: { ...candidate, query_used: plan.query },
-                scene: representativeScene,
-              }),
-            }))
-            .filter((candidate) => !candidate.pre_download_rejected);
-          appendedRepairCandidates += mapped.length;
-          shortlist.push(...mapped);
-        }
+              cache: searchCache,
+              filters: {},
+            });
+            return repairCandidates
+              .filter((candidate) => !matchesNegativeKeyword({ candidate, negativeKeywords: queryPlan.negativeKeywords || [] }))
+              .filter((candidate) => !shouldSkipCandidateByRepairConstraints({ candidate, repairHints: blockRepairHints }))
+              .map((candidate) => ({
+                ...candidate,
+                query_used: plan.query,
+                query: plan.query,
+                slot_id: plan.slot_id,
+                slot_type: plan.slot_type,
+                content_need: plan.content_need,
+                slot_priority: plan.slot_priority,
+                search_reason: plan.search_reason,
+                ...scorePreDownloadCandidate({
+                  candidate: { ...candidate, query_used: plan.query },
+                  scene: representativeScene,
+                }),
+              }))
+              .filter((candidate) => !candidate.pre_download_rejected);
+          }
+        );
+
+        const mappedRepairCandidates = repairCandidateResults.flatMap((result) =>
+          result.status === "fulfilled" ? result.value : []
+        );
+        appendedRepairCandidates += mappedRepairCandidates.length;
+        shortlist.push(...mappedRepairCandidates);
 
         if (!appendedRepairCandidates) break;
         shortlist = dedupeCandidatesByUrl(shortlist)
@@ -2229,6 +2772,7 @@ const generateAssets = async ({
             scene: sceneForCandidate,
             paths,
             sequence,
+            videoId,
           });
           if (downloaded) {
             downloaded.content_slot_id = candidate.slot_id || "";
@@ -2242,6 +2786,37 @@ const generateAssets = async ({
           // ignore
         }
       }
+
+      if (generatedRepairMode) {
+        for (const scene of activeScenes) {
+          const alreadyHasGeneratedRepairAsset = downloadedItems.some((item) =>
+            Number(item.scene_index || 0) === Number(scene.scene_index || 0)
+            && item.ai_generated === true
+            && String(item.provider || "") === GENERATED_VERTEX_PROVIDER
+          );
+          if (alreadyHasGeneratedRepairAsset) continue;
+
+          const generatedRepairAsset = await createSceneFallbackAsset({
+            scene,
+            paths,
+            videoId,
+            allowGeneratedMedia: true,
+            preferVideo: true,
+            skipLocalPlaceholder: true,
+          }).catch(() => null);
+
+          if (generatedRepairAsset?.local_path) {
+            generatedRepairAsset.block_id = blockPackage.block_id;
+            generatedRepairAsset.block_package_id = blockPackage.package_id;
+            generatedRepairAsset.content_slot_id = "generated_repair";
+            generatedRepairAsset.content_slot_type = "generated_repair";
+            generatedRepairAsset.content_need = scene.visual_intent || "generated_repair";
+            generatedRepairAsset.search_reason = `generated_repair_round_${Number(autoRepairRound || 0)}`;
+            downloadedItems.push(generatedRepairAsset);
+            fallbackPlan.push(`Cena ${scene.scene_index}: video gerado via Vertex AI anexado na rodada de repair ${Number(autoRepairRound || 0)}.`);
+          }
+        }
+      }
     }
 
     const distributionByScene = activeScenes.reduce((acc, scene) => {
@@ -2252,24 +2827,30 @@ const generateAssets = async ({
     for (const scene of activeScenes) {
       if (distributionByScene[scene.scene_index] > 0) continue;
       if (allowPlaceholderAssets) {
-        const placeholder = await createSceneFallbackAsset({ scene, paths });
+        const placeholder = await createSceneFallbackAsset({ scene, paths, videoId });
         placeholder.block_id = blockPackage.block_id;
         placeholder.block_package_id = blockPackage.package_id;
         placeholder.content_slot_id = "fallback_safe";
         placeholder.content_slot_type = "fallback_safe";
         placeholder.content_need = "fallback_safe";
         downloadedItems.push(placeholder);
-        fallbackPlan.push(`Cena ${scene.scene_index}: fallback local usado para cobertura minima do bloco ${blockPackage.block_label}.`);
+        fallbackPlan.push(
+          placeholder.provider === GENERATED_VERTEX_PROVIDER
+            ? `Cena ${scene.scene_index}: asset gerado via Vertex AI para cobertura minima do bloco ${blockPackage.block_label}.`
+            : `Cena ${scene.scene_index}: fallback local usado para cobertura minima do bloco ${blockPackage.block_label}.`
+        );
       } else {
         fallbackPlan.push(`Cena ${scene.scene_index}: sem asset real disponivel para bloco ${blockPackage.block_label}; render deve ser bloqueado.`);
       }
     }
 
-    const enrichedResults = await Promise.allSettled(
-      downloadedItems.map((item) => {
+    const enrichedResults = await mapWithConcurrency(
+      downloadedItems,
+      ASSET_SEMANTIC_ANALYSIS_CONCURRENCY,
+      async (item) => {
         const scene = visualPlan.find((entry) => Number(entry.scene_index || 0) === Number(item.scene_index || 0)) || representativeScene;
         return analyzeDownloadedAssetSemantics({ asset: item, scene, paths });
-      })
+      }
     );
     const enrichedItems = enrichedResults.map((result, index) => {
       if (result.status === "fulfilled") return result.value;
@@ -2430,7 +3011,9 @@ const generateAssets = async ({
         scene,
         windows: windowsForAsset,
         policyVersion: config.CLIP_LIBRARY_POLICY_VERSION || "v1",
-        generatePhysicalClips: Boolean(config.USE_CLIP_LIBRARY),
+        generatePhysicalClips: Boolean(
+          config.USE_CLIP_LIBRARY && config.CLIP_LIBRARY_GENERATE_SYNC_ON_ASSET_APPROVAL
+        ),
       });
       generatedClipIds = unique([
         ...generatedClipIds,
