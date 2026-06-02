@@ -58,6 +58,22 @@ const SYNC_POLICIES = {
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
+const resolveBlockScopeId = (block = {}) => String(
+  block.macro_block_id
+  || block.parent_id
+  || block.block_scope_id
+  || block.block_id
+  || block.id
+  || block.scene_index
+  || ""
+).trim();
+const resolveClipBlockScopeId = (clip = {}) => String(
+  clip.macro_block_id
+  || clip.block_scope_id
+  || clip.block_id
+  || clip.scene_index
+  || ""
+).trim();
 const MICRO_NEED_KEYWORDS = {
   market_stall: ["market", "mercado", "banca", "stall", "feira", "food hall"],
   vendor_interaction: ["vendor", "vendedor", "atendente", "serving", "servindo", "atendimento"],
@@ -857,7 +873,7 @@ const selectBySourceTierPolicy = ({
 
   const freeStrong = available.filter((item) => isStrongFreeCriticalCandidate(item.candidate));
   if (freeStrong.length) {
-    const blockKey = String(block.block_id || block.id || block.scene_index || "unknown_block");
+    const blockKey = resolveBlockScopeId(block) || "unknown_block";
     const nichePolicy = resolveNichePolicy(block);
     const maxFreeCriticalByBlock = Number(nichePolicy.maxFreeCriticalSlotsPerBlock || config.CRITICAL_SLOT_FREE_SOURCE_BUDGET_PER_BLOCK || 1);
     const usedFreeCriticalCount = Number(freeCriticalUsageByBlock.get(blockKey) || 0);
@@ -890,7 +906,7 @@ const candidateRespectsDiversityQuotas = ({
   usage = {},
   criticalSlot = false,
 }) => {
-  const blockId = String(block.block_id || block.id || block.scene_index || "");
+  const blockId = resolveBlockScopeId(block);
   if (!blockId) return true;
   const signature = buildVisualSignature(candidate);
   const provider = String(candidate.source || candidate.asset?.provider || "unknown").toLowerCase();
@@ -1074,10 +1090,10 @@ const pickAdjacencyDiversityAlternative = ({
   if (microMoment?.needs_visual_proof === true) {
     return selected;
   }
-  const blockId = String(block.block_id || block.id || block.scene_index || "");
+  const blockId = resolveBlockScopeId(block);
   const recentBlockClips = [...(clips || [])]
     .reverse()
-    .filter((clip) => String(clip.block_id || clip.scene_index || "") === blockId)
+    .filter((clip) => resolveClipBlockScopeId(clip) === blockId)
     .slice(0, 3);
   if (!recentBlockClips.length) return selected;
 
@@ -1450,6 +1466,39 @@ const computeTimelineSyncMetrics = ({ clips, macroBlocks, policy }) => {
   };
 };
 
+const refreshFinalDiversityViolationCodesInPlace = ({ clips = [] } = {}) => {
+  const strippedCodes = new Set([
+    "diversity_hard_filter_bypassed",
+    "diversity_bypass_on_critical_slot",
+  ]);
+
+  clips.forEach((clip, index) => {
+    const previousClips = clips.slice(0, index);
+    const finalDiversityDecision = filterCandidatesByHardDiversity({
+      candidates: [clip],
+      clips: previousClips,
+      block: {
+        macro_block_id: clip.macro_block_id,
+        parent_id: clip.macro_block_id,
+        block_scope_id: clip.block_scope_id,
+        block_id: clip.block_id,
+        id: clip.micro_block_id,
+        scene_index: clip.scene_index,
+        visual_intent: clip.visual_intent,
+      },
+      slotRole: clip.narrative_role_selected,
+      criticalSlot: clip.critical_slot === true,
+    });
+    const finalDiversityBypassRequired = finalDiversityDecision.bypass_required === true;
+    const baseCodes = (clip.editorial_slot_violation_codes || []).filter((code) => !strippedCodes.has(String(code || "")));
+    clip.editorial_slot_violation_codes = unique([
+      ...baseCodes,
+      ...(finalDiversityBypassRequired ? ["diversity_hard_filter_bypassed"] : []),
+      ...(clip.critical_slot === true && finalDiversityBypassRequired ? ["diversity_bypass_on_critical_slot"] : []),
+    ]);
+  });
+};
+
 const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset, allowPlaceholderFallback = config.ALLOW_PLACEHOLDER_ASSETS }) => {
   const videoId = state.video_id || "unknown";
   const policy = getSyncPolicy();
@@ -1817,6 +1866,41 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
             }
           }
         }
+
+        const blockScopeId = resolveBlockScopeId(block);
+        const usedScopeAssetKeys = new Set(
+          clips
+            .filter((existingClip) => resolveClipBlockScopeId(existingClip) === blockScopeId)
+            .map((existingClip) => String(existingClip.source_asset_id || existingClip.asset_id || existingClip.asset?.asset_id || "").trim())
+            .filter(Boolean)
+        );
+        const candidateReuseKey = getCandidateReuseAssetKey(candidate);
+        if (candidateReuseKey && usedScopeAssetKeys.has(candidateReuseKey)) {
+          const distinctCriticalAlternative = (ranked || [])
+            .filter((entry) => {
+              if (!entry?.candidate || entry.hard_blocked) return false;
+              const alternative = entry.candidate;
+              const alternativeReuseKey = getCandidateReuseAssetKey(alternative);
+              if (!alternativeReuseKey || usedScopeAssetKeys.has(alternativeReuseKey)) return false;
+              if (alternative.editorial_approved !== true) return false;
+              if (alternative.critical_slot_allowed === false) return false;
+              if (!candidatePassesCriticalEditorialGate({ candidate: alternative, block })) return false;
+              if (!["exact", "regional"].includes(String(alternative.visual_truth_status || "").toLowerCase())) return false;
+              if (slotRole === "opening_establishing" && alternative.opening_allowed === false) return false;
+              if (slotRole === "closing_payoff" && alternative.closing_allowed === false) return false;
+              return true;
+            })
+            .sort((left, right) => {
+              const leftSameScene = Number(Number(left.candidate?.scene_index || 0) === Number(block.scene_index || 0));
+              const rightSameScene = Number(Number(right.candidate?.scene_index || 0) === Number(block.scene_index || 0));
+              return rightSameScene - leftSameScene || Number(right.score || 0) - Number(left.score || 0);
+            })[0];
+          if (distinctCriticalAlternative?.candidate) {
+            selected = distinctCriticalAlternative;
+            candidate = distinctCriticalAlternative.candidate;
+            timelineRepairActions.push("critical_distinct_asset_swap");
+          }
+        }
       }
       if (isBoundaryFirstSlot && hardBoundaryPolicy.require_location_on_hard_boundary && expectedLocation) {
         const candidateCity = resolveCandidateCity({ candidate, expectedLocation });
@@ -1832,6 +1916,47 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
             .sort((left, right) => Number(right.editorial_confidence || right.confidence || 0) - Number(left.editorial_confidence || left.confidence || 0))[0];
           if (boundaryExactCandidate) {
             candidate = boundaryExactCandidate;
+          }
+        }
+      }
+      if (criticalSlot) {
+        const currentDiversityDecision = filterCandidatesByHardDiversity({
+          candidates: [candidate],
+          clips,
+          block,
+          slotRole,
+          criticalSlot,
+        });
+        if (currentDiversityDecision.bypass_required === true) {
+          const diversitySafeAlternative = (ranked || [])
+            .filter((entry) => {
+              if (!entry?.candidate || entry.hard_blocked) return false;
+              const alternative = entry.candidate;
+              if (alternative.id === candidate.id) return false;
+              if (alternative.editorial_approved !== true) return false;
+              if (alternative.critical_slot_allowed === false) return false;
+              if (!candidatePassesCriticalEditorialGate({ candidate: alternative, block })) return false;
+              if (!["exact", "regional"].includes(String(alternative.visual_truth_status || "").toLowerCase())) return false;
+              if (slotRole === "opening_establishing" && alternative.opening_allowed === false) return false;
+              if (slotRole === "closing_payoff" && alternative.closing_allowed === false) return false;
+              const alternativeDecision = filterCandidatesByHardDiversity({
+                candidates: [alternative],
+                clips,
+                block,
+                slotRole,
+                criticalSlot,
+              });
+              return alternativeDecision.bypass_required !== true;
+            })
+            .sort((left, right) => {
+              const leftSameScene = Number(Number(left.candidate?.scene_index || 0) === Number(block.scene_index || 0));
+              const rightSameScene = Number(Number(right.candidate?.scene_index || 0) === Number(block.scene_index || 0));
+              return rightSameScene - leftSameScene || Number(right.score || 0) - Number(left.score || 0);
+            })[0];
+          if (diversitySafeAlternative?.candidate) {
+            selected = diversitySafeAlternative;
+            candidate = diversitySafeAlternative.candidate;
+            timelineRepairActions.push("critical_diversity_safe_swap");
           }
         }
       }
@@ -1892,12 +2017,20 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         ...(candidate.detected_visual_categories || []),
         ...((chosenFeatures?.detectedVisualCategories) || []),
       ]);
+      const finalDiversityDecision = filterCandidatesByHardDiversity({
+        candidates: [candidate],
+        clips,
+        block,
+        slotRole,
+        criticalSlot,
+      });
+      const finalDiversityBypassRequired = finalDiversityDecision.bypass_required === true;
       registerClipUsage({ usage, block, candidate, clipIndex: clips.length + 1 });
       if (candidate.from_clip_library && candidate.clip_library_id) {
         await markClipUsed({ clipId: candidate.clip_library_id }).catch(() => null);
       }
       if (criticalSlot && ["free", "generated"].includes(String(candidate.source_tier || "free").toLowerCase())) {
-        const blockKey = String(block.block_id || block.id || block.scene_index || "unknown_block");
+        const blockKey = resolveBlockScopeId(block) || "unknown_block";
         freeCriticalUsageByBlock.set(blockKey, Number(freeCriticalUsageByBlock.get(blockKey) || 0) + 1);
       }
 
@@ -2032,8 +2165,8 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
           ...(FOOD_VISUAL_INTENTS.has(String(block.visual_intent || "").toLowerCase()) && !themeEvidenceMatched ? ["theme_evidence_missing_for_intent"] : []),
           ...(microMoment?.needs_visual_proof === true && Number(microCompositeScore || 0) < 0.52 ? ["micro_proof_not_strong_enough"] : []),
           ...(microMoment && Number(microTimingScore || 0) < 0.4 ? ["micro_timing_low_precision"] : []),
-          ...(diversityFilter.bypass_required ? ["diversity_hard_filter_bypassed"] : []),
-          ...(criticalSlot && diversityFilter.bypass_required ? ["diversity_bypass_on_critical_slot"] : []),
+          ...(finalDiversityBypassRequired ? ["diversity_hard_filter_bypassed"] : []),
+          ...(criticalSlot && finalDiversityBypassRequired ? ["diversity_bypass_on_critical_slot"] : []),
           ...(selected?.hard_blocked ? ["hard_boundary_candidate_forced"] : []),
           ...(diversitySelection.forced ? ["diversity_quota_enforced"] : []),
           ...boundaryForcedViolationCodes,
@@ -2077,6 +2210,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
   if (boundaryRepairActions.length) {
     hardBoundaryValidation = evaluateHardBoundaryDeterministic({ clips, microBlocks, hardBoundaryPolicy });
   }
+  refreshFinalDiversityViolationCodesInPlace({ clips });
 
   const timelineSyncMetricsBase = computeTimelineSyncMetrics({
     clips,

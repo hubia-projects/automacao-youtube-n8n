@@ -3,7 +3,7 @@ const { config } = require("../config/env");
 const { logger } = require("../utils/logger");
 const { writeJsonAtomic, readJsonSafe } = require("../utils/fileUtils");
 const { loadState, ensureVideoStructure, updateState } = require("./stateService");
-const { transcribeWithWordTimestamps } = require("./openaiService");
+const { transcribeWithGemini } = require("./geminiService");
 const { buildMicroSegmentsFromAudio } = require("./microMomentPlannerService");
 
 const FALLBACK_WPM = 144;
@@ -223,14 +223,15 @@ const analyzeAudio = async ({ videoId }) => {
   let provider = "none";
 
   try {
-    const whisperData = await transcribeWithWordTimestamps({ audioPath: state.audio_path, videoId });
-    if (whisperData && whisperData.words && whisperData.words.length > 3) {
-      audioIntelligence = whisperData;
-      provider = "openai_whisper_word_timestamps";
-      logger.info(`audioIntelligence: transcrição concluída com ${whisperData.words.length} palavras`);
+    const transcriptText = await transcribeWithGemini({ audioPath: state.audio_path, format: "text", videoId });
+    if (transcriptText) {
+      const audioDuration = Math.max(10, Number(state.duration_seconds || 0));
+      audioIntelligence = buildFallbackWordTiming({ scriptText: transcriptText, audioDuration });
+      provider = "gemini_transcription_proportional_timing";
+      logger.info(`audioIntelligence: transcrição Gemini concluída com ${audioIntelligence.words.length} palavras`);
     }
   } catch (error) {
-    logger.warn("audioIntelligence: falha na transcrição word-level OpenAI, usando fallback", { message: error.message });
+    logger.warn("audioIntelligence: falha na transcrição Gemini, usando fallback", { message: error.message });
   }
 
   if (!audioIntelligence) {

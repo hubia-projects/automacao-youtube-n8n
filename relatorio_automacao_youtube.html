@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Relatório: Análise de Automação YouTube</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;700&display=swap');
+
+  :root {
+    --bg: #0b0c10;
+    --bg2: #131620;
+    --bg3: #1a1e2e;
+    --accent: #00e5ff;
+    --accent2: #ff4757;
+    --accent3: #ffd32a;
+    --green: #2ed573;
+    --text: #e8ecf0;
+    --muted: #6b7280;
+    --border: rgba(255,255,255,0.07);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    line-height: 1.7;
+    min-height: 100vh;
+  }
+
+  .noise {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    opacity: 0.4;
+  }
+
+  .wrapper { position: relative; z-index: 1; max-width: 900px; margin: 0 auto; padding: 40px 24px 80px; }
+
+  /* Header */
+  .header { text-align: center; padding: 60px 0 50px; border-bottom: 1px solid var(--border); margin-bottom: 50px; }
+  .tag { display: inline-block; font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 3px; color: var(--accent); text-transform: uppercase; border: 1px solid var(--accent); padding: 4px 12px; border-radius: 2px; margin-bottom: 20px; }
+  h1 { font-size: clamp(28px, 5vw, 44px); font-weight: 700; line-height: 1.15; margin-bottom: 16px; }
+  h1 span { color: var(--accent); }
+  .header p { color: var(--muted); font-size: 15px; }
+
+  /* Section */
+  .section { margin-bottom: 56px; }
+  .section-label { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 4px; color: var(--accent); text-transform: uppercase; margin-bottom: 8px; }
+  .section-title { font-size: 24px; font-weight: 700; margin-bottom: 24px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+  .section-title .num { color: var(--accent2); margin-right: 8px; font-family: 'Space Mono', monospace; }
+
+  p { margin-bottom: 14px; color: #c8cdd6; font-size: 15px; }
+
+  /* Cards */
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 24px; margin-bottom: 16px; }
+  .card-title { font-weight: 700; font-size: 16px; margin-bottom: 10px; display: flex; align-items: center; gap: 10px; }
+  .badge { font-family: 'Space Mono', monospace; font-size: 10px; padding: 3px 8px; border-radius: 3px; font-weight: 400; }
+  .badge-good { background: rgba(46,213,115,0.15); color: var(--green); border: 1px solid rgba(46,213,115,0.3); }
+  .badge-bad { background: rgba(255,71,87,0.15); color: var(--accent2); border: 1px solid rgba(255,71,87,0.3); }
+  .badge-warn { background: rgba(255,211,42,0.15); color: var(--accent3); border: 1px solid rgba(255,211,42,0.3); }
+  .badge-info { background: rgba(0,229,255,0.1); color: var(--accent); border: 1px solid rgba(0,229,255,0.2); }
+
+  /* Meta grid */
+  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .meta-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 18px; }
+  .meta-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; font-family: 'Space Mono', monospace; }
+  .meta-card .val { font-size: 22px; font-weight: 700; font-family: 'Space Mono', monospace; }
+  .val-ref { color: var(--green); }
+  .val-my { color: var(--accent2); }
+
+  /* Comparação */
+  .compare-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .compare-col { padding: 16px; border-radius: 6px; font-size: 14px; }
+  .compare-col.good { background: rgba(46,213,115,0.06); border: 1px solid rgba(46,213,115,0.2); }
+  .compare-col.bad { background: rgba(255,71,87,0.06); border: 1px solid rgba(255,71,87,0.2); }
+  .compare-col .col-title { font-weight: 700; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; font-family: 'Space Mono', monospace; }
+  .good .col-title { color: var(--green); }
+  .bad .col-title { color: var(--accent2); }
+
+  /* Flow steps */
+  .flow { position: relative; }
+  .flow-step { display: flex; gap: 16px; margin-bottom: 6px; }
+  .flow-line { display: flex; flex-direction: column; align-items: center; }
+  .step-num { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+  .step-num.current { background: var(--accent2); color: white; }
+  .step-num.new { background: var(--accent); color: var(--bg); }
+  .step-num.improve { background: var(--accent3); color: var(--bg); }
+  .step-num.ok { background: rgba(46,213,115,0.2); color: var(--green); border: 1px solid var(--green); }
+  .flow-connector { width: 2px; background: var(--border); flex-grow: 1; margin: 4px 0; min-height: 20px; }
+  .step-content { padding: 14px 0 24px; flex: 1; }
+  .step-content h3 { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+  .step-content p { font-size: 14px; margin-bottom: 6px; }
+
+  /* Problem list */
+  .problem-list { list-style: none; }
+  .problem-list li { padding: 14px 16px; background: var(--bg3); border-left: 3px solid var(--accent2); margin-bottom: 10px; border-radius: 0 6px 6px 0; font-size: 14px; }
+  .problem-list li strong { display: block; font-size: 14px; margin-bottom: 4px; color: white; }
+  .problem-list li span { color: #8b95a5; }
+
+  /* Highlight box */
+  .highlight { background: rgba(0,229,255,0.05); border: 1px solid rgba(0,229,255,0.2); border-radius: 8px; padding: 20px 24px; margin: 20px 0; }
+  .highlight h4 { color: var(--accent); font-size: 14px; margin-bottom: 8px; font-family: 'Space Mono', monospace; }
+  .highlight p { font-size: 14px; margin-bottom: 0; }
+
+  .warn-box { background: rgba(255,211,42,0.05); border: 1px solid rgba(255,211,42,0.2); border-radius: 8px; padding: 20px 24px; margin: 20px 0; }
+  .warn-box h4 { color: var(--accent3); font-size: 14px; margin-bottom: 8px; font-family: 'Space Mono', monospace; }
+
+  /* Frame visual evidence */
+  .evidence-note { font-size: 13px; font-style: italic; color: var(--muted); margin: 6px 0 16px; padding: 10px 14px; background: var(--bg3); border-radius: 4px; border-left: 2px solid var(--muted); }
+
+  /* Recommended flow */
+  .rec-step { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 12px; display: flex; gap: 16px; }
+  .rec-step-num { width: 36px; height: 36px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+  .rec-step-num.s-ok { background: rgba(46,213,115,0.15); color: var(--green); }
+  .rec-step-num.s-new { background: rgba(0,229,255,0.15); color: var(--accent); }
+  .rec-step-num.s-critical { background: rgba(255,71,87,0.15); color: var(--accent2); }
+  .rec-step-num.s-improve { background: rgba(255,211,42,0.15); color: var(--accent3); }
+  .rec-step-body h3 { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .rec-step-body p { font-size: 13px; color: #8b95a5; margin-bottom: 0; }
+
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+  .leg-item { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .leg-dot { width: 10px; height: 10px; border-radius: 3px; }
+
+  @media (max-width: 600px) {
+    .meta-grid, .compare-row { grid-template-columns: 1fr; }
+    h1 { font-size: 26px; }
+  }
+</style>
+</head>
+<body>
+<div class="noise"></div>
+<div class="wrapper">
+
+  <div class="header">
+    <div class="tag">Relatório Técnico</div>
+    <h1>Análise de <span>Automação YouTube</span><br>e Diagnóstico de Qualidade</h1>
+    <p>Comparativo entre vídeo referência e vídeo produzido + Plano de Melhoria do Fluxo</p>
+  </div>
+
+  <!-- PARTE 1: COMO O VÍDEO REFERÊNCIA FOI FEITO -->
+  <div class="section">
+    <div class="section-label">Análise 1</div>
+    <div class="section-title"><span class="num">01</span>Como o Vídeo Referência Foi Criado</div>
+
+    <p>O vídeo <strong>"Como a Rede Social Que Dominou o Brasil Desapareceu"</strong> tem 22 minutos, 720p, produzido pelo Google (tag nos metadados confirma isso). A análise visual frame a frame revela um fluxo sofisticado com múltiplas camadas de IA.</p>
+
+    <div class="highlight">
+      <h4>🔑 O Grande Diferencial</h4>
+      <p>O canal usa <strong>imagens geradas por IA (Midjourney/DALL-E/Sora)</strong> para cenas que precisam de contexto específico, combinadas com stock footage de alta qualidade para cenas genéricas. Isso elimina o problema do matching semântico ruim com clipes de estoque.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Evidências Visuais Encontradas nos Frames</div>
+      <ul class="problem-list">
+        <li>
+          <strong>🎬 Cena 1 (~0:00): Aérea de São Paulo à noite</strong>
+          <span>Stock footage de alta qualidade. Abre com emoção e contexto geográfico do Brasil.</span>
+        </li>
+        <li>
+          <strong>🎬 Cena 2 (~1:00): Servidores de data center</strong>
+          <span>Stock footage. Representa tecnologia e infraestrutura de forma visual.</span>
+        </li>
+        <li>
+          <strong>🎬 Cena 3 (~2:00): Escritório startup anos 2000</strong>
+          <span>Stock footage ou imagem IA. Contextualiza o período histórico da história.</span>
+        </li>
+        <li>
+          <strong>🎬 Cena 4 (~3:00): Homem idoso em escritório desorganizado com laptop</strong>
+          <span>Muito provável imagem gerada por IA — representa personagem específico da história (Orkut Büyükkökten?).</span>
+        </li>
+        <li>
+          <strong>🎬 Cena 5 (~4:00): Jovens brasileiros dos anos 2000 em computadores antigos</strong>
+          <span>IMAGEM GERADA POR IA. Recria ambientação específica dos anos 2000 no Brasil — impossível encontrar esse stock exato.</span>
+        </li>
+        <li>
+          <strong>🎬 Cena 6 (~6:00): Bar/boteco com amigos e notebook mostrando o Orkut</strong>
+          <span>IMAGEM GERADA POR IA. Cena hiperespecífica do Orkut sendo usada em contexto social brasileiro. Nenhum banco de imagem tem isso.</span>
+        </li>
+        <li>
+          <strong>🎬 Cena 7 (~10:00): Tela do Orkut com "Coming Soon"</strong>
+          <span>Mockup criado — reprodução da interface do Orkut com elementos animados.</span>
+        </li>
+        <li>
+          <strong>🎬 Cena 8 (~20:00): Escritório Google com logos Orkut/YouTube/Google+</strong>
+          <span>IMAGEM GERADA POR IA. Ambiente corporativo com branding específico do momento histórico.</span>
+        </li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Fluxo Estimado do Canal de Referência</div>
+      <div class="flow">
+        <div class="flow-step">
+          <div class="flow-line">
+            <div class="step-num ok">01</div>
+            <div class="flow-connector"></div>
+          </div>
+          <div class="step-content">
+            <h3>Geração de Roteiro com IA</h3>
+            <p>GPT-4/Claude gera roteiro narrativo dividido em blocos de 3-6 segundos cada, com descrição visual sugerida para cada bloco.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-line">
+            <div class="step-num ok">02</div>
+            <div class="flow-connector"></div>
+          </div>
+          <div class="step-content">
+            <h3>Narração TTS de Alta Qualidade</h3>
+            <p>ElevenLabs ou similar — voz natural PT-BR com prosódia humana. Extração de timestamps word-by-word via API.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-line">
+            <div class="step-num new">03</div>
+            <div class="flow-connector"></div>
+          </div>
+          <div class="step-content">
+            <h3>Classificação de Cenas (IA vs Stock)</h3>
+            <p>IA classifica cada bloco do roteiro: cenas com contexto histórico/específico → gerar com IA de imagem. Cenas genéricas → buscar stock.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-line">
+            <div class="step-num new">04</div>
+            <div class="flow-connector"></div>
+          </div>
+          <div class="step-content">
+            <h3>Geração de Imagens/Vídeos com IA</h3>
+            <p>Midjourney/DALL-E para imagens estáticas + Ken Burns effect. Sora/Runway/Kling para clipes de vídeo gerados. Prompts criados automaticamente a partir do roteiro.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-line">
+            <div class="step-num improve">05</div>
+            <div class="flow-connector"></div>
+          </div>
+          <div class="step-content">
+            <h3>Busca de Stock Footage (Semântica)</h3>
+            <p>Para cenas genéricas: Pexels/Pixabay API com busca por embedding semântico (CLIP), não só keywords. Filtragem por resolução e qualidade.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-line">
+            <div class="step-num new">06</div>
+            <div class="flow-connector"></div>
+          </div>
+          <div class="step-content">
+            <h3>Criação de Mockups e Assets Visuais</h3>
+            <p>Interfaces de apps e sites (Orkut, Facebook, etc.) criados como assets visuais animados para ilustrar eventos digitais do roteiro.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-line">
+            <div class="step-num improve">07</div>
+            <div class="flow-connector"></div>
+          </div>
+          <div class="step-content">
+            <h3>Montagem e Sincronização com Audio</h3>
+            <p>Timeline construída por segmento de áudio. Cada clipe é selecionado com base em relevância semântica ao texto narrado naquele momento.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-line">
+            <div class="step-num new">08</div>
+            <div class="flow-connector"></div>
+          </div>
+          <div class="step-content">
+            <h3>Pós-produção</h3>
+            <p>Música de fundo (royalty-free), títulos/lower thirds, transições crossfade, color grading consistente em todo o vídeo.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PARTE 2: COMPARAÇÃO DOS 2 VÍDEOS -->
+  <div class="section">
+    <div class="section-label">Análise 2</div>
+    <div class="section-title"><span class="num">02</span>Comparativo: Seu Vídeo vs Canal Referência</div>
+
+    <div class="meta-grid">
+      <div class="meta-card">
+        <div class="label">Referência — Duração</div>
+        <div class="val val-ref">22:00 min</div>
+      </div>
+      <div class="meta-card">
+        <div class="label">Seu Vídeo — Duração</div>
+        <div class="val val-my">2:41 min</div>
+      </div>
+      <div class="meta-card">
+        <div class="label">Referência — Resolução/FPS</div>
+        <div class="val val-ref">720p 30fps</div>
+      </div>
+      <div class="meta-card">
+        <div class="label">Seu Vídeo — Resolução/FPS</div>
+        <div class="val val-my">720p 30fps</div>
+      </div>
+    </div>
+
+    <div class="compare-row">
+      <div class="compare-col good">
+        <div class="col-title">✅ Canal Referência</div>
+        Cada imagem é diretamente relacionada ao texto narrado naquele momento. Bar com Orkut → está falando de Orkut. Jovens anos 2000 → falando do Brasil naquela época. Coerência narrativa 10/10.
+      </div>
+      <div class="compare-col bad">
+        <div class="col-title">❌ Seu Vídeo</div>
+        Frames analisados mostram: corredor escuro, barraca de comida de rua (aparece 2x repetida), farol em pôr do sol de Portugal, bandeira portuguesa, restaurante elegante, vale montanhoso. Nenhuma dessas imagens tem relação entre si ou com o tema narrado.
+      </div>
+    </div>
+
+    <div class="compare-row">
+      <div class="compare-col good">
+        <div class="col-title">✅ Canal Referência — Tipos de Imagem</div>
+        Mix inteligente: imagens IA para cenas específicas + stock footage de alta qualidade para genéricas. Todas as imagens têm qualidade profissional consistente.
+      </div>
+      <div class="compare-col bad">
+        <div class="col-title">❌ Seu Vídeo — Tipos de Imagem</div>
+        Apenas stock footage genérico, sem imagens geradas por IA. Qualidade inconsistente — alguns clipes escuros, outros com composições estranhas.
+      </div>
+    </div>
+
+    <div class="compare-row">
+      <div class="compare-col good">
+        <div class="col-title">✅ Canal Referência — Ritmo</div>
+        Cortes sincronizados com o ritmo da narração. Imagens mudam no tempo certo, acompanhando as pausas naturais da voz.
+      </div>
+      <div class="compare-col bad">
+        <div class="col-title">❌ Seu Vídeo — Ritmo</div>
+        Clipes alternando de forma abrupta e sem conexão com o áudio. O mesmo clipe de barraca de comida dura +40 segundos (frame 20s e 40s são idênticos).
+      </div>
+    </div>
+
+    <div class="compare-row">
+      <div class="compare-col good">
+        <div class="col-title">✅ Canal Referência — Pós-produção</div>
+        Música ambiente de fundo, transições suaves, possivelmente legendas e elementos gráficos no vídeo. Color grading consistente (tons quentes e frios bem usados).
+      </div>
+      <div class="compare-col bad">
+        <div class="col-title">❌ Seu Vídeo — Pós-produção</div>
+        Sem música de fundo detectada. Sem títulos ou textos on-screen. Sem transições. Sem color grading. Cortes crus entre clipes completamente diferentes.
+      </div>
+    </div>
+
+    <div class="evidence-note">
+      📊 Evidência técnica: A análise de scene-cuts no seu vídeo mostra 40+ cortes em 2min41s, mas os frames vizinhos revelam que os mesmos clipes (mean color values quase idênticos) se repetem ciclicamente — confirmando que o algoritmo de matching está reciclando os mesmos clipes.
+    </div>
+  </div>
+
+  <!-- PARTE 2: DIAGNÓSTICO COMPLETO -->
+  <div class="section">
+    <div class="section-label">Diagnóstico</div>
+    <div class="section-title"><span class="num">03</span>Relatório: O Que Está Mal no Seu Vídeo</div>
+
+    <ul class="problem-list">
+      <li>
+        <strong>🔴 CRÍTICO — Matching semântico não funciona</strong>
+        <span>O maior problema. O algoritmo está buscando clipes por keywords superficiais (ex: "Portugal" → pega tudo sobre Portugal sem filtrar por relevância com o trecho específico do roteiro). Resultado: imagens genéricas e desconexas.</span>
+      </li>
+      <li>
+        <strong>🔴 CRÍTICO — Repetição de clipes</strong>
+        <span>A barraca de comida de rua aparece por quase 40 segundos, representando a maior parte do vídeo. O sistema não está detectando nem evitando repetição de clipes já usados.</span>
+      </li>
+      <li>
+        <strong>🔴 CRÍTICO — Nenhuma imagem gerada por IA</strong>
+        <span>Sem geração de IA (Midjourney/Runway/Sora), é impossível criar cenas específicas ao tema. Stock footage genérico nunca vai casar perfeitamente com um roteiro específico. Esse é o maior gap em relação ao referência.</span>
+      </li>
+      <li>
+        <strong>🟠 GRAVE — Ausência de pós-produção</strong>
+        <span>Sem música de fundo, o vídeo soa "vazio" e amateur. Sem títulos/textos on-screen, o conteúdo perde impacto visual. Sem transições, os cortes parecem bugs.</span>
+      </li>
+      <li>
+        <strong>🟠 GRAVE — Indexação temporal por segmento de áudio não funciona</strong>
+        <span>Os clipes não estão sendo selecionados frame-a-frame com base no conteúdo narrado naquele exato segundo. A lógica de matching precisa ser por unidade de sentença/frase, não por tema geral do vídeo.</span>
+      </li>
+      <li>
+        <strong>🟡 MODERADO — Clipes de baixa qualidade visual</strong>
+        <span>Frame 001 mostra um corredor muito escuro, quase ilegível. A etapa de seleção precisa filtrar por brilho médio, sharpness, ausência de artefatos.</span>
+      </li>
+      <li>
+        <strong>🟡 MODERADO — Transcrição das cenas insuficiente</strong>
+        <span>A descrição gerada pelo Gemini para cada mini-trecho provavelmente está genérica demais (ex: "pessoas caminhando") para permitir matching preciso com o roteiro.</span>
+      </li>
+      <li>
+        <strong>🟡 MODERADO — Vídeo muito curto</strong>
+        <span>2:41min é muito curto para conteúdo documental/informativo. O algoritmo está "ficando sem clipes" e repetindo os poucos que encontrou.</span>
+      </li>
+    </ul>
+  </div>
+
+  <!-- PARTE 3: FLUXO CORRIGIDO -->
+  <div class="section">
+    <div class="section-label">Solução</div>
+    <div class="section-title"><span class="num">04</span>Como Deve Ser o Seu Fluxo Corrigido</div>
+
+    <div class="legend">
+      <div class="leg-item"><div class="leg-dot" style="background:#2ed573"></div> Você já tem (manter)</div>
+      <div class="leg-item"><div class="leg-dot" style="background:#00e5ff"></div> Novo (adicionar)</div>
+      <div class="leg-item"><div class="leg-dot" style="background:#ffd32a"></div> Melhorar</div>
+      <div class="leg-item"><div class="leg-dot" style="background:#ff4757"></div> Corrigir urgente</div>
+    </div>
+
+    <div class="rec-step">
+      <div class="rec-step-num s-ok">01</div>
+      <div class="rec-step-body">
+        <h3>Geração de Tema + Roteiro Estruturado <span class="badge badge-good">Manter</span></h3>
+        <p>Continua com Gemini/OpenAI. Melhoria: o roteiro deve ser entregue em JSON estruturado com: <code>{ "block_id": 1, "text": "...", "duration_estimate": 5, "visual_type": "specific|generic", "visual_description": "jovens anos 2000 usando Orkut no Brasil", "keywords": ["orkut", "social media", "2000s"] }</code>. O campo <strong>visual_type</strong> é crucial para decidir entre gerar IA ou buscar stock.</p>
+      </div>
+    </div>
+
+    <div class="rec-step">
+      <div class="rec-step-num s-ok">02</div>
+      <div class="rec-step-body">
+        <h3>TTS com Timestamps Word-by-Word <span class="badge badge-warn">Melhorar</span></h3>
+        <p>Multivozes_br_engine está OK, mas verifique se entrega timestamps por palavra. Se não, use ElevenLabs API (mais preciso) ou force-align com <strong>Whisper forced alignment</strong> (WhisperX). Você PRECISA saber exatamente quando cada palavra é dita para sincronizar os clipes.</p>
+      </div>
+    </div>
+
+    <div class="rec-step">
+      <div class="rec-step-num s-critical">03</div>
+      <div class="rec-step-body">
+        <h3>Geração de Imagens/Vídeos com IA <span class="badge badge-bad">NOVO — CRÍTICO</span></h3>
+        <p>Para todos os blocos marcados como <code>visual_type: "specific"</code>, gere imagens/vídeos com IA. Opções: <strong>Imagens estáticas</strong> → DALL-E 3 API ou Ideogram (melhores resultados para cenas humanas). <strong>Clipes curtos</strong> → Runway Gen-3, Kling AI, ou Pika. <strong>Ken Burns Effect</strong> → aplicar movimento nas imagens estáticas via ffmpeg (zoom + pan). Isso resolve o problema fundamental de não encontrar stock específico.</p>
+      </div>
+    </div>
+
+    <div class="rec-step">
+      <div class="rec-step-num s-critical">04</div>
+      <div class="rec-step-body">
+        <h3>Busca de Stock com Embedding Semântico <span class="badge badge-bad">CORRIGIR URGENTE</span></h3>
+        <p>Para blocos <code>visual_type: "generic"</code>. Abandone busca por keywords simples. Use <strong>CLIP (OpenAI)</strong>: encode a descrição textual de cada bloco do roteiro como embedding vetorial → encode thumbnails dos clipes → calcule cosine similarity → pegue os top-5 mais similares. Bibliotecas: <code>openai/clip-vit-base-patch32</code> via HuggingFace. Isso vai mudar completamente a qualidade do matching.</p>
+      </div>
+    </div>
+
+    <div class="rec-step">
+      <div class="rec-step-num s-critical">05</div>
+      <div class="rec-step-body">
+        <h3>Corte e Etiquetagem de Mini-trechos (com Qualidade) <span class="badge badge-bad">CORRIGIR URGENTE</span></h3>
+        <p>Na transcrição de cenas com Gemini Vision, force descrições detalhadas com prompt específico: <em>"Descreva em 1 frase o que acontece nessa cena incluindo: ambiente, pessoas, ação, época, humor/tom visual. Depois liste 5 tags relevantes."</em> Adicione filtros de qualidade: brilho médio > 40, sharpness score > threshold, sem clipes escuros ou borrados. Adicione hash perceptual para detectar e eliminar clipes duplicados/muito similares antes de usar.</p>
+      </div>
+    </div>
+
+    <div class="rec-step">
+      <div class="rec-step-num s-critical">06</div>
+      <div class="rec-step-body">
+        <h3>Montagem por Segmento de Áudio <span class="badge badge-bad">CORRIGIR URGENTE</span></h3>
+        <p>Quebre o áudio em segmentos de 3-7 segundos (por pausa natural na fala). Para cada segmento: (1) pegue o texto sendo narrado, (2) use CLIP para encontrar o clipe com maior similaridade a esse texto, (3) use o clipe com offset aleatório dentro do trecho disponível. Mantenha uma lista de <code>used_clips</code> e nunca repita o mesmo clipe. Se não encontrar clipe adequado → use imagem gerada por IA com Ken Burns.</p>
+      </div>
+    </div>
+
+    <div class="rec-step">
+      <div class="rec-step-num s-new">07</div>
+      <div class="rec-step-body">
+        <h3>Música de Fundo + Mixagem <span class="badge badge-info">NOVO</span></h3>
+        <p>Adicionar trilha sonora muda COMPLETAMENTE a percepção de qualidade. Use Pixabay Music API ou EpidemicSound para buscar música por mood (dramático, reflexivo, etc.) compatível com o tema. Mixar com ffmpeg: narração em volume 100%, música em 8-12%. Adicionar fade-in no início e fade-out no final.</p>
+      </div>
+    </div>
+
+    <div class="rec-step">
+      <div class="rec-step-num s-new">08</div>
+      <div class="rec-step-body">
+        <h3>Títulos, Textos On-Screen e Transições <span class="badge badge-info">NOVO</span></h3>
+        <p>Gere títulos automáticos com IA (momentos-chave do roteiro) e renderize com ffmpeg drawtext. Adicione crossfade de 0.3s entre cada clipe. Aplique color grading consistente (LUT) em todos os clipes para uniformizar o visual. Isso elimina o "choque visual" entre clipes de fontes diferentes.</p>
+      </div>
+    </div>
+
+    <div class="rec-step">
+      <div class="rec-step-num s-new">09</div>
+      <div class="rec-step-body">
+        <h3>QA Automatizado Antes do Upload <span class="badge badge-info">NOVO</span></h3>
+        <p>Antes de subir ao YouTube, rode uma checagem: (1) detectar clipes repetidos via hash, (2) verificar sincronização áudio-vídeo, (3) checar se há segmentos de silêncio ou frames pretos, (4) checar duração mínima (>8 min para monetização). Só sobe se passar em todos os checks.</p>
+      </div>
+    </div>
+
+    <div class="warn-box">
+      <h4>⚠️ Resumo das Prioridades</h4>
+      <p style="margin-bottom:8px"><strong>Prioridade 1 (faz mais diferença imediata):</strong> Implementar geração de imagens com DALL-E/Runway para cenas específicas + CLIP para matching semântico de stock.</p>
+      <p style="margin-bottom:8px"><strong>Prioridade 2:</strong> Adicionar música de fundo e transições crossfade — impacto na percepção de qualidade é enorme com pouco esforço.</p>
+      <p style="margin-bottom:0"><strong>Prioridade 3:</strong> Sistema de deduplicação de clipes para eliminar repetições + filtros de qualidade visual nos clipes selecionados.</p>
+    </div>
+  </div>
+
+  <div style="text-align:center; padding-top: 40px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; font-family: 'Space Mono', monospace;">
+    Análise gerada com base nos frames extraídos dos 2 vídeos enviados e descrição do fluxo atual.
+  </div>
+
+</div>
+</body>
+</html>

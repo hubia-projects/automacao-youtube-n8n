@@ -3,7 +3,7 @@ const path = require("path");
 const fs = require("fs-extra");
 const { DatabaseSync } = require("node:sqlite");
 const { config } = require("../config/env");
-const { runFfmpeg, probeMedia } = require("../utils/mediaUtils");
+const { runFfmpeg, probeMedia, extractFrameRawRgb } = require("../utils/mediaUtils");
 
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
 const unique = (values = []) => [...new Set((values || []).filter(Boolean))];
@@ -24,6 +24,98 @@ const safeJsonParse = (raw, fallback) => {
     return JSON.parse(raw);
   } catch {
     return fallback;
+  }
+};
+
+// M2 — Perceptual dedup constants
+const DHASH_MAX_DISTANCE = 6;  // ≤6 bits of 64 = ~90.6% similar
+const DHASH_DB_SCAN_LIMIT = 200;
+
+/**
+ * M2 — Compute dhash (difference hash, 8×8) for a video clip.
+ * Returns 16-char hex string (64 bits) or null on failure.
+ */
+const computeClipDhash = async (clipPath) => {
+  try {
+    // 9×8 pixels: 9 columns so we get 8 horizontal differences per row = 64 bits total
+    const buf = await extractFrameRawRgb({ inputPath: clipPath, timeSeconds: 0.5, width: 9, height: 8 });
+    if (!buf || buf.length < 9 * 8 * 3) return null;
+    let bits = 0n;
+    let bitIndex = 0;
+    for (let row = 0; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        const o1 = (row * 9 + col) * 3;
+        const o2 = (row * 9 + col + 1) * 3;
+        const luma1 = buf[o1] * 0.299 + buf[o1 + 1] * 0.587 + buf[o1 + 2] * 0.114;
+        const luma2 = buf[o2] * 0.299 + buf[o2 + 1] * 0.587 + buf[o2 + 2] * 0.114;
+        if (luma1 < luma2) bits |= (1n << BigInt(bitIndex));
+        bitIndex++;
+      }
+    }
+    return bits.toString(16).padStart(16, "0");
+  } catch {
+    return null;
+  }
+};
+
+const hammingDistance = (hexA, hexB) => {
+  if (!hexA || !hexB || hexA.length !== hexB.length) return 64;
+  let diff = BigInt("0x" + hexA) ^ BigInt("0x" + hexB);
+  let count = 0;
+  while (diff > 0n) { count += Number(diff & 1n); diff >>= 1n; }
+  return count;
+};
+
+// M6 — Visual quality filter constants
+const QUALITY_MIN_BRIGHTNESS = 40;   // YAVG on 0-255 scale
+const QUALITY_MIN_VARIANCE = 100;    // pixel luma variance
+
+/**
+ * M6 — Assess visual quality of a clip.
+ * Returns { brightness, variance, pass } or null on error (fail-open).
+ */
+const assessClipVisualQuality = async ({ clipPath }) => {
+  try {
+    // Brightness via ffmpeg signalstats → YAVG in stderr
+    let brightness = 128;
+    try {
+      const bResult = await runFfmpeg([
+        "-hide_banner", "-loglevel", "info",
+        "-i", clipPath,
+        "-vf", "signalstats",
+        "-an", "-f", "null", "-",
+      ]);
+      const yavgMatch = String(bResult?.stderr || bResult || "").match(/YAVG:(\d+\.?\d*)/);
+      if (yavgMatch) brightness = parseFloat(yavgMatch[1]);
+    } catch (e) {
+      const yavgMatch = String(e?.stderr || "").match(/YAVG:(\d+\.?\d*)/);
+      if (yavgMatch) brightness = parseFloat(yavgMatch[1]);
+    }
+
+    // Variance via extractFrameRawRgb 64×64 luma values
+    let variance = 200;  // default passes if frame extraction fails
+    try {
+      const frameBuf = await extractFrameRawRgb({ inputPath: clipPath, timeSeconds: 0.5, width: 64, height: 64 });
+      if (frameBuf && frameBuf.length >= 3) {
+        const pixelCount = Math.floor(frameBuf.length / 3);
+        let sum = 0;
+        for (let i = 0; i < pixelCount; i++) {
+          sum += frameBuf[i * 3] * 0.299 + frameBuf[i * 3 + 1] * 0.587 + frameBuf[i * 3 + 2] * 0.114;
+        }
+        const mean = sum / pixelCount;
+        let varSum = 0;
+        for (let i = 0; i < pixelCount; i++) {
+          const luma = frameBuf[i * 3] * 0.299 + frameBuf[i * 3 + 1] * 0.587 + frameBuf[i * 3 + 2] * 0.114;
+          varSum += (luma - mean) ** 2;
+        }
+        variance = varSum / pixelCount;
+      }
+    } catch { /* use default */ }
+
+    const pass = brightness >= QUALITY_MIN_BRIGHTNESS && variance >= QUALITY_MIN_VARIANCE;
+    return { brightness: round3(brightness), variance: round3(variance), pass };
+  } catch {
+    return null;  // fail-open
   }
 };
 
@@ -190,6 +282,8 @@ const ensureDb = () => {
     CREATE INDEX IF NOT EXISTS idx_clips_scene_status ON clips(scene_index, status);
     CREATE INDEX IF NOT EXISTS idx_clips_asset ON clips(asset_id);
   `);
+  // M2 migration: add perceptual_hash column if not present
+  try { db.exec(`ALTER TABLE clips ADD COLUMN perceptual_hash TEXT DEFAULT ''`); } catch { /* already exists */ }
   return db;
 };
 
@@ -448,6 +542,7 @@ const registerClip = async ({
   initialStatus = "raw_cut",
   policyVersion = config.CLIP_LIBRARY_POLICY_VERSION || "v1",
   metadata = {},
+  perceptualHash = "",  // M2: pre-computed dhash (passed from extractAndRegister)
 }) => {
   const sourceVideoPath = String(asset.local_path || "");
   if (!sourceVideoPath || !(await fs.pathExists(sourceVideoPath))) return null;
@@ -507,6 +602,20 @@ const registerClip = async ({
     sourceStartSec: normalizedStart,
     sourceEndSec: normalizedEnd,
   });
+
+  // M6 — Visual quality filter (fail-open: if check fails, proceed anyway)
+  const qualityResult = await assessClipVisualQuality({ clipPath: outputPath });
+  if (qualityResult && !qualityResult.pass) {
+    const { logger } = require("../utils/logger");
+    logger.info("[M6] Quality filter: REJECTED", {
+      videoId, clipId,
+      brightness: qualityResult.brightness,
+      variance: qualityResult.variance,
+    });
+    await fs.remove(outputPath).catch(() => null);
+    return null;
+  }
+
   const mediaInfo = await probeMedia(outputPath).catch(() => ({ duration: normalizedEnd - normalizedStart }));
   const durationSec = round3(mediaInfo.duration || (normalizedEnd - normalizedStart));
   const history = appendHistory([], {
@@ -522,13 +631,13 @@ const registerClip = async ({
       source_video_path, source_start_sec, source_end_sec, duration_sec, clip_path,
       created_at, updated_at, status, tags_semanticas_json, entities_json, location_json,
       shot_type, confidence, visual_intent, approval_context_json, usage_count, last_used_at,
-      history_json, metadata_json
+      history_json, metadata_json, perceptual_hash
     ) VALUES (
       @clip_id, @clip_signature, @policy_version, @video_id, @scene_index, @block_id, @asset_id,
       @source_video_path, @source_start_sec, @source_end_sec, @duration_sec, @clip_path,
       @created_at, @updated_at, @status, @tags_semanticas_json, @entities_json, @location_json,
       @shot_type, @confidence, @visual_intent, @approval_context_json, @usage_count, @last_used_at,
-      @history_json, @metadata_json
+      @history_json, @metadata_json, @perceptual_hash
     )
   `);
 
@@ -559,6 +668,7 @@ const registerClip = async ({
     last_used_at: "",
     history_json: JSON.stringify(history),
     metadata_json: JSON.stringify(metadata || {}),
+    perceptual_hash: String(perceptualHash || ""),
   });
 
   return getClipById({ clipId });
@@ -596,6 +706,33 @@ const extractAndRegister = async ({
         shotType: microWindow.visual_features?.shot_type || microWindow.shot_type || "",
         visualIntent: microWindow.scene_visual_intent || microWindow.visual_intent || "",
       });
+      // M2 — Perceptual dedup: check hash against existing clips for this video
+      let perceptualHash = null;
+      const conn2 = ensureDb();
+      const existingCount = conn2.prepare(`SELECT COUNT(*) as c FROM clips WHERE video_id = ?`).get(String(videoId || ""));
+      if (Number(existingCount?.c || 0) >= 3) {
+        // Only run dedup when there are enough clips to compare against
+        const tempDhashPath = path.join(path.dirname(String(asset.local_path || "")), `_dhash_probe_${Date.now()}.mp4`);
+        try {
+          await extractClipFile({ inputPath: String(asset.local_path || ""), outputPath: tempDhashPath, sourceStartSec, sourceEndSec });
+          perceptualHash = await computeClipDhash(tempDhashPath);
+          if (perceptualHash) {
+            const rows = conn2.prepare(
+              `SELECT perceptual_hash FROM clips WHERE video_id = ? AND perceptual_hash != '' LIMIT ${DHASH_DB_SCAN_LIMIT}`
+            ).all(String(videoId || ""));
+            const isDuplicate = rows.some((row) => hammingDistance(perceptualHash, row.perceptual_hash) <= DHASH_MAX_DISTANCE);
+            if (isDuplicate) {
+              const { logger } = require("../utils/logger");
+              logger.info("[M2] Perceptual dedup: clip descartado por similaridade visual", { videoId, sourceStartSec, perceptualHash });
+              await fs.remove(tempDhashPath).catch(() => null);
+              continue;
+            }
+          }
+        } catch { /* fail-open */ } finally {
+          await fs.remove(tempDhashPath).catch(() => null);
+        }
+      }
+
       const clip = await registerClip({
         videoId,
         sceneIndex: Number(microWindow.scene_index || sceneIndex || 0),
@@ -603,6 +740,7 @@ const extractAndRegister = async ({
         asset,
         sourceStartSec,
         sourceEndSec,
+        perceptualHash: perceptualHash || "",
         tagsSemanticas: unique([
           ...(microWindow.tags || []),
           ...(microWindow.detected_visual_categories || []),

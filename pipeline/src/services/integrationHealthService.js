@@ -1,16 +1,14 @@
 const fs = require("fs");
-const ffmpegPath = require("ffmpeg-static");
-const { basicOpenAIHealthcheck } = require("./openaiService");
 const { basicGeminiHealthcheck } = require("./geminiService");
 const { basicMultivozesHealthcheck, basicElevenLabsHealthcheck } = require("./ttsService");
 const { basicPexelsHealthcheck, basicPixabayHealthcheck } = require("./assetsService");
 const { basicTelegramHealthcheck } = require("./telegramService");
 const { basicYoutubeHealthcheck } = require("./youtubeService");
 const { config } = require("../config/env");
+const { ffmpegBinaryPath, hasUsableBinaryPath } = require("../utils/mediaUtils");
 
 const runIntegrationHealthchecks = async () => {
-  const [openai, gemini, multivozes, elevenlabs, pexels, pixabay, telegram, youtube] = await Promise.all([
-    basicOpenAIHealthcheck(),
+  const [gemini, multivozes, elevenlabs, pexels, pixabay, telegram, youtube] = await Promise.all([
     basicGeminiHealthcheck(),
     basicMultivozesHealthcheck(),
     basicElevenLabsHealthcheck(),
@@ -21,15 +19,15 @@ const runIntegrationHealthchecks = async () => {
   ]);
 
   const ffmpeg = {
-    configured: Boolean(ffmpegPath),
-    ok: Boolean(ffmpegPath && fs.existsSync(ffmpegPath)),
-    message: ffmpegPath || "ffmpeg-static não encontrado",
+    configured: Boolean(ffmpegBinaryPath),
+    ok: Boolean(ffmpegBinaryPath && (hasUsableBinaryPath(ffmpegBinaryPath) || ffmpegBinaryPath === "ffmpeg")),
+    message: ffmpegBinaryPath || "ffmpeg não encontrado",
   };
 
-  const checks = { openai, gemini, multivozes, elevenlabs, pexels, pixabay, telegram, youtube, ffmpeg };
+  const checks = { gemini, multivozes, elevenlabs, pexels, pixabay, telegram, youtube, ffmpeg };
 
   const mandatoryProviders = [
-    "openai",
+    "gemini",
     "telegram",
     "ffmpeg",
   ];

@@ -366,6 +366,7 @@ const classifyEditorialTaxonomy = ({
   const shotType = normalizeLabel(window.visual_features?.shot_type || window.shot_type || "");
   const hasWater = window.visual_features?.has_water === true || categoriesSet.has("river") || categoriesSet.has("coast");
   const hasPeople = window.visual_features?.has_people === true || categoriesSet.has("people_eating");
+  const expectedLocation = String(scene.expected_location || scene.location?.city || "").trim();
 
   let identityClass = "ambiguous_location";
   if (locationCountry && locationCountry !== "portugal" && locationConfidence >= 0.7) {
@@ -401,7 +402,7 @@ const classifyEditorialTaxonomy = ({
   }
 
   const riskFlags = [];
-  if (identityClass === "non_portugal_risk" || identityClass === "ambiguous_location") {
+  if (identityClass === "non_portugal_risk" || (identityClass === "ambiguous_location" && expectedLocation)) {
     riskFlags.push("geography_mismatch_risk");
   }
   if (genericCategoryCount > 0 && editorialUtility !== "critical_evidence") {
@@ -453,22 +454,33 @@ const evaluateVisualEvidenceV2Heuristic = ({ scene = {}, window = {}, asset = {}
   const tags = evidenceLayers.visual_observation.tags;
   const detectedObjects = evidenceLayers.visual_observation.detected_objects;
   const observationSummary = evidenceLayers.visual_observation.summary;
+  const visualEvidenceSource = String(evidenceLayers.visual_observation.visual_evidence_source || "").toLowerCase();
+  const providedDetectedCategories = unique(evidenceLayers.visual_observation.detected_visual_categories || []);
+  const trustProvidedDetectedCategories = visualEvidenceSource === "ai_generated_scene_alignment" && providedDetectedCategories.length > 0;
 
   // IMPORTANT: somente observação visual real entra como evidência editorial forte.
   // query/query_used/provider metadata não entram no texto de decisão visual.
   const detectedVisualCategories = unique([
-    ...evidenceLayers.visual_observation.detected_visual_categories,
-    ...detectVisualCategories({
+    ...providedDetectedCategories,
+    ...(trustProvidedDetectedCategories ? [] : detectVisualCategories({
       text: observationSummary,
       tags,
       objects: detectedObjects,
-    }),
+    })),
   ]);
   const requiredEvidence = unique(scene.required_visual_evidence || []);
   const allowedCategories = unique(scene.allowed_visual_categories || []);
   const forbiddenCategories = unique(scene.forbidden_visual_categories || []);
+  const matchedAllowedCategories = detectedVisualCategories.filter((category) => allowedCategories.includes(category));
+  const matchedForbiddenCategories = detectedVisualCategories.filter((category) => forbiddenCategories.includes(category));
+  const generatedCriticalAlignment = visualEvidenceSource === "ai_generated_scene_alignment"
+    && asset.ai_generated === true
+    && (
+      String(asset.search_reason || "").startsWith("blocking_scene_ai_")
+      || normalizeLabel(asset.content_slot_type || asset.content_need || "") === "generated_critical_repair"
+    );
 
-  const requiredEvidenceFound = requiredEvidence.filter((entry) => {
+  const inferredRequiredEvidenceFound = requiredEvidence.filter((entry) => {
     const normalized = normalizeLabel(entry).replace(/\s+/g, "_");
     const raw = normalizeLabel(entry);
     const aliases = REQUIRED_EVIDENCE_ALIASES[raw] || [];
@@ -477,9 +489,15 @@ const evaluateVisualEvidenceV2Heuristic = ({ scene = {}, window = {}, asset = {}
       || tags.some((tag) => normalizeLabel(tag).includes(raw))
       || detectedObjects.some((objectName) => normalizeLabel(objectName).includes(raw));
   });
+  const syntheticRequiredEvidenceFound = generatedCriticalAlignment && !requiredEvidence.length
+    ? matchedAllowedCategories.filter((category) => !GENERIC_COVERAGE_CATEGORIES.has(normalizeLabel(category))).slice(0, 2)
+    : [];
+  const requiredEvidenceFound = unique([
+    ...(Array.isArray(window.required_evidence_found) ? window.required_evidence_found : []),
+    ...inferredRequiredEvidenceFound,
+    ...syntheticRequiredEvidenceFound,
+  ]);
   const missingRequiredEvidence = requiredEvidence.filter((entry) => !requiredEvidenceFound.includes(entry));
-  const matchedAllowedCategories = detectedVisualCategories.filter((category) => allowedCategories.includes(category));
-  const matchedForbiddenCategories = detectedVisualCategories.filter((category) => forbiddenCategories.includes(category));
   let genericVisual = detectedVisualCategories.some((category) => ["aerial_city", "bridge", "river", "coast", "generic_street", "clouds", "landscape"].includes(category))
     && !matchedAllowedCategories.length;
   if (

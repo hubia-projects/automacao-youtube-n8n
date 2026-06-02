@@ -8,10 +8,34 @@ const {
   isProviderDisabledInLocalTest,
   getExternalApiStats,
 } = require("./externalApiControlService");
+const { runFfmpeg, probeMedia } = require("../utils/mediaUtils");
 
 const YOUTUBE_CAPTION_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl";
 const YOUTUBE_PARTNER_SCOPE = "https://www.googleapis.com/auth/youtubepartner";
 const unique = (values = []) => [...new Set((values || []).filter(Boolean))];
+const getMinimumVideoDurationSeconds = () => Math.max(0, Number(config.MIN_VIDEO_DURATION_SECONDS || 480));
+
+const getRenderDurationSnapshot = async (renderPath = "") => {
+  const resolvedRenderPath = String(renderPath || "").trim();
+  const minVideoDurationSeconds = getMinimumVideoDurationSeconds();
+  if (!resolvedRenderPath || !fs.existsSync(resolvedRenderPath)) {
+    return {
+      has_render_file: false,
+      render_duration_seconds: 0,
+      render_duration_pass: false,
+      min_video_duration_seconds: minVideoDurationSeconds,
+    };
+  }
+
+  const info = await probeMedia(resolvedRenderPath).catch(() => ({ duration: 0 }));
+  const renderDurationSeconds = Number(info.duration || 0);
+  return {
+    has_render_file: true,
+    render_duration_seconds: renderDurationSeconds,
+    render_duration_pass: renderDurationSeconds >= minVideoDurationSeconds,
+    min_video_duration_seconds: minVideoDurationSeconds,
+  };
+};
 
 const createYoutubeOAuthClient = () => {
   const oauth2Client = new google.auth.OAuth2(
@@ -252,6 +276,7 @@ const resolveEffectiveRenderValidation = (renderValidation = {}) => {
 const getProductionPreflightStatus = async ({ videoId = "", mockMode = false } = {}) => {
   const state = videoId ? await loadState(videoId).catch(() => null) : null;
   const effectiveValidation = resolveEffectiveRenderValidation(state?.render_validation || {});
+  const renderDuration = await getRenderDurationSnapshot(state?.render_path || "");
   const runtimeProfile = String(
     state?.render_validation?.qa_runtime_profile
     || (mockMode ? config.QA_RUNTIME_PROFILE_MOCK : config.QA_RUNTIME_PROFILE_PROD)
@@ -261,17 +286,23 @@ const getProductionPreflightStatus = async ({ videoId = "", mockMode = false } =
   const checks = {
     has_youtube_credentials: hasYoutubeCredentials(),
     has_provider_credentials: hasProviderCredentials(),
-    has_openai_key: Boolean(config.OPENAI_API_KEY),
+    has_gemini_key: Boolean(config.GEMINI_API_KEY),
     has_render_validation: Boolean(state?.render_validation),
     render_publishable: effectiveValidation.is_publishable === true,
     editorial_blocked: Boolean(state?.render_validation?.publish_blocked),
     hard_boundary_pass: effectiveValidation.hard_boundary_status === "pass",
+    has_render_file: renderDuration.has_render_file === true,
+    render_duration_seconds: Number(renderDuration.render_duration_seconds || 0),
+    min_video_duration_seconds: Number(renderDuration.min_video_duration_seconds || getMinimumVideoDurationSeconds()),
+    render_duration_pass: renderDuration.render_duration_pass === true,
   };
   const missing = [];
   if (!checks.has_provider_credentials) missing.push("PROVIDER_CREDENTIALS_MISSING");
-  if (!checks.has_openai_key) missing.push("OPENAI_API_KEY_MISSING");
+  if (!checks.has_gemini_key) missing.push("GEMINI_API_KEY_MISSING");
   if (strictRuntimeProfile && !checks.has_youtube_credentials) missing.push("YOUTUBE_CREDENTIALS_MISSING");
   if (strictRuntimeProfile && !checks.has_render_validation) missing.push("RENDER_VALIDATION_MISSING");
+  if (strictRuntimeProfile && !checks.has_render_file) missing.push("RENDER_FILE_MISSING");
+  if (strictRuntimeProfile && checks.has_render_file && !checks.render_duration_pass) missing.push("VIDEO_DURATION_BELOW_MINIMUM");
   if (strictRuntimeProfile && !checks.render_publishable) missing.push("RENDER_NOT_PUBLISHABLE");
   if (strictRuntimeProfile && checks.editorial_blocked) missing.push("EDITORIAL_BLOCKED");
   if (strictRuntimeProfile && !checks.hard_boundary_pass) missing.push("HARD_BOUNDARY_NOT_PASS");
@@ -288,6 +319,64 @@ const getProductionPreflightStatus = async ({ videoId = "", mockMode = false } =
       ...(state?.render_validation?.editorial_failure_codes || []),
     ]),
   };
+};
+
+/**
+ * M8 — Pre-upload QA checks.
+ * Throws on hard failures (duration < 480s, black frames > 2s).
+ * Logs warning for soft issues (duplicate consecutive clips).
+ */
+const runPreUploadQA = async ({ renderPath, state = {} }) => {
+  const { logger } = require("../utils/logger");
+  const minVideoDurationSeconds = getMinimumVideoDurationSeconds();
+
+  // 1. Duration check
+  const info = await probeMedia(renderPath).catch(() => ({ duration: 0 }));
+  const duration = Number(info.duration || 0);
+  if (duration < minVideoDurationSeconds) {
+    throw new Error(`[M8] QA FAIL: duração ${duration.toFixed(1)}s < ${minVideoDurationSeconds}s mínimos`);
+  }
+
+  // 2. Black frames check (segments > 2s)
+  let blackStderr = "";
+  try {
+    await runFfmpeg([
+      "-hide_banner", "-loglevel", "info",
+      "-i", renderPath,
+      "-vf", "blackdetect=d=2:pix_th=0.10",
+      "-an", "-f", "null", "-",
+    ]);
+  } catch (e) {
+    blackStderr = String(e?.stderr || e?.message || "");
+  }
+  const blackSegments = [];
+  const blackRegex = /black_start:([0-9.]+)\s+black_end:([0-9.]+)\s+black_duration:([0-9.]+)/g;
+  let bMatch;
+  while ((bMatch = blackRegex.exec(blackStderr)) !== null) {
+    blackSegments.push({ start: parseFloat(bMatch[1]), end: parseFloat(bMatch[2]), duration: parseFloat(bMatch[3]) });
+  }
+  const longBlacks = blackSegments.filter((seg) => seg.duration >= 2);
+  if (longBlacks.length > 0) {
+    throw new Error(`[M8] QA FAIL: ${longBlacks.length} segmento(s) preto(s) > 2s encontrado(s)`);
+  }
+
+  // 3. Duplicate consecutive clips (soft warning)
+  const clips = Array.isArray(state.render_timeline?.clips) ? state.render_timeline.clips : [];
+  let consecutiveCount = 1;
+  for (let i = 1; i < clips.length; i++) {
+    const prevPath = clips[i - 1]?.asset?.local_path || clips[i - 1]?.local_path || "";
+    const currPath = clips[i]?.asset?.local_path || clips[i]?.local_path || "";
+    if (prevPath && prevPath === currPath) {
+      consecutiveCount++;
+      if (consecutiveCount > 2) {
+        logger.warn(`[M8] WARN: asset repetido > 2 vezes consecutivas na posição ${i}`, {
+          path: String(currPath).slice(-60),
+        });
+      }
+    } else {
+      consecutiveCount = 1;
+    }
+  }
 };
 
 const ensureRenderIsPublishableForUpload = (state = {}) => {
@@ -325,9 +414,16 @@ const ensureRenderIsPublishableForUpload = (state = {}) => {
 };
 
 const uploadToYoutube = async ({ videoId, mockMode = false, privacyStatus = config.YOUTUBE_DEFAULT_PRIVACY }) => {
-  const state = await loadState(videoId);
+  let state = await loadState(videoId);
   const forceLocalMock = isProviderDisabledInLocalTest("youtube");
   const effectiveMockMode = mockMode || forceLocalMock;
+
+  if (!state.approved && config.AUTO_APPROVE_FOR_TESTING) {
+    state = await updateState(videoId, {
+      approved: true,
+      error_message: "",
+    });
+  }
 
   if (!state.approved) {
     throw new Error("Upload bloqueado: aprovação final não foi confirmada.");
@@ -383,6 +479,9 @@ const uploadToYoutube = async ({ videoId, mockMode = false, privacyStatus = conf
       state_path: nextState.state_path,
     };
   }
+
+  // M8 — Pre-upload QA (only runs for real uploads)
+  await runPreUploadQA({ renderPath: state.render_path, state });
 
   const oauth2Client = createYoutubeOAuthClient();
   const youtube = google.youtube({ version: "v3", auth: oauth2Client });
@@ -529,6 +628,9 @@ module.exports = {
   basicYoutubeHealthcheck,
   getProductionPreflightStatus,
   __test__: {
+    getMinimumVideoDurationSeconds,
     ensureRenderIsPublishableForUpload,
+    getRenderDurationSnapshot,
+    runPreUploadQA,
   },
 };

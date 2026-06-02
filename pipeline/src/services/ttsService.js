@@ -1,13 +1,11 @@
 const fs = require("fs-extra");
 const axios = require("axios");
-const ffmpegPath = require("ffmpeg-static");
 const ffmpeg = require("fluent-ffmpeg");
 const { config } = require("../config/env");
 const { ensureVideoStructure, updateState, loadState } = require("./stateService");
-const { ttsWithOpenAI } = require("./openaiService");
 const { sendWorkflowStatus } = require("./telegramService");
 const { logger } = require("../utils/logger");
-const { probeMedia } = require("../utils/mediaUtils");
+const { probeMedia, ffmpegBinaryPath } = require("../utils/mediaUtils");
 const {
   ensureMultivozesStarted,
   shouldAttemptMultivozesAutoStart,
@@ -15,9 +13,8 @@ const {
 } = require("./multivozesRuntimeService");
 const { appendPipelineEvent } = require("./pipelineEventLogService");
 
-ffmpeg.setFfmpegPath(ffmpegPath);
+ffmpeg.setFfmpegPath(ffmpegBinaryPath);
 
-const OPENAI_TTS_MAX_CHARS_PER_CHUNK = Number(process.env.OPENAI_TTS_MAX_CHARS_PER_CHUNK || 1200);
 const MULTIVOZES_CHUNK_MAX_CHARS = Number(process.env.MULTIVOZES_CHUNK_MAX_CHARS || 420);
 const MULTIVOZES_CHUNK_RETRIES = Math.max(1, Number(process.env.MULTIVOZES_CHUNK_RETRIES || 3));
 
@@ -126,7 +123,7 @@ const createMockAudio = async (audioPath, seconds = 95) => {
   await fs.remove(rawPath);
 };
 
-const splitTextForTts = (text = "", maxChars = OPENAI_TTS_MAX_CHARS_PER_CHUNK) => {
+const splitTextForTts = (text = "", maxChars = 1200) => {
   const normalized = String(text || "").replace(/\s+/g, " ").trim();
   if (!normalized) return [];
   if (normalized.length <= maxChars) return [normalized];
@@ -198,43 +195,7 @@ const concatenateAudioChunks = async ({ chunkPaths = [], outputPath }) => {
   }
 };
 
-const synthesizeOpenAiInChunks = async ({ text, outputPath, videoId = "" }) => {
-  const chunks = splitTextForTts(text);
-  if (!chunks.length) return null;
-
-  const chunksDir = `${outputPath}.chunks`;
-  const chunkPaths = [];
-  await fs.emptyDir(chunksDir);
-
-  try {
-    for (let index = 0; index < chunks.length; index += 1) {
-      const chunkText = chunks[index];
-      logger.info("OpenAI TTS chunked: sintetizando bloco", {
-        chunk_index: index + 1,
-        total_chunks: chunks.length,
-        text_length: chunkText.length,
-      });
-
-      const chunkBuffer = await ttsWithOpenAI({ text: chunkText, videoId });
-      if (!chunkBuffer) {
-        logger.warn("OpenAI TTS chunked: falha ao sintetizar bloco", {
-          chunk_index: index + 1,
-          total_chunks: chunks.length,
-        });
-        return null;
-      }
-
-      const chunkPath = `${chunksDir}/chunk-${String(index + 1).padStart(3, "0")}.mp3`;
-      await fs.writeFile(chunkPath, chunkBuffer);
-      chunkPaths.push(chunkPath);
-    }
-
-    await concatenateAudioChunks({ chunkPaths, outputPath });
-    return { chunks: chunkPaths.length };
-  } finally {
-    await fs.remove(chunksDir).catch(() => null);
-  }
-};
+const synthesizeOpenAiInChunks = async () => null;
 
 const ttsWithElevenLabs = async ({ text }) => {
   if (!hasElevenLabs()) return null;
@@ -427,8 +388,6 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "multivozes
 
   const paths = await ensureVideoStructure(videoId);
   const text = state.script_text.slice(0, 15000);
-  const shouldUseChunkedOpenAi = text.length > OPENAI_TTS_MAX_CHARS_PER_CHUNK;
-
   let audioBuffer = null;
   let audioWritten = false;
   let usedProvider = "mock";
@@ -464,7 +423,7 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "multivozes
           message: formatProviderError(error),
         },
       }).catch(() => null);
-      logger.warn("Multivozes falhou, tentando OpenAI TTS fallback", { message: formatProviderError(error) });
+      logger.warn("Multivozes falhou, seguindo para fallback local disponivel", { message: formatProviderError(error) });
     }
   }
 
@@ -476,27 +435,14 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "multivozes
         usedVoice = config.ELEVENLABS_VOICE_ID;
       }
     } catch (error) {
-      logger.warn("ElevenLabs falhou, tentando OpenAI TTS fallback", { message: error.message });
+      logger.warn("ElevenLabs falhou, seguindo para fallback local disponivel", { message: error.message });
     }
   }
 
-  if (!audioBuffer && !mockMode) {
-    if (shouldUseChunkedOpenAi) {
-      const chunkedResult = await synthesizeOpenAiInChunks({ text, outputPath: paths.audioPath, videoId });
-      if (chunkedResult) {
-        audioWritten = true;
-        usedProvider = provider === "openai" ? "openai_chunked" : "openai_tts_chunked_fallback";
-        usedVoice = "alloy";
-      }
-    }
-
-    if (!audioWritten) {
-      audioBuffer = await ttsWithOpenAI({ text, videoId });
-      if (audioBuffer) {
-        usedProvider = provider === "openai" ? "openai" : "openai_tts_fallback";
-        usedVoice = "alloy";
-      }
-    }
+  if (!audioBuffer && !audioWritten && !mockMode) {
+    logger.warn("Nenhum provider TTS ativo conseguiu sintetizar audio; usando mock", {
+      requested_provider: provider,
+    });
   }
 
   if (audioBuffer) {

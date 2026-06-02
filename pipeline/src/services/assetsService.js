@@ -57,7 +57,9 @@ const ASSET_SEMANTIC_ANALYSIS_CONCURRENCY = Math.max(1, Math.min(4, Number(confi
 const GEMINI_ESCALATION_MIN_CONFIDENCE = Number(config.GEMINI_VISION_ESCALATION_MIN_CONFIDENCE || 0.62);
 const GEMINI_ESCALATION_MAX_GENERIC_RATIO = Number(config.GEMINI_VISION_ESCALATION_MAX_GENERIC_RATIO || 0.5);
 const GEMINI_ASSET_ANALYSIS_TIMEOUT_MS = Math.max(8000, Math.min(20000, Number(config.GEMINI_VISION_TIMEOUT_MS || 45000)));
-const GEMINI_ASSET_ANALYSIS_MAX_RETRIES = Math.max(0, Math.min(1, Number(config.GEMINI_VISION_MAX_RETRIES || 2)));
+const GEMINI_ASSET_ANALYSIS_MAX_RETRIES = Math.max(0, Math.min(3, Number(config.GEMINI_VISION_MAX_RETRIES ?? 3)));
+const ASSET_STAGE_MAX_RUNTIME_MS = Math.max(60000, Number(config.ASSET_STAGE_MAX_RUNTIME_MS || process.env.ASSET_STAGE_MAX_RUNTIME_MS || 300000));
+const MIN_GEMINI_ASSET_ANALYSIS_BUDGET_MS = 4000;
 const MAX_WINDOWS_PER_ASSET_FOR_INDEX = Math.max(2, Math.min(6, Number(process.env.ASSET_MAX_WINDOWS_PER_ASSET || 3)));
 const MAX_WINDOWS_TOTAL_FOR_INDEX = Math.max(20, Math.min(160, Number(process.env.ASSET_MAX_WINDOWS_TOTAL || 80)));
 const SEARCH_RESULTS_PER_QUERY = Math.max(4, Number(config.ASSET_SEARCH_RESULTS_PER_QUERY || 12));
@@ -78,6 +80,7 @@ const CRITICAL_SLOT_PREFERRED_PROVIDER_RELIABILITY = Number(config.CRITICAL_SLOT
 const AUTO_REPAIR_MAX_ROUNDS = Math.max(0, Number(process.env.ASSET_AUTO_REPAIR_MAX_ROUNDS || 1));
 const GENERATED_VERTEX_PROVIDER = "vertex_ai_generated";
 const GENERATED_VERTEX_SOURCE_PREFIX = "vertex-ai-generated://";
+const CRITICAL_SCENE_GENERATION_MAX_ASSETS = 2;
 
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
 const mapWithConcurrency = async (items = [], concurrency = 1, mapper = async (item) => item) => {
@@ -341,6 +344,123 @@ const mergeFallbackPlan = ({ existingFallbackPlan = [], nextFallbackPlan = [], s
 
   return [...preservedFallbackPlan, ...nextFallbackPlan].sort(
     (left, right) => extractFallbackPlanSceneIndex(left) - extractFallbackPlanSceneIndex(right)
+  );
+};
+
+const buildAssetsStageProgress = ({
+  totalBlocks = 0,
+  completedBlocks = 0,
+  currentBlockId = "",
+  currentBlockLabel = "",
+  lastCompletedBlockId = "",
+  lastCompletedBlockLabel = "",
+  timedOut = false,
+  timeoutMessage = "",
+} = {}) => ({
+  stage: "assets",
+  blocks_total: Math.max(0, Number(totalBlocks || 0)),
+  blocks_completed: Math.max(0, Number(completedBlocks || 0)),
+  blocks_remaining: Math.max(0, Number(totalBlocks || 0) - Number(completedBlocks || 0)),
+  current_block_id: String(currentBlockId || ""),
+  current_block_label: String(currentBlockLabel || ""),
+  last_completed_block_id: String(lastCompletedBlockId || ""),
+  last_completed_block_label: String(lastCompletedBlockLabel || ""),
+  timed_out: Boolean(timedOut),
+  timeout_message: String(timeoutMessage || ""),
+  max_runtime_ms: ASSET_STAGE_MAX_RUNTIME_MS,
+});
+
+const hasAssetStageTimedOut = (stageStartedAt = 0) =>
+  (Date.now() - Number(stageStartedAt || 0)) >= ASSET_STAGE_MAX_RUNTIME_MS;
+
+const resolveGeminiAssetAnalysisBudget = ({ stageDeadlineAt = 0, analysisBudgetMs = 0 } = {}) => {
+  const hasStageDeadline = Number(stageDeadlineAt || 0) > 0;
+  const explicitBudgetMs = Math.max(0, Number(analysisBudgetMs || 0));
+
+  if (!hasStageDeadline && explicitBudgetMs <= 0) {
+    return {
+      timeoutMs: GEMINI_ASSET_ANALYSIS_TIMEOUT_MS,
+      maxRetries: GEMINI_ASSET_ANALYSIS_MAX_RETRIES,
+      availableBudgetMs: 0,
+    };
+  }
+
+  const remainingStageMs = hasStageDeadline
+    ? Math.max(0, Number(stageDeadlineAt) - Date.now())
+    : explicitBudgetMs;
+  const availableBudgetMs = explicitBudgetMs > 0
+    ? Math.min(remainingStageMs, explicitBudgetMs)
+    : remainingStageMs;
+
+  if (availableBudgetMs < MIN_GEMINI_ASSET_ANALYSIS_BUDGET_MS) {
+    return null;
+  }
+
+  const timeoutMs = Math.max(
+    MIN_GEMINI_ASSET_ANALYSIS_BUDGET_MS,
+    Math.min(GEMINI_ASSET_ANALYSIS_TIMEOUT_MS, availableBudgetMs)
+  );
+  const retryWindowMs = Math.max(0, availableBudgetMs - timeoutMs);
+
+  return {
+    timeoutMs,
+    maxRetries: Math.max(0, Math.min(
+      GEMINI_ASSET_ANALYSIS_MAX_RETRIES,
+      Math.floor(retryWindowMs / timeoutMs)
+    )),
+    availableBudgetMs,
+  };
+};
+
+const persistAssetsStageCheckpoint = async ({
+  videoId,
+  visualPlan = [],
+  items = [],
+  sceneQueries = [],
+  fallbackPlan = [],
+  blockPackages = [],
+  slotQueryPlan = [],
+  blockCandidateFunnel = [],
+  preserveUntouchedScenes = false,
+  previousRawItems = [],
+  previousSceneQueries = [],
+  previousFallbackPlan = [],
+  selectedSceneIndexes = [],
+  selectiveRefresh = false,
+  refreshReason = "",
+  stageProgress = {},
+}) => {
+  const mergedRawItems = preserveUntouchedScenes
+    ? mergeSceneScopedEntries({ existingEntries: previousRawItems, nextEntries: items, sceneIndexes: selectedSceneIndexes })
+    : sortSceneScopedEntries(items);
+  const mergedSceneQueries = preserveUntouchedScenes
+    ? mergeSceneScopedEntries({ existingEntries: previousSceneQueries, nextEntries: sceneQueries, sceneIndexes: selectedSceneIndexes })
+    : sortSceneScopedEntries(sceneQueries);
+  const mergedFallbackPlan = preserveUntouchedScenes
+    ? mergeFallbackPlan({ existingFallbackPlan: previousFallbackPlan, nextFallbackPlan: fallbackPlan, sceneIndexes: selectedSceneIndexes })
+    : mergeFallbackPlan({ nextFallbackPlan: fallbackPlan });
+  const refreshedAt = new Date().toISOString();
+
+  return updateState(
+    videoId,
+    {
+      visual_plan: visualPlan,
+      assets_json: {
+        raw_items: mergedRawItems,
+        scene_queries: mergedSceneQueries,
+        fallback_plan: mergedFallbackPlan,
+        block_packages: blockPackages,
+        slot_query_plan: slotQueryPlan,
+        block_candidate_funnel: blockCandidateFunnel,
+        stage_progress: stageProgress,
+        last_refresh_scene_indexes: selectiveRefresh ? selectedSceneIndexes : [],
+        last_refresh_reason: refreshReason || (selectiveRefresh ? "scene_refresh" : "full_refresh"),
+        last_refreshed_at: refreshedAt,
+      },
+      external_api_stats: getExternalApiStats({ videoId }),
+      error_message: "",
+    },
+    { currentStep: "assets_generating", status: "assets_generating" }
   );
 };
 
@@ -1164,8 +1284,13 @@ const buildGeneratedSceneAlignedPayload = ({ asset, scene }) => {
   ).trim();
   const baseTags = unique([
     ...(Array.isArray(scene.keywords) ? scene.keywords : []),
+    ...(Array.isArray(scene.required_visual_evidence) ? scene.required_visual_evidence : []),
+    ...(Array.isArray(scene.allowed_visual_categories) ? scene.allowed_visual_categories.slice(0, 4) : []),
     scene.visual_intent || "",
     scene.role || "",
+    asset.content_slot_type || "",
+    asset.content_need || "",
+    asset.search_reason || "",
     ...(Array.isArray(asset.provider_tags) ? asset.provider_tags : []),
   ]).slice(0, 12);
   const locationHint = String(scene.expected_location || scene.location?.city || "").trim();
@@ -1212,14 +1337,21 @@ const buildGeneratedSceneAlignedPayload = ({ asset, scene }) => {
       visual_observation_origin: "real_vision",
       generic_visual: false,
     };
+    const generatedAlignmentHints = buildGeneratedSceneAlignmentHints({ asset, scene, window: baseWindow });
     const evidence = evaluateVisualEvidence({ scene, window: baseWindow, asset });
     return {
       ...baseWindow,
-      detected_visual_categories: evidence.detected_visual_categories,
+      detected_visual_categories: generatedAlignmentHints.detectedCategories.length
+        ? generatedAlignmentHints.detectedCategories
+        : evidence.detected_visual_categories,
       detected_objects: [],
-      visual_intent_match: evidence.visual_intent_match,
-      required_evidence_found: evidence.required_evidence_found,
-      missing_required_visual_evidence: evidence.missing_required_visual_evidence,
+      visual_intent_match: generatedAlignmentHints.visualIntentMatch,
+      required_evidence_found: generatedAlignmentHints.requiredEvidenceFound.length
+        ? generatedAlignmentHints.requiredEvidenceFound
+        : evidence.required_evidence_found,
+      missing_required_visual_evidence: generatedAlignmentHints.missingRequiredVisualEvidence.length
+        ? generatedAlignmentHints.missingRequiredVisualEvidence
+        : evidence.missing_required_visual_evidence,
       generic_visual: evidence.generic_visual === true ? false : baseWindow.generic_visual,
     };
   });
@@ -1234,28 +1366,127 @@ const buildGeneratedSceneAlignedPayload = ({ asset, scene }) => {
   };
 };
 
+const GENERATED_SCENE_ALIGNMENT_SLOT_HINTS = {
+  first_clip_of_block: ["generic_street", "historic_street", "people_walking", "wide_establishing"],
+  hard_boundary_first_clip: ["generic_street", "historic_street", "aerial_city", "city_landmark"],
+  chapter_opening: ["aerial_city", "city_landmark", "historic_street"],
+  intro: ["generic_street", "people_walking", "aerial_city"],
+  hook: ["people_walking", "generic_street", "city_landmark"],
+  closing: ["people_walking", "generic_street", "city_landmark"],
+  street_level: ["generic_street", "historic_street"],
+  people_walking: ["people_walking", "generic_street"],
+  wide_establishing: ["aerial_city", "city_landmark", "river", "coast"],
+  gastronomy: ["market", "street_food", "restaurant", "cafe", "food_closeup", "vendor_interaction", "market_stall"],
+};
+
+const normalizeHintValues = (values = []) =>
+  unique((Array.isArray(values) ? values : [values]).map((value) => String(value || "").trim()).filter(Boolean));
+
+const buildGeneratedSceneAlignmentHints = ({ asset = {}, scene = {}, window = {} } = {}) => {
+  const slotKey = String(asset.content_slot_type || asset.content_need || "").trim().toLowerCase();
+  const queryText = unique([
+    asset.query_used || asset.query || "",
+    asset.search_reason || "",
+    scene.visual_intent || "",
+    window.summary || "",
+    ...(Array.isArray(window.tags) ? window.tags : []),
+    ...(Array.isArray(scene.keywords) ? scene.keywords : []),
+  ]).join(" ").toLowerCase();
+  const forbiddenCategories = new Set(
+    normalizeHintValues(Array.isArray(scene.forbidden_visual_categories) ? scene.forbidden_visual_categories : [])
+      .map((value) => value.toLowerCase())
+  );
+
+  const keywordCategories = [];
+  if (/market|mercado|vendor|street food|food|comida|restaurant|restaurante|cafe|bar/.test(queryText)) {
+    keywordCategories.push(...(GENERATED_SCENE_ALIGNMENT_SLOT_HINTS.gastronomy || []));
+  }
+  if (/street|rua|neighbou?rhood|bairro|pedestrian|walking|crowd|alley|avenue/.test(queryText)) {
+    keywordCategories.push("generic_street", "people_walking", "historic_street");
+  }
+  if (/aerial|skyline|panorama|overview|city|urban/.test(queryText)) {
+    keywordCategories.push("aerial_city", "city_landmark");
+  }
+  if (/river|rio|waterfront|coast|beach|sea|mar|ocean/.test(queryText)) {
+    keywordCategories.push("river", "coast");
+  }
+
+  const detectedCategories = normalizeHintValues([
+    ...(Array.isArray(scene.required_visual_evidence) ? scene.required_visual_evidence : []),
+    ...(Array.isArray(scene.allowed_visual_categories) ? scene.allowed_visual_categories : []),
+    ...(GENERATED_SCENE_ALIGNMENT_SLOT_HINTS[slotKey] || []),
+    ...keywordCategories,
+  ]).filter((value) => !forbiddenCategories.has(String(value || "").toLowerCase())).slice(0, 12);
+
+  const requiredEvidenceFound = normalizeHintValues(
+    (Array.isArray(scene.required_visual_evidence) ? scene.required_visual_evidence : []).filter((value) =>
+      detectedCategories.includes(String(value || "").trim())
+    )
+  ).slice(0, 8);
+
+  const missingRequiredVisualEvidence = normalizeHintValues(
+    (Array.isArray(scene.required_visual_evidence) ? scene.required_visual_evidence : []).filter((value) =>
+      !requiredEvidenceFound.includes(String(value || "").trim())
+    )
+  ).slice(0, 8);
+
+  return {
+    detectedCategories,
+    requiredEvidenceFound,
+    missingRequiredVisualEvidence,
+    visualIntentMatch: true,
+  };
+};
+
 const mergeAnalysisPayload = ({ asset, scene, payload = {} }) => {
   const fallback = buildFallbackAnalysisPayload({ asset, scene });
+  const analysisProvider = String(
+    payload.analysis_provider || payload.provider || asset.analysis_provider || asset.provider || fallback.analysis_provider
+  ).toLowerCase();
   const analysisWindows = Array.isArray(payload.analysis_windows) && payload.analysis_windows.length
     ? payload.analysis_windows.map((window) => {
-        const evidence = evaluateVisualEvidence({ scene, window, asset });
-        return {
+        const generatedAlignmentHints = analysisProvider === "ai_generated_scene_alignment"
+          ? buildGeneratedSceneAlignmentHints({ asset, scene, window })
+          : { detectedCategories: [], requiredEvidenceFound: [] };
+        const hintedDetectedCategories = analysisProvider === "ai_generated_scene_alignment"
+          ? generatedAlignmentHints.detectedCategories
+          : (Array.isArray(window.detected_visual_categories) ? window.detected_visual_categories : []);
+        const hintedRequiredEvidenceFound = analysisProvider === "ai_generated_scene_alignment"
+          ? generatedAlignmentHints.requiredEvidenceFound
+          : (Array.isArray(window.required_evidence_found) ? window.required_evidence_found : []);
+        const hintedMissingRequiredVisualEvidence = analysisProvider === "ai_generated_scene_alignment"
+          ? generatedAlignmentHints.missingRequiredVisualEvidence
+          : (Array.isArray(window.missing_required_visual_evidence) ? window.missing_required_visual_evidence : []);
+        const hintedWindow = {
           ...window,
-          detected_visual_categories: window.detected_visual_categories || evidence.detected_visual_categories,
-          detected_objects: window.detected_objects || [],
-          visual_intent_match: typeof window.visual_intent_match === "boolean" ? window.visual_intent_match : evidence.visual_intent_match,
-          generic_visual: typeof window.generic_visual === "boolean" ? window.generic_visual : evidence.generic_visual,
-          required_evidence_found: window.required_evidence_found || evidence.required_evidence_found,
-          missing_required_visual_evidence: window.missing_required_visual_evidence || evidence.missing_required_visual_evidence,
-          semantic_relevance_score: Number(window.semantic_relevance_score ?? evidence.semantic_relevance_score ?? evidence.editorial_inference?.semantic_relevance_score ?? window.confidence ?? 0),
-          editorial_evidence_score: Number(window.editorial_evidence_score ?? evidence.editorial_evidence_score ?? evidence.editorial_inference?.editorial_evidence_score ?? evidence.required_evidence_score ?? 0),
-          semantic_risk_score: Number(window.semantic_risk_score ?? evidence.semantic_risk_score ?? evidence.editorial_inference?.semantic_risk_score ?? 0),
-          identity_class: window.identity_class || evidence.identity_class || evidence.editorial_inference?.identity_class || "",
-          editorial_utility: window.editorial_utility || evidence.editorial_utility || evidence.editorial_inference?.editorial_utility || "",
-          visual_type: window.visual_type || evidence.visual_type || evidence.editorial_inference?.visual_type || "",
-          risk_flags: window.risk_flags || evidence.risk_flags || evidence.editorial_inference?.risk_flags || [],
-          visual_evidence_source: window.visual_evidence_source || payload.analysis_provider || payload.provider || fallback.analysis_provider,
-          visual_observation_origin: window.visual_observation_origin || (String(window.visual_evidence_source || payload.analysis_provider || payload.provider || fallback.analysis_provider).toLowerCase().includes("fallback") ? "weak_fallback" : "real_vision"),
+          detected_visual_categories: hintedDetectedCategories,
+          required_evidence_found: hintedRequiredEvidenceFound,
+          missing_required_visual_evidence: hintedMissingRequiredVisualEvidence,
+          visual_intent_match: typeof window.visual_intent_match === "boolean"
+            ? window.visual_intent_match
+            : (analysisProvider === "ai_generated_scene_alignment" ? true : window.visual_intent_match),
+          generic_visual: analysisProvider === "ai_generated_scene_alignment"
+            ? false
+            : window.generic_visual,
+        };
+        const evidence = evaluateVisualEvidence({ scene, window: hintedWindow, asset });
+        return {
+          ...hintedWindow,
+          detected_visual_categories: hintedDetectedCategories.length ? hintedDetectedCategories : evidence.detected_visual_categories,
+          detected_objects: hintedWindow.detected_objects || [],
+          visual_intent_match: typeof hintedWindow.visual_intent_match === "boolean" ? hintedWindow.visual_intent_match : evidence.visual_intent_match,
+          generic_visual: typeof hintedWindow.generic_visual === "boolean" ? hintedWindow.generic_visual : evidence.generic_visual,
+          required_evidence_found: hintedRequiredEvidenceFound.length ? hintedRequiredEvidenceFound : evidence.required_evidence_found,
+          missing_required_visual_evidence: hintedMissingRequiredVisualEvidence.length ? hintedMissingRequiredVisualEvidence : evidence.missing_required_visual_evidence,
+          semantic_relevance_score: Number(hintedWindow.semantic_relevance_score ?? evidence.semantic_relevance_score ?? evidence.editorial_inference?.semantic_relevance_score ?? hintedWindow.confidence ?? 0),
+          editorial_evidence_score: Number(hintedWindow.editorial_evidence_score ?? evidence.editorial_evidence_score ?? evidence.editorial_inference?.editorial_evidence_score ?? evidence.required_evidence_score ?? 0),
+          semantic_risk_score: Number(hintedWindow.semantic_risk_score ?? evidence.semantic_risk_score ?? evidence.editorial_inference?.semantic_risk_score ?? 0),
+          identity_class: hintedWindow.identity_class || evidence.identity_class || evidence.editorial_inference?.identity_class || "",
+          editorial_utility: hintedWindow.editorial_utility || evidence.editorial_utility || evidence.editorial_inference?.editorial_utility || "",
+          visual_type: hintedWindow.visual_type || evidence.visual_type || evidence.editorial_inference?.visual_type || "",
+          risk_flags: hintedWindow.risk_flags || evidence.risk_flags || evidence.editorial_inference?.risk_flags || [],
+          visual_evidence_source: hintedWindow.visual_evidence_source || payload.analysis_provider || payload.provider || fallback.analysis_provider,
+          visual_observation_origin: hintedWindow.visual_observation_origin || (String(hintedWindow.visual_evidence_source || payload.analysis_provider || payload.provider || fallback.analysis_provider).toLowerCase().includes("fallback") ? "weak_fallback" : "real_vision"),
         };
       })
     : fallback.analysis_windows;
@@ -1449,7 +1680,13 @@ const shouldEscalateGeminiAnalysis = ({ analysisPayload = {} }) => {
     || weakSignalRatio > 0.45;
 };
 
-const analyzeDownloadedAssetSemantics = async ({ asset, scene, paths }) => {
+const analyzeDownloadedAssetSemantics = async ({
+  asset,
+  scene,
+  paths,
+  stageDeadlineAt = 0,
+  analysisBudgetMs = 0,
+}) => {
   const fallbackPayload = buildFallbackAnalysisPayload({ asset, scene });
   const videoId = path.basename(String(paths?.base || ""));
   const assetAnalysisMaxWindows = Math.max(
@@ -1477,6 +1714,13 @@ const analyzeDownloadedAssetSemantics = async ({ asset, scene, paths }) => {
   }
 
   if (asset.asset_type !== "video" || !asset.local_path) {
+    return {
+      ...asset,
+      ...fallbackPayload,
+    };
+  }
+
+  if (Number(stageDeadlineAt || 0) > 0 && (Number(stageDeadlineAt) - Date.now()) < MIN_GEMINI_ASSET_ANALYSIS_BUDGET_MS) {
     return {
       ...asset,
       ...fallbackPayload,
@@ -1512,6 +1756,17 @@ const analyzeDownloadedAssetSemantics = async ({ asset, scene, paths }) => {
     };
   }
 
+  const initialGeminiBudget = resolveGeminiAssetAnalysisBudget({
+    stageDeadlineAt,
+    analysisBudgetMs,
+  });
+  if (!initialGeminiBudget) {
+    return {
+      ...asset,
+      ...mergeAnalysisPayload({ asset, scene, payload: localPayload || fallbackPayload }),
+    };
+  }
+
   const windowBlueprints = buildAnalysisWindowBlueprints({ assetDuration: asset.source_duration_seconds || asset.duration_estimate || 0 });
   const analysisDir = path.join(paths.base, "assets", "analysis", path.basename(asset.local_path, path.extname(asset.local_path)));
 
@@ -1539,16 +1794,22 @@ const analyzeDownloadedAssetSemantics = async ({ asset, scene, paths }) => {
       const geminiFallbackModels = Array.isArray(config.GEMINI_VISION_FALLBACK_MODELS)
         ? config.GEMINI_VISION_FALLBACK_MODELS
         : [];
-
-      const geminiLiteResponse = await describeImagesWithGemini({
-        prompt,
-        imagePaths: framePaths,
-        model: geminiLiteModel,
-        fallbackModels: [],
-        timeoutMs: GEMINI_ASSET_ANALYSIS_TIMEOUT_MS,
-        maxRetries: GEMINI_ASSET_ANALYSIS_MAX_RETRIES,
-        videoId,
+      const geminiLiteBudget = resolveGeminiAssetAnalysisBudget({
+        stageDeadlineAt,
+        analysisBudgetMs,
       });
+
+      const geminiLiteResponse = geminiLiteBudget
+        ? await describeImagesWithGemini({
+            prompt,
+            imagePaths: framePaths,
+            model: geminiLiteModel,
+            fallbackModels: [],
+            timeoutMs: geminiLiteBudget.timeoutMs,
+            maxRetries: geminiLiteBudget.maxRetries,
+            videoId,
+          })
+        : null;
 
       if (geminiLiteResponse) {
         const litePayload = toAnalysisPayloadForProvider({
@@ -1563,15 +1824,21 @@ const analyzeDownloadedAssetSemantics = async ({ asset, scene, paths }) => {
           && shouldEscalateGeminiAnalysis({ analysisPayload: litePayload });
 
         if (mustEscalate) {
-          const geminiFullResponse = await describeImagesWithGemini({
-            prompt,
-            imagePaths: framePaths,
-            model: geminiFullModel,
-            fallbackModels: geminiFallbackModels.slice(0, 1),
-            timeoutMs: GEMINI_ASSET_ANALYSIS_TIMEOUT_MS,
-            maxRetries: GEMINI_ASSET_ANALYSIS_MAX_RETRIES,
-            videoId,
+          const geminiFullBudget = resolveGeminiAssetAnalysisBudget({
+            stageDeadlineAt,
+            analysisBudgetMs,
           });
+          const geminiFullResponse = geminiFullBudget
+            ? await describeImagesWithGemini({
+                prompt,
+                imagePaths: framePaths,
+                model: geminiFullModel,
+                fallbackModels: geminiFallbackModels.slice(0, 1),
+                timeoutMs: geminiFullBudget.timeoutMs,
+                maxRetries: geminiFullBudget.maxRetries,
+                videoId,
+              })
+            : null;
           if (geminiFullResponse) {
             response = geminiFullResponse;
             provider = "gemini_flash";
@@ -1649,6 +1916,154 @@ const buildGeneratedScenePrompt = ({ scene = {}, query = "", mediaType = "image"
       ? "Movimento suave de camera, cena limpa, sem texto, sem logo, sem marca d'agua."
       : "Cena limpa, sem texto, sem logo, sem marca d'agua, nitida e cinematografica.",
   ].filter(Boolean).join(" ");
+};
+
+const normalizeSceneReadinessEntries = (entries = []) =>
+  new Map(
+    (Array.isArray(entries) ? entries : [])
+      .map((entry) => [Number(entry.scene_index || 0), entry])
+      .filter(([sceneIndex]) => sceneIndex > 0)
+  );
+
+const sceneNeedsCriticalAiGeneration = ({
+  scene = {},
+  sceneReadiness = {},
+  blockingSceneSet = new Set(),
+  preserveExisting = false,
+  autoRepairRound = 0,
+} = {}) => {
+  const sceneIndex = Number(scene.scene_index || 0);
+  if (!sceneIndex) return false;
+
+  const isBlocking = blockingSceneSet.has(sceneIndex) || sceneReadiness.blocking === true;
+  if (!isBlocking) return false;
+
+  const missingCriticalSlots = Array.isArray(sceneReadiness.critical_slots_missing) && sceneReadiness.critical_slots_missing.length > 0;
+  const missingRequiredContentSlots = Array.isArray(sceneReadiness.block_slot_coverage_missing)
+    && sceneReadiness.block_slot_coverage_missing.length > 0;
+  const runEligible = preserveExisting
+    || Number(autoRepairRound || 0) > 0
+    || missingCriticalSlots
+    || missingRequiredContentSlots;
+  if (!runEligible) return false;
+
+  const missingProof = Number(sceneReadiness.exact_windows || 0) + Number(sceneReadiness.regional_windows || 0) <= 0;
+  const weakCoverageSlots = Array.isArray(sceneReadiness.coverage_weak_only_slots) && sceneReadiness.coverage_weak_only_slots.length > 0;
+  const genericOnly = Number(sceneReadiness.generic_windows || 0) > 0 && missingProof;
+  if (missingCriticalSlots || missingRequiredContentSlots) return true;
+  const intent = String(scene.visual_intent || "").toLowerCase();
+  const criticality = String(scene.slot_criticality || "").toLowerCase();
+  const specificityDemand = Boolean(
+    scene.requires_visual_proof === true
+    || scene.generic_asset_allowed === false
+    || ["high", "critical"].includes(criticality)
+    || /(specific|aerial_city|gastronomy|urban|people|architecture|historical)/.test(intent)
+  );
+
+  return specificityDemand && (missingProof || weakCoverageSlots || genericOnly);
+};
+
+const buildFirstPassSceneGenerationReadiness = ({ scene = {}, missingRequiredSlots = [] } = {}) => {
+  const sceneIndex = Number(scene.scene_index || 0);
+  if (!sceneIndex) return {};
+
+  const relevantMissingSlots = (Array.isArray(missingRequiredSlots) ? missingRequiredSlots : []).filter((slot) => {
+    const slotSceneIndex = Number(slot?.scene_index_hint || sceneIndex);
+    return slotSceneIndex === sceneIndex;
+  });
+  const criticalSlotsMissing = relevantMissingSlots
+    .filter((slot) =>
+      slot?.requires_visual_proof === true
+      || ["high", "critical"].includes(String(slot?.criticality || "").toLowerCase())
+    )
+    .map((slot) => String(slot?.slot_type || slot?.slot_id || "").trim())
+    .filter(Boolean);
+  const requiredContentSlotsMissing = relevantMissingSlots
+    .map((slot) => String(slot?.slot_type || slot?.slot_id || "").trim())
+    .filter(Boolean);
+
+  return {
+    scene_index: sceneIndex,
+    blocking: relevantMissingSlots.length > 0,
+    exact_windows: 0,
+    regional_windows: 0,
+    generic_windows: 0,
+    critical_slots_missing: unique(criticalSlotsMissing),
+    block_slot_coverage_missing: unique(requiredContentSlotsMissing),
+    coverage_weak_only_slots: [],
+  };
+};
+
+const mergeSceneGenerationReadiness = ({ previous = {}, current = {} } = {}) => ({
+  ...previous,
+  ...current,
+  blocking: previous?.blocking === true || current?.blocking === true,
+  exact_windows: Math.max(Number(previous?.exact_windows || 0), Number(current?.exact_windows || 0)),
+  regional_windows: Math.max(Number(previous?.regional_windows || 0), Number(current?.regional_windows || 0)),
+  generic_windows: Math.max(Number(previous?.generic_windows || 0), Number(current?.generic_windows || 0)),
+  critical_slots_missing: unique([
+    ...(Array.isArray(previous?.critical_slots_missing) ? previous.critical_slots_missing : []),
+    ...(Array.isArray(current?.critical_slots_missing) ? current.critical_slots_missing : []),
+  ]),
+  block_slot_coverage_missing: unique([
+    ...(Array.isArray(previous?.block_slot_coverage_missing) ? previous.block_slot_coverage_missing : []),
+    ...(Array.isArray(current?.block_slot_coverage_missing) ? current.block_slot_coverage_missing : []),
+  ]),
+  coverage_weak_only_slots: unique([
+    ...(Array.isArray(previous?.coverage_weak_only_slots) ? previous.coverage_weak_only_slots : []),
+    ...(Array.isArray(current?.coverage_weak_only_slots) ? current.coverage_weak_only_slots : []),
+  ]),
+});
+
+const resolveCriticalSceneSlots = ({ scene = {}, blockPackage = {}, sceneReadiness = {} } = {}) => {
+  const sceneIndex = Number(scene.scene_index || 0);
+  const requiredSlots = Array.isArray(blockPackage.slots_required) ? blockPackage.slots_required : [];
+  const criticalSlots = requiredSlots.filter((slot) => {
+    const slotSceneIndex = Number(slot.scene_index_hint || sceneIndex);
+    if (slotSceneIndex !== sceneIndex) return false;
+    return slot.requires_visual_proof === true
+      || ["high", "critical"].includes(String(slot.criticality || "").toLowerCase());
+  });
+
+  const missingSlotTypes = Array.isArray(sceneReadiness.critical_slots_missing)
+    ? sceneReadiness.critical_slots_missing.map((slotType) => String(slotType || "").trim()).filter(Boolean)
+    : [];
+  const matchedMissingSlots = missingSlotTypes
+    .map((slotType) => criticalSlots.find((slot) => String(slot.slot_type || "").trim() === slotType))
+    .filter(Boolean);
+
+  return unique([...(matchedMissingSlots || []), ...(criticalSlots || [])]).slice(0, CRITICAL_SCENE_GENERATION_MAX_ASSETS);
+};
+
+const buildCriticalSceneGenerationQueries = ({ scene = {}, sceneReadiness = {}, topic = "", slots = [] } = {}) => {
+  const slotEntries = Array.isArray(slots) && slots.length ? slots : [{}];
+  const visualDescription = String(scene.visual_description || "").trim();
+  const narration = String(scene.narration_excerpt || "").trim();
+  const title = String(scene.title || "").trim();
+  const keywords = Array.isArray(scene.keywords) ? scene.keywords.filter(Boolean).slice(0, 5) : [];
+  const baseDescription = visualDescription || unique([title, narration]).filter(Boolean).join(". ") || keywords.join(", ");
+  const topicHint = String(topic || "").trim();
+  const intent = String(scene.visual_intent || "").trim();
+
+  return slotEntries
+    .map((slot, index) => {
+      const slotType = String(slot.slot_type || sceneReadiness.critical_slots_missing?.[index] || "editorial_proof")
+        .replace(/_/g, " ")
+        .trim();
+      const segments = unique([
+        baseDescription,
+        topicHint ? `Tema: ${topicHint}` : "",
+        slotType ? `Prova visual editorial: ${slotType}` : "",
+        intent ? `Intencao visual: ${intent}` : "",
+        keywords.length ? `Elementos visuais: ${keywords.join(", ")}` : "",
+      ]).filter(Boolean);
+      return {
+        slot,
+        query: segments.join(". "),
+      };
+    })
+    .filter((entry) => String(entry.query || "").trim())
+    .slice(0, CRITICAL_SCENE_GENERATION_MAX_ASSETS);
 };
 
 const buildGeneratedSceneMedia = async ({
@@ -1765,13 +2180,17 @@ const createSceneFallbackAsset = async ({
   allowGeneratedMedia = false,
   preferVideo = false,
   skipLocalPlaceholder = false,
+  queryOverride = "",
 } = {}) => {
   const refreshToken = Date.now();
+  const resolvedQuery = String(
+    queryOverride || scene.visual_description || scene.keywords.join(" ") || scene.title || scene.narration_excerpt || ""
+  ).trim();
   const generatedMedia = await buildGeneratedSceneMedia({
     scene,
     paths,
     sequence: refreshToken,
-    query: scene.keywords.join(" ") || scene.title || scene.narration_excerpt || "",
+    query: resolvedQuery,
     videoId,
     allowGeneratedMedia,
     preferVideo,
@@ -1787,7 +2206,7 @@ const createSceneFallbackAsset = async ({
       provider: generatedMedia.provider,
       asset_type: generatedMedia.assetType,
       type: generatedMedia.assetType,
-      query: scene.keywords.join(" "),
+      query: resolvedQuery,
       semantic_text: scene.narration_excerpt || scene.title || scene.keywords.join(" "),
       provider_tags: generatedMedia.providerTags,
       provider_title: generatedMedia.providerTitle,
@@ -1835,7 +2254,7 @@ const createSceneFallbackAsset = async ({
     provider: "local_fallback",
     asset_type: "image",
     type: "image",
-    query: scene.keywords.join(" "),
+    query: resolvedQuery,
     semantic_text: scene.narration_excerpt || scene.title || scene.keywords.join(" "),
     source_url: "generated-local",
     local_path: outputPath,
@@ -2219,6 +2638,7 @@ const generateAssets = async ({
   autoRepairRound = 0,
 }) => {
   const stageStartedAt = Date.now();
+  const stageDeadlineAt = stageStartedAt + ASSET_STAGE_MAX_RUNTIME_MS;
   await appendPipelineEvent({
     videoId,
     stage: "assets",
@@ -2263,6 +2683,8 @@ const generateAssets = async ({
   const requestedSceneIndexes = normalizeSceneIndexes(sceneIndexes);
   const requestedSceneIndexSet = new Set(requestedSceneIndexes);
   const generatedRepairMode = Boolean(!mockMode && allowPlaceholderAssets && Number(autoRepairRound || 0) > 0);
+  const previousSceneReadinessMap = normalizeSceneReadinessEntries(state.assets_json?.scene_asset_readiness);
+  const previousBlockingSceneSet = new Set(normalizeSceneIndexes(state.assets_json?.blocking_scene_indexes || []));
   const selectedScenes = requestedSceneIndexSet.size
     ? visualPlan.filter((scene) => requestedSceneIndexSet.has(Number(scene.scene_index || 0)))
     : visualPlan;
@@ -2342,6 +2764,39 @@ const generateAssets = async ({
   const library = await readLibrary();
   const libraryBySourceUrl = mapLibraryBySourceUrl(library);
   const perSceneSequence = new Map();
+  let assetsStageTimedOut = false;
+  let assetsStageTimeoutMessage = "";
+
+  const resolveStageProgress = ({ currentBlockId = "", currentBlockLabel = "" } = {}) => {
+    const lastCompletedBlock = blockCandidateFunnel[blockCandidateFunnel.length - 1] || {};
+    return buildAssetsStageProgress({
+      totalBlocks: selectedBlockPackages.length,
+      completedBlocks: blockCandidateFunnel.length,
+      currentBlockId,
+      currentBlockLabel,
+      lastCompletedBlockId: String(lastCompletedBlock.block_id || ""),
+      lastCompletedBlockLabel: String(lastCompletedBlock.block_label || ""),
+      timedOut: assetsStageTimedOut,
+      timeoutMessage: assetsStageTimeoutMessage,
+    });
+  };
+
+  await updateState(
+    videoId,
+    {
+      visual_plan: visualPlan,
+      assets_json: {
+        block_packages: allBlockPackages,
+        stage_progress: resolveStageProgress(),
+        last_refresh_scene_indexes: selectiveRefresh ? selectedSceneIndexes : [],
+        last_refresh_reason: refreshReason || (selectiveRefresh ? "scene_refresh" : "full_refresh"),
+        last_refreshed_at: new Date().toISOString(),
+      },
+      external_api_stats: getExternalApiStats({ videoId }),
+      error_message: "",
+    },
+    { currentStep: "assets_generating", status: "assets_generating" }
+  );
 
   if (preserveExisting) {
     previousRawItems.forEach((item) => {
@@ -2352,6 +2807,19 @@ const generateAssets = async ({
   }
 
   for (const blockPackage of selectedBlockPackages) {
+    if (hasAssetStageTimedOut(stageStartedAt)) {
+      assetsStageTimedOut = true;
+      assetsStageTimeoutMessage = `Timeout de assets apos ${blockCandidateFunnel.length}/${selectedBlockPackages.length} bloco(s) concluido(s).`;
+      logger.warn("assetsService: timeout total atingido antes de iniciar bloco", {
+        videoId,
+        max_runtime_ms: ASSET_STAGE_MAX_RUNTIME_MS,
+        completed_blocks: blockCandidateFunnel.length,
+        total_blocks: selectedBlockPackages.length,
+        next_block_id: String(blockPackage.block_id || ""),
+      });
+      break;
+    }
+
     const blockScenes = scenesByBlockId.get(String(blockPackage.block_id || "")) || [];
     const representativeScene = getRepresentativeSceneForBlock(blockScenes);
     const activeSceneIndexes = requestedSceneIndexSet.size
@@ -2359,6 +2827,8 @@ const generateAssets = async ({
       : (blockPackage.scene_indexes || []);
     const activeScenes = blockScenes.filter((scene) => activeSceneIndexes.includes(Number(scene.scene_index || 0)));
     if (!activeScenes.length) continue;
+    const blockLabel = blockPackage.block_label || representativeScene.block_label || "";
+    const blockStartedAt = Date.now();
 
     const blockRepairHints = activeSceneIndexes.reduce((acc, sceneIndex) => {
       const hints = repairPlanMap.get(Number(sceneIndex || 0)) || {};
@@ -2448,7 +2918,7 @@ const generateAssets = async ({
       sceneQueries.push({
         scene_index: scene.scene_index,
         block_id: blockPackage.block_id,
-        block_label: blockPackage.block_label || scene.block_label || "",
+        block_label: blockLabel || scene.block_label || "",
         visual_intent: scene.visual_intent || blockPackage.intent || "",
         queries: queryDetailsForExecution.map((entry) => entry.query).filter(Boolean),
         query_details: queryDetailsForExecution,
@@ -2459,6 +2929,21 @@ const generateAssets = async ({
         repair_hints: blockRepairHints,
       });
     });
+
+    await updateState(
+      videoId,
+      {
+        assets_json: {
+          stage_progress: resolveStageProgress({
+            currentBlockId: String(blockPackage.block_id || ""),
+            currentBlockLabel: blockLabel,
+          }),
+          slot_query_plan: slotQueryPlan,
+        },
+        external_api_stats: getExternalApiStats({ videoId }),
+      },
+      { currentStep: "assets_generating", status: "assets_generating" }
+    );
 
     logger.info("assetsService: iniciando bloco", {
       videoId,
@@ -2817,6 +3302,91 @@ const generateAssets = async ({
           }
         }
       }
+
+      const firstPassMissingRequiredSlots = computeMissingRequiredSlots({
+        slotsRequired: blockPackage.slots_required || [],
+        candidates: downloadedItems.map((item) => ({
+          slot_id: item.content_slot_id || "",
+          slot_type: item.content_slot_type || "",
+        })),
+      });
+
+      const targetedSceneGenerationResults = [];
+      for (const scene of activeScenes) {
+        const sceneIndex = Number(scene.scene_index || 0);
+        const previousSceneReadiness = previousSceneReadinessMap.get(sceneIndex) || {};
+        const firstPassSceneReadiness = buildFirstPassSceneGenerationReadiness({
+          scene,
+          missingRequiredSlots: firstPassMissingRequiredSlots,
+        });
+        const effectiveSceneReadiness = mergeSceneGenerationReadiness({
+          previous: previousSceneReadiness,
+          current: firstPassSceneReadiness,
+        });
+        if (!sceneNeedsCriticalAiGeneration({
+          scene,
+          sceneReadiness: effectiveSceneReadiness,
+          blockingSceneSet: previousBlockingSceneSet,
+          preserveExisting,
+          autoRepairRound,
+        })) {
+          continue;
+        }
+
+        const slotsForScene = resolveCriticalSceneSlots({
+          scene,
+          blockPackage,
+          sceneReadiness: effectiveSceneReadiness,
+        });
+        const generationPlans = buildCriticalSceneGenerationQueries({
+          scene,
+          sceneReadiness: effectiveSceneReadiness,
+          topic: state.topic || "",
+          slots: slotsForScene,
+        });
+        const existingTargetedGenerations = downloadedItems.filter((item) =>
+          Number(item.scene_index || 0) === sceneIndex
+          && item.ai_generated === true
+          && String(item.provider || "") === GENERATED_VERTEX_PROVIDER
+          && String(item.search_reason || "").startsWith("blocking_scene_ai_")
+        ).length;
+        const remainingGenerationBudget = Math.max(0, CRITICAL_SCENE_GENERATION_MAX_ASSETS - existingTargetedGenerations);
+        if (!remainingGenerationBudget) continue;
+
+        for (const plan of generationPlans.slice(0, remainingGenerationBudget)) {
+          const slot = plan.slot || {};
+          const generatedCriticalAsset = await createSceneFallbackAsset({
+            scene,
+            paths,
+            videoId,
+            allowGeneratedMedia: true,
+            preferVideo: false,
+            skipLocalPlaceholder: true,
+            queryOverride: plan.query,
+          }).catch(() => null);
+
+          if (!generatedCriticalAsset?.local_path) continue;
+
+          generatedCriticalAsset.block_id = blockPackage.block_id;
+          generatedCriticalAsset.block_package_id = blockPackage.package_id;
+          generatedCriticalAsset.content_slot_id = String(slot.slot_id || "generated_critical_repair");
+          generatedCriticalAsset.content_slot_type = String(slot.slot_type || "generated_critical_repair");
+          generatedCriticalAsset.content_need = String(slot.slot_type || scene.visual_intent || "generated_critical_repair");
+          generatedCriticalAsset.query = plan.query;
+          generatedCriticalAsset.search_reason = `blocking_scene_ai_${String(slot.slot_type || scene.visual_intent || "critical_repair")}`;
+          downloadedItems.push(generatedCriticalAsset);
+          targetedSceneGenerationResults.push({
+            scene_index: sceneIndex,
+            slot_type: generatedCriticalAsset.content_slot_type,
+          });
+        }
+      }
+
+      targetedSceneGenerationResults.forEach((entry) => {
+        fallbackPlan.push(
+          `Cena ${entry.scene_index}: imagem Vertex AI adicionada para reforcar slot critico ${entry.slot_type}.`
+        );
+      });
     }
 
     const distributionByScene = activeScenes.reduce((acc, scene) => {
@@ -2847,10 +3417,27 @@ const generateAssets = async ({
     const enrichedResults = await mapWithConcurrency(
       downloadedItems,
       ASSET_SEMANTIC_ANALYSIS_CONCURRENCY,
-      async (item) => {
-        const scene = visualPlan.find((entry) => Number(entry.scene_index || 0) === Number(item.scene_index || 0)) || representativeScene;
-        return analyzeDownloadedAssetSemantics({ asset: item, scene, paths });
-      }
+      (() => {
+        const analysisWaveCount = Math.max(1, Math.ceil(
+          Math.max(1, downloadedItems.length)
+          / ASSET_SEMANTIC_ANALYSIS_CONCURRENCY
+        ));
+        const remainingStageMsBeforeAnalysis = Math.max(0, stageDeadlineAt - Date.now());
+        const perAssetAnalysisBudgetMs = remainingStageMsBeforeAnalysis > 0
+          ? Math.max(0, Math.floor(remainingStageMsBeforeAnalysis / analysisWaveCount))
+          : 0;
+
+        return async (item) => {
+          const scene = visualPlan.find((entry) => Number(entry.scene_index || 0) === Number(item.scene_index || 0)) || representativeScene;
+          return analyzeDownloadedAssetSemantics({
+            asset: item,
+            scene,
+            paths,
+            stageDeadlineAt,
+            analysisBudgetMs: perAssetAnalysisBudgetMs,
+          });
+        };
+      })()
     );
     const enrichedItems = enrichedResults.map((result, index) => {
       if (result.status === "fulfilled") return result.value;
@@ -2866,6 +3453,7 @@ const generateAssets = async ({
     blockCandidateFunnel.push({
       block_id: blockPackage.block_id,
       package_id: blockPackage.package_id,
+      block_label: blockLabel,
       intent: blockPackage.intent,
       scenes: activeSceneIndexes,
       raw_candidates_count: rawCandidates.length,
@@ -2893,6 +3481,56 @@ const generateAssets = async ({
       shortlist: shortlist.length,
       finalists: finalists.length,
     });
+
+    await appendPipelineEvent({
+      videoId,
+      stage: "assets",
+      event: "block_complete",
+      status: "ok",
+      payload: {
+        duration_ms: Date.now() - blockStartedAt,
+        block_id: String(blockPackage.block_id || ""),
+        block_label: blockLabel,
+        scenes: activeSceneIndexes,
+        raw_candidates: Number(rawCandidates.length || 0),
+        shortlist: Number(shortlist.length || 0),
+        finalists: Number(finalists.length || 0),
+        downloaded_items: Number(downloadedItems.length || 0),
+        enriched_items: Number(enrichedItems.length || 0),
+      },
+    }).catch(() => null);
+
+    await persistAssetsStageCheckpoint({
+      videoId,
+      visualPlan,
+      items,
+      sceneQueries,
+      fallbackPlan,
+      blockPackages: allBlockPackages,
+      slotQueryPlan,
+      blockCandidateFunnel,
+      preserveUntouchedScenes,
+      previousRawItems,
+      previousSceneQueries,
+      previousFallbackPlan,
+      selectedSceneIndexes,
+      selectiveRefresh,
+      refreshReason,
+      stageProgress: resolveStageProgress(),
+    });
+
+    if (hasAssetStageTimedOut(stageStartedAt)) {
+      assetsStageTimedOut = true;
+      assetsStageTimeoutMessage = `Timeout de assets apos ${blockCandidateFunnel.length}/${selectedBlockPackages.length} bloco(s) concluido(s).`;
+      logger.warn("assetsService: timeout total atingido apos concluir bloco", {
+        videoId,
+        max_runtime_ms: ASSET_STAGE_MAX_RUNTIME_MS,
+        completed_blocks: blockCandidateFunnel.length,
+        total_blocks: selectedBlockPackages.length,
+        last_completed_block_id: String(blockPackage.block_id || ""),
+      });
+      break;
+    }
   }
 
   const mergedRawItems = preserveUntouchedScenes
@@ -3215,9 +3853,14 @@ const generateAssets = async ({
   };
   const refreshSceneIndexes = selectiveRefresh ? selectedSceneIndexes : [];
   const refreshedAt = new Date().toISOString();
-  const assetFailureMessage = missingAssets
-    ? `Assets insuficientes para render: cenas bloqueadas ${readinessSummary.blocking_scene_indexes.join(", ")}.`
-    : "";
+  const assetFailureMessages = [];
+  if (assetsStageTimedOut && assetsStageTimeoutMessage) {
+    assetFailureMessages.push(assetsStageTimeoutMessage);
+  }
+  if (missingAssets) {
+    assetFailureMessages.push(`Assets insuficientes para render: cenas bloqueadas ${readinessSummary.blocking_scene_indexes.join(", ")}.`);
+  }
+  const assetFailureMessage = assetFailureMessages.join(" ").trim();
 
   const nextState = await updateState(
     videoId,
@@ -3265,6 +3908,7 @@ const generateAssets = async ({
         missing_assets: missingAssets,
         blocking_scene_indexes: readinessSummary.blocking_scene_indexes,
         scene_asset_readiness: readinessSummary.scene_asset_readiness,
+        stage_progress: resolveStageProgress(),
         last_repair_plan_by_scene: mergedRepairPlanByScene,
         last_refresh_scene_indexes: refreshSceneIndexes,
         last_refresh_reason: refreshReason || (selectiveRefresh ? "scene_refresh" : "full_refresh"),
@@ -3284,7 +3928,7 @@ const generateAssets = async ({
     { currentStep: "assets_searched", status: "assets_searched" }
   );
 
-  if (!mockMode && missingAssets && !selectiveRefresh && Number(autoRepairRound || 0) < AUTO_REPAIR_MAX_ROUNDS) {
+  if (!mockMode && missingAssets && !assetsStageTimedOut && !selectiveRefresh && Number(autoRepairRound || 0) < AUTO_REPAIR_MAX_ROUNDS) {
     const blockingSceneIndexes = normalizeSceneIndexes(readinessSummary.blocking_scene_indexes || []);
     if (blockingSceneIndexes.length) {
       await appendPipelineEvent({
@@ -3323,6 +3967,7 @@ const generateAssets = async ({
         ? `Clip Library: ${Number(clipLibrarySummary.clips_generated || 0)} clips gerados, ${Number(clipLibrarySummary.clips_approved || 0)} aprovados.`
         : null,
       selectiveRefresh ? `Rebusca seletiva em ${refreshSceneIndexes.length} cena(s): ${refreshSceneIndexes.join(", ")}.` : null,
+      assetsStageTimedOut ? `Timeout do estágio assets após ${blockCandidateFunnel.length}/${selectedBlockPackages.length} bloco(s); fallback parcial persistido.` : null,
       missingAssets
         ? `Render bloqueado para ${readinessSummary.blocking_scene_indexes.length} cena(s) sem asset real: ${readinessSummary.blocking_scene_indexes.join(", ")}.`
         : "Pool editorial aprovado gerado com sucesso.",
@@ -3333,7 +3978,7 @@ const generateAssets = async ({
     videoId,
     stage: "assets",
     event: "end",
-    status: "ok",
+    status: assetsStageTimedOut ? "warn" : "ok",
     payload: {
       duration_ms: Date.now() - stageStartedAt,
       approved_items: Number(approvedItems.length || 0),
@@ -3341,6 +3986,8 @@ const generateAssets = async ({
       clips_generated: Number(clipLibrarySummary.clips_generated || 0),
       clips_approved: Number(clipLibrarySummary.clips_approved || 0),
       refreshed_scene_indexes: refreshSceneIndexes,
+      timed_out: assetsStageTimedOut,
+      timeout_message: assetsStageTimeoutMessage,
     },
   }).catch(() => null);
 
@@ -3352,6 +3999,7 @@ const generateAssets = async ({
     assets_json: nextState.assets_json,
     visual_plan: nextState.visual_plan,
     refreshed_scene_indexes: refreshSceneIndexes,
+    timed_out: assetsStageTimedOut,
   };
   } catch (error) {
     await appendPipelineEvent({
@@ -3421,5 +4069,9 @@ module.exports = {
     computeMissingRequiredSlots,
     buildAutoRepairPlanByScene,
     shouldSkipCandidateByRepairConstraints,
+    resolveGeminiAssetAnalysisBudget,
+    buildFirstPassSceneGenerationReadiness,
+    mergeSceneGenerationReadiness,
+    sceneNeedsCriticalAiGeneration,
   },
 };

@@ -1,6 +1,6 @@
 const { ensureVideoStructure, updateState, loadState } = require("./stateService");
 const { writeTextAtomic } = require("../utils/fileUtils");
-const { transcribeWithOpenAI } = require("./openaiService");
+const { transcribeWithGemini } = require("./geminiService");
 const { sendWorkflowStatus } = require("./telegramService");
 
 const toTimestamp = (totalSeconds) => {
@@ -53,7 +53,7 @@ const generateCaptions = async ({ videoId, mockMode = false }) => {
 
   if (!mockMode) {
     try {
-      const transcriptionText = await transcribeWithOpenAI({
+      const transcriptionText = await transcribeWithGemini({
         audioPath: state.audio_path,
         format: "text",
         videoId,
@@ -66,7 +66,7 @@ const generateCaptions = async ({ videoId, mockMode = false }) => {
         });
         srt = generated.srt;
         vtt = generated.vtt;
-        provider = "openai_transcription_local_segments";
+        provider = "gemini_transcription_local_segments";
       }
     } catch {
       provider = "local_fallback";

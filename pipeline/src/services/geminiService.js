@@ -15,6 +15,11 @@ const DEFAULT_GEMINI_TEXT_FALLBACK_MODELS = String(process.env.GEMINI_TEXT_FALLB
   .filter(Boolean);
 const DEFAULT_GEMINI_TRANSCRIBE_MODEL = String(process.env.GEMINI_TRANSCRIBE_MODEL || config.GEMINI_VISION_MODEL_FULL || "gemini-2.5-flash");
 const DEFAULT_GEMINI_IMAGE_MODEL = String(process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image").trim();
+const DEFAULT_VERTEX_IMAGE_FALLBACK_MODEL = String(
+  process.env.GEMINI_IMAGE_VERTEX_FALLBACK_MODEL
+  || process.env.VERTEX_IMAGE_MODEL
+  || "imagen-3.0-generate-002"
+).trim();
 const DEFAULT_GEMINI_VIDEO_MODEL = String(process.env.GEMINI_VIDEO_MODEL || "veo-3.0-fast-generate-001").trim();
 const DEFAULT_GEMINI_VIDEO_API_VERSION = String(process.env.GEMINI_VIDEO_API_VERSION || "v1beta1").trim() || "v1beta1";
 const DEFAULT_GEMINI_OPERATION_POLL_API_VERSIONS = [...new Set(
@@ -27,7 +32,7 @@ const DEFAULT_GEMINI_OPERATION_POLL_API_VERSIONS = [...new Set(
 )];
 const DEFAULT_GEMINI_OPERATION_POLL_INTERVAL_MS = Math.max(1500, Number(process.env.GEMINI_OPERATION_POLL_INTERVAL_MS || 8000));
 const GEMINI_MAX_INLINE_AUDIO_BYTES = Math.max(1024 * 1024, Number(process.env.GEMINI_MAX_INLINE_AUDIO_BYTES || (18 * 1024 * 1024)));
-const GEMINI_VISION_MAX_RETRIES = Math.max(0, Number(config.GEMINI_VISION_MAX_RETRIES || 2));
+const GEMINI_VISION_MAX_RETRIES = Math.max(0, Number(config.GEMINI_VISION_MAX_RETRIES ?? 3));
 const GEMINI_VISION_RETRY_BASE_MS = Math.max(200, Number(config.GEMINI_VISION_RETRY_BASE_MS || 1200));
 const GOOGLE_CLOUD_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
 
@@ -50,6 +55,11 @@ const getVertexBaseUrl = (apiVersion = "v1") => `https://${config.GOOGLE_CLOUD_L
 const getVertexPublisherModelPath = (model = "") => `projects/${config.GOOGLE_CLOUD_PROJECT}/locations/${config.GOOGLE_CLOUD_LOCATION}/publishers/google/models/${String(model || "").trim()}`;
 const getVertexPublisherModelUrl = (model = "", apiVersion = "v1") => `${getVertexBaseUrl(apiVersion)}/${getVertexPublisherModelPath(model)}`;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const computeGeminiRetryDelayMs = ({ retryBaseMs = GEMINI_VISION_RETRY_BASE_MS, attempt = 0 } = {}) => {
+  const exponentialDelayMs = Math.max(100, Number(retryBaseMs || GEMINI_VISION_RETRY_BASE_MS)) * (2 ** Math.max(0, Number(attempt || 0)));
+  const jitterFactor = 0.75 + (Math.random() * 0.5);
+  return Math.max(100, Math.round(exponentialDelayMs * jitterFactor));
+};
 
 const isRetryableGeminiError = (error) => {
   const status = Number(error?.response?.status || 0);
@@ -79,7 +89,7 @@ const callWithGeminiRetry = async ({
     } catch (error) {
       lastError = error;
       if (!isRetryableGeminiError(error) || attempt >= retries) break;
-      const delayMs = retryDelayBaseMs * (2 ** attempt);
+      const delayMs = computeGeminiRetryDelayMs({ retryBaseMs: retryDelayBaseMs, attempt });
       await sleep(delayMs);
     }
   }
@@ -587,7 +597,7 @@ const callGeminiWithFallback = async ({
         lastError = error;
         const retryable = isRetryableGeminiError(error);
         if (!retryable || attempt >= retries) break;
-        const delayMs = retryDelayBaseMs * (2 ** attempt);
+        const delayMs = computeGeminiRetryDelayMs({ retryBaseMs: retryDelayBaseMs, attempt });
         await sleep(delayMs);
       }
     }
@@ -892,6 +902,42 @@ const generateImageWithGemini = async ({ prompt, videoId = "", outputPath = "" }
     return null;
   }
 
+  const fallbackModel = DEFAULT_VERTEX_IMAGE_FALLBACK_MODEL || DEFAULT_GEMINI_IMAGE_MODEL;
+  const tryVertexPredictFallback = async (model = fallbackModel) => {
+    const response = await callVertexPredict({
+      model,
+      instances: [{ prompt: String(prompt || "").trim() }],
+      parameters: {
+        sampleCount: 1,
+        aspectRatio: "16:9",
+      },
+      timeoutMs: Math.max(GEMINI_VISION_TIMEOUT_MS, 120000),
+    });
+
+    const prediction = Array.isArray(response.data?.predictions) ? response.data.predictions[0] : null;
+    return {
+      imageBytes: String(prediction?.bytesBase64Encoded || prediction?.bytesBase64encoded || "").trim(),
+      mimeType: String(prediction?.mimeType || "image/png").trim() || "image/png",
+      model,
+    };
+  };
+
+  const persistGeneratedImage = ({ imageBytes = "", mimeType = "image/png", model = DEFAULT_GEMINI_IMAGE_MODEL } = {}) => {
+    if (!String(imageBytes || "").trim()) return null;
+
+    const targetPath = String(outputPath || "").trim()
+      || path.join(config.OUTPUT_ROOT, "draft", `${videoId || "gemini-image"}-${Date.now()}.png`);
+
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, Buffer.from(imageBytes, "base64"));
+    return {
+      provider: "vertex_ai",
+      model,
+      path: targetPath,
+      mime_type: mimeType,
+    };
+  };
+
   try {
     let imageBytes = "";
     let mimeType = "image/png";
@@ -916,26 +962,33 @@ const generateImageWithGemini = async ({ prompt, videoId = "", outputPath = "" }
       ).trim() || "image/png";
 
       if (!imageBytes) {
-        logger.warn("Gemini image generation returned no inline image", {
+        logger.warn("Gemini image generation returned no inline image; trying Vertex image fallback", {
           model: modelUsed || DEFAULT_GEMINI_IMAGE_MODEL,
+          fallback_model: fallbackModel,
           videoId,
         });
-        return null;
+
+        try {
+          const fallbackResult = await tryVertexPredictFallback(fallbackModel);
+          imageBytes = fallbackResult.imageBytes;
+          mimeType = fallbackResult.mimeType;
+        } catch (fallbackError) {
+          logger.warn("Gemini image generation Vertex image fallback failed", {
+            model: modelUsed || DEFAULT_GEMINI_IMAGE_MODEL,
+            fallback_model: fallbackModel,
+            videoId,
+            message: formatProviderError(fallbackError),
+          });
+        }
+
+        if (!imageBytes) {
+          return null;
+        }
       }
     } else {
-      const response = await callVertexPredict({
-        model: DEFAULT_GEMINI_IMAGE_MODEL,
-        instances: [{ prompt: String(prompt || "").trim() }],
-        parameters: {
-          sampleCount: 1,
-          aspectRatio: "16:9",
-        },
-        timeoutMs: Math.max(GEMINI_VISION_TIMEOUT_MS, 120000),
-      });
-
-      const prediction = Array.isArray(response.data?.predictions) ? response.data.predictions[0] : null;
-      imageBytes = String(prediction?.bytesBase64Encoded || prediction?.bytesBase64encoded || "").trim();
-      mimeType = String(prediction?.mimeType || "image/png").trim() || "image/png";
+      const fallbackResult = await tryVertexPredictFallback();
+      imageBytes = fallbackResult.imageBytes;
+      mimeType = fallbackResult.mimeType;
       if (!imageBytes) {
         logger.warn("Gemini image generation returned no bytes", {
           model: DEFAULT_GEMINI_IMAGE_MODEL,
@@ -944,19 +997,34 @@ const generateImageWithGemini = async ({ prompt, videoId = "", outputPath = "" }
         return null;
       }
     }
-
-    const targetPath = String(outputPath || "").trim()
-      || path.join(config.OUTPUT_ROOT, "draft", `${videoId || "gemini-image"}-${Date.now()}.png`);
-
-    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-    fs.writeFileSync(targetPath, Buffer.from(imageBytes, "base64"));
-    return {
-      provider: "vertex_ai",
-      model: DEFAULT_GEMINI_IMAGE_MODEL,
-      path: targetPath,
-      mime_type: mimeType,
-    };
+    return persistGeneratedImage({ imageBytes, mimeType, model: DEFAULT_GEMINI_IMAGE_MODEL });
   } catch (error) {
+    if (/^gemini-/i.test(DEFAULT_GEMINI_IMAGE_MODEL) && fallbackModel && fallbackModel !== DEFAULT_GEMINI_IMAGE_MODEL) {
+      logger.warn("Gemini image generation failed; trying Vertex image fallback", {
+        model: DEFAULT_GEMINI_IMAGE_MODEL,
+        fallback_model: fallbackModel,
+        videoId,
+        message: formatProviderError(error),
+      });
+
+      try {
+        const fallbackResult = await tryVertexPredictFallback(fallbackModel);
+        const persistedResult = persistGeneratedImage({
+          imageBytes: fallbackResult.imageBytes,
+          mimeType: fallbackResult.mimeType,
+          model: fallbackResult.model || fallbackModel,
+        });
+        if (persistedResult) return persistedResult;
+      } catch (fallbackError) {
+        logger.warn("Gemini image generation fallback after provider error failed", {
+          model: DEFAULT_GEMINI_IMAGE_MODEL,
+          fallback_model: fallbackModel,
+          videoId,
+          message: formatProviderError(fallbackError),
+        });
+      }
+    }
+
     logger.warn("Gemini image generation unavailable, using fallback", {
       message: formatProviderError(error),
       model: DEFAULT_GEMINI_IMAGE_MODEL,

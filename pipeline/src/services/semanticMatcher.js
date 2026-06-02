@@ -1,10 +1,13 @@
 const path = require("path");
+const os = require("os");
+const { execFile } = require("child_process");
 const fs = require("fs-extra");
 const OpenAI = require("openai");
 const { config } = require("../config/env");
 const { logger } = require("../utils/logger");
 const { writeJsonAtomic, readJsonSafe } = require("../utils/fileUtils");
 const { ensureVideoStructure } = require("./stateService");
+const { extractVideoFrame } = require("../utils/mediaUtils");
 
 const EMBEDDING_MODEL = "text-embedding-3-small";
 const EMBEDDING_BATCH_SIZE = 20;
@@ -431,6 +434,61 @@ const extractKeyConcepts = async ({ text, videoId, maxConcepts = 5 }) => {
     .slice(0, maxConcepts);
 };
 
+// M1 — CLIP image-text matching via Python subprocess
+const CLIP_SCRIPT_PATH = path.join(__dirname, "../../tools/clip-matcher/clip_match.py");
+const CLIP_MIN_SCORE = 0.25;
+const CLIP_FRAME_DIR = path.join(os.tmpdir(), "clip_frames");
+
+const runClipPython = (text, imagePath) =>
+  new Promise((resolve) => {
+    const python = process.env.CLIP_PYTHON || "python3";
+    execFile(
+      python,
+      [CLIP_SCRIPT_PATH, "--text", text, "--image-path", imagePath],
+      { windowsHide: true, maxBuffer: 4 * 1024 * 1024, timeout: 30000 },
+      (error, stdout) => {
+        if (error) { resolve(null); return; }
+        try { resolve(JSON.parse(stdout || "{}")); } catch { resolve(null); }
+      }
+    );
+  });
+
+/**
+ * M1 — CLIP image-text similarity for a video asset.
+ * Extracts a thumbnail frame from the video, runs CLIP, returns score+method.
+ * Falls back gracefully if Python/CLIP is unavailable.
+ */
+const matchBlockToClipCLIP = async ({ text, videoPath, videoId = "", fallbackScore = 0 }) => {
+  if (!text || !videoPath) return { score: fallbackScore, method: "no_input" };
+
+  await fs.ensureDir(CLIP_FRAME_DIR);
+  const safeId = path.basename(videoPath, path.extname(videoPath)).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40);
+  const framePath = path.join(CLIP_FRAME_DIR, `${safeId}_thumb.jpg`);
+
+  try {
+    await extractVideoFrame({ inputPath: videoPath, outputPath: framePath, timeSeconds: 1, width: 224, height: 224 });
+  } catch {
+    return { score: fallbackScore, method: "clip_frame_extract_failed" };
+  }
+
+  if (!(await fs.pathExists(CLIP_SCRIPT_PATH))) {
+    return { score: fallbackScore, method: "clip_script_missing" };
+  }
+
+  const result = await runClipPython(String(text).slice(0, 300), framePath);
+  if (!result || typeof result.score !== "number") {
+    return { score: fallbackScore, method: "clip_unavailable" };
+  }
+
+  const score = Number(result.score);
+  logger.debug(`[M1] CLIP matching: score=${score} method=${result.method || "clip_cosine"}`, { videoId });
+  return {
+    score,
+    method: result.method || "clip_cosine",
+    above_threshold: score >= CLIP_MIN_SCORE,
+  };
+};
+
 module.exports = {
   hasEmbeddings,
   matchNarrationToAssetWindows,
@@ -440,10 +498,12 @@ module.exports = {
   generateEmbedding,
   cosineSimilarity,
   keywordOverlapScore,
+  matchBlockToClipCLIP,
   __test__: {
     cosineSimilarity,
     keywordOverlapScore,
     tokenizeForMatch,
     getCacheKey,
+    CLIP_MIN_SCORE,
   },
 };

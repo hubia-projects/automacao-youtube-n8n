@@ -4,7 +4,7 @@ const crypto = require("crypto");
 const { config } = require("../config/env");
 const { loadState, updateState } = require("./stateService");
 const { getCachedAudioIntelligence } = require("./audioIntelligence");
-const { hasOpenAi, describeImagesWithOpenAI } = require("./openaiService");
+const { hasGemini, describeImagesWithGemini } = require("./geminiService");
 const { extractVideoFrame, probeMedia, runFfmpeg } = require("../utils/mediaUtils");
 const { buildNarrativeBlocks, isSameLocation } = require("./narrativeBlockPlanner");
 const { validateRenderQuality } = require("./renderQualityService");
@@ -15,6 +15,7 @@ const { markNeedsManualReview } = require("./manualReviewService");
 const { getThemeRequiredCategoriesForIntent } = require("../config/editorialPolicy");
 const { appendPipelineEvent } = require("./pipelineEventLogService");
 const { getExternalApiStats } = require("./externalApiControlService");
+const { timestampForFile } = require("../utils/fileUtils");
 
 const DEFAULT_QA_THRESHOLD = 0.78;
 const FOOD_VISUAL_INTENTS = new Set(["gastronomy", "market", "wine", "pastry", "restaurant", "cafe", "street_food"]);
@@ -22,6 +23,11 @@ const GASTRONOMY_THEME_PATTERN = /(gastronom|food|market|mercado|wine|vinho|past
 const MIN_GASTRONOMY_THEME_INTENT_COUNT = 2;
 const MIN_GASTRONOMY_THEME_INTENT_RATIO = 0.35;
 const MICRO_TIMING_DRIFT_MAX_SEC = Number(config.MICRO_TIMING_DRIFT_MAX_SEC || 1.0);
+const QA_STAGE_MAX_RUNTIME_MS = Math.max(60000, Number(config.QA_STAGE_MAX_RUNTIME_MS || 180000));
+const QA_VISION_TIMEOUT_MS = Math.max(4000, Math.min(15000, Number(config.QA_VISION_TIMEOUT_MS || 10000)));
+const QA_VISION_MAX_RETRIES = Math.max(0, Math.min(1, Number(config.QA_VISION_MAX_RETRIES ?? 0)));
+const QA_VISION_BATCH_SIZE = Math.max(1, Math.min(12, Number(config.QA_VISION_BATCH_SIZE || 8)));
+const QA_MIN_VISION_BUDGET_MS = 4000;
 const EDITORIAL_QA_PROFILES = {
   strict: {
     uncertainRatioMax: 0.1,
@@ -38,9 +44,66 @@ const QA_RUNTIME_PROFILES = {
   prod_strict: "prod_strict",
   mock_relaxed: "mock_relaxed",
 };
+const normalizeReportFileSegment = (value = "") =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "video";
 const QA_REPORTS_ROOT = config.TEST_REPORTS_ROOT;
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
+const chunkArray = (values = [], size = 1) => {
+  const safeValues = Array.isArray(values) ? values : [];
+  const chunkSize = Math.max(1, Number(size || 1));
+  const chunks = [];
+  for (let index = 0; index < safeValues.length; index += chunkSize) {
+    chunks.push(safeValues.slice(index, index + chunkSize));
+  }
+  return chunks;
+};
+const getRemainingQaRuntimeMs = (stageDeadlineAt = 0) =>
+  Number(stageDeadlineAt || 0) > 0
+    ? Math.max(0, Number(stageDeadlineAt) - Date.now())
+    : 0;
+const resolveQaVisionRequestOptions = ({ stageDeadlineAt = 0 } = {}) => {
+  const remainingMs = getRemainingQaRuntimeMs(stageDeadlineAt);
+  if (remainingMs > 0 && remainingMs < QA_MIN_VISION_BUDGET_MS) {
+    return null;
+  }
+
+  const timeoutMs = remainingMs > 0
+    ? Math.max(QA_MIN_VISION_BUDGET_MS, Math.min(QA_VISION_TIMEOUT_MS, remainingMs))
+    : QA_VISION_TIMEOUT_MS;
+  const maxRetries = remainingMs > 0 && remainingMs < (timeoutMs * 2)
+    ? 0
+    : QA_VISION_MAX_RETRIES;
+
+  return {
+    timeoutMs,
+    maxRetries,
+    remainingMs,
+  };
+};
+const buildVisionFallbackResult = ({
+  framePath = "",
+  method = "metadata_fallback",
+  runtimeDegraded = false,
+} = {}) => ({
+  frame_path: framePath,
+  method,
+  detected_topic: "",
+  location: { city: "", country: "", confidence: 0 },
+  landmarks: [],
+  overlay_visible: false,
+  overlay_text: "",
+  overlay_contrast_ok: false,
+  confidence: 0,
+  runtime_degraded: Boolean(runtimeDegraded),
+});
+const buildVisionBatchPrompt = () => (
+  'Analise cada frame em ordem e retorne JSON estrito no formato {"frames":[{"frame_index":1,"topic":"","location":{"city":"","country":"","confidence":0},"landmarks":[{"name":"","confidence":0}],"overlay_text":"","overlay_visible":false,"overlay_contrast_ok":false,"confidence":0}]}. Use exatamente um objeto por frame na mesma ordem recebida. Nao invente cidade se nao houver evidencia visual clara.'
+);
 const sha256File = async (filePath = "") => {
   if (!filePath || !(await fs.pathExists(filePath))) return "";
   const hash = crypto.createHash("sha256");
@@ -178,13 +241,16 @@ const generateContactSheetAndAudit = async ({ videoId, renderPath, duration, har
   await fs.writeJson(visualAuditPath, { video_id: videoId, render_path: renderPath, timestamps: audit, clip_audit: [], boundary_audit: [], overlay_audit: [], resolution_audit: {}, final_decision: {} }, { spaces: 2 });
   return { contactSheetPath, visualAuditPath, auditRows: audit };
 };
-const classifyFramesWithVision = async ({ renderPath, sampleTimestamps, videoId = "" }) => {
-  if (!hasOpenAi() || config.SEMANTIC_SYNC_MODE !== "high-quality") return new Map();
+const classifyFramesWithVision = async ({ renderPath, sampleTimestamps, videoId = "", stageDeadlineAt = 0 }) => {
+  if (!hasGemini() || config.SEMANTIC_SYNC_MODE !== "high-quality") return new Map();
   const limitedTimestamps = sampleTimestamps.slice(0, 24);
   const framesDir = `${renderPath}.semantic-qa`;
   await fs.emptyDir(framesDir);
 
   try {
+    const runtimeOptions = resolveQaVisionRequestOptions({ stageDeadlineAt });
+    if (!runtimeOptions) return new Map();
+
     const framePaths = [];
     for (let index = 0; index < limitedTimestamps.length; index += 1) {
       const timestamp = limitedTimestamps[index];
@@ -193,11 +259,12 @@ const classifyFramesWithVision = async ({ renderPath, sampleTimestamps, videoId 
       framePaths.push(framePath);
     }
 
-    const response = await describeImagesWithOpenAI({
+    const response = await describeImagesWithGemini({
       prompt: `Classifique cada frame em ordem para QA semantico de video de turismo e gastronomia. Retorne JSON estrito: {"frames":[{"frame_index":1,"topic":"","location":{"city":"","country":"","confidence":0},"landmarks":[{"name":"","confidence":0}],"neutral":false,"confidence":0}]}. Nao invente cidade se nao houver evidencia visual clara.`,
       imagePaths: framePaths,
-      detail: "low",
       videoId,
+      timeoutMs: runtimeOptions.timeoutMs,
+      maxRetries: runtimeOptions.maxRetries,
     });
 
     const byTimestamp = new Map();
@@ -214,7 +281,7 @@ const classifyFramesWithVision = async ({ renderPath, sampleTimestamps, videoId 
         landmarks: Array.isArray(frame.landmarks) ? frame.landmarks : [],
         neutral: Boolean(frame.neutral),
         confidence: Number(frame.confidence || frame.location?.confidence || 0),
-        method: "openai_vision_frame",
+        method: "gemini_vision_frame",
       });
     });
     return byTimestamp;
@@ -225,42 +292,150 @@ const classifyFramesWithVision = async ({ renderPath, sampleTimestamps, videoId 
   }
 };
 
+const classifyFramesWithVisionAtTimestamps = async ({
+  renderPath,
+  frameRequests = [],
+  evidenceDir,
+  videoId = "",
+  stageDeadlineAt = 0,
+  width = 960,
+  height = 540,
+}) => {
+  const safeRequests = Array.isArray(frameRequests) ? frameRequests : [];
+  if (!safeRequests.length) return [];
+  await fs.ensureDir(evidenceDir);
+
+  const preparedRequests = [];
+  for (let index = 0; index < safeRequests.length; index += 1) {
+    const request = safeRequests[index] || {};
+    const runtimeOptions = resolveQaVisionRequestOptions({ stageDeadlineAt });
+    const timestampSec = round3(Math.max(0, Number(request.timestampSec || 0)));
+    const label = String(request.label || "frame");
+    const framePath = path.join(
+      evidenceDir,
+      `${label}-${String(index + 1).padStart(4, "0")}-${String(timestampSec).replace(/\./g, "_")}.jpg`
+    );
+
+    if (!runtimeOptions) {
+      preparedRequests.push({
+        ...request,
+        timestampSec,
+        framePath: "",
+        fallback: buildVisionFallbackResult({ method: "runtime_budget_fallback", runtimeDegraded: true }),
+      });
+      continue;
+    }
+
+    await fs.ensureDir(path.dirname(framePath));
+    await extractVideoFrame({
+      inputPath: renderPath,
+      outputPath: framePath,
+      timeSeconds: timestampSec,
+      width,
+      height,
+    }).catch(() => null);
+    const frameExists = await fs.pathExists(framePath).catch(() => false);
+
+    preparedRequests.push({
+      ...request,
+      timestampSec,
+      framePath,
+      fallback: frameExists
+        ? null
+        : buildVisionFallbackResult({ framePath, method: "frame_extract_failed" }),
+    });
+  }
+
+  const results = new Array(preparedRequests.length);
+  preparedRequests.forEach((request, index) => {
+    if (request.fallback) {
+      results[index] = {
+        ...request.fallback,
+        frame_path: request.fallback.frame_path || request.framePath || "",
+      };
+    }
+  });
+
+  const eligibleRequests = preparedRequests
+    .map((request, index) => ({ ...request, index }))
+    .filter((request) => !results[request.index] && request.framePath);
+
+  if (!hasGemini()) {
+    eligibleRequests.forEach((request) => {
+      results[request.index] = buildVisionFallbackResult({ framePath: request.framePath });
+    });
+    return results;
+  }
+
+  for (const requestChunk of chunkArray(eligibleRequests, QA_VISION_BATCH_SIZE)) {
+    const runtimeOptions = resolveQaVisionRequestOptions({ stageDeadlineAt });
+    if (!runtimeOptions) {
+      requestChunk.forEach((request) => {
+        results[request.index] = buildVisionFallbackResult({
+          framePath: request.framePath,
+          method: "runtime_budget_fallback",
+          runtimeDegraded: true,
+        });
+      });
+      continue;
+    }
+
+    const response = await describeImagesWithGemini({
+      prompt: buildVisionBatchPrompt(),
+      imagePaths: requestChunk.map((request) => request.framePath),
+      videoId,
+      timeoutMs: runtimeOptions.timeoutMs,
+      maxRetries: runtimeOptions.maxRetries,
+    }).catch(() => null);
+    const responseFrames = Array.isArray(response?.frames) ? response.frames : [];
+
+    requestChunk.forEach((request, chunkIndex) => {
+      const frame = responseFrames[chunkIndex];
+      if (!frame || typeof frame !== "object") {
+        results[request.index] = buildVisionFallbackResult({ framePath: request.framePath });
+        return;
+      }
+
+      results[request.index] = {
+        frame_path: request.framePath,
+        method: "gemini_vision_frame",
+        detected_topic: frame.topic || frame.location?.city || "",
+        location: {
+          city: frame.location?.city || "",
+          country: frame.location?.country || "",
+          confidence: Number(frame.location?.confidence || frame.confidence || 0),
+        },
+        landmarks: Array.isArray(frame.landmarks) ? frame.landmarks : [],
+        overlay_visible: Boolean(frame.overlay_visible),
+        overlay_text: frame.overlay_text || "",
+        overlay_contrast_ok: Boolean(frame.overlay_contrast_ok),
+        confidence: Number(frame.confidence || frame.location?.confidence || 0),
+        runtime_degraded: false,
+      };
+    });
+  }
+
+  return results.map((result, index) => result || buildVisionFallbackResult({ framePath: preparedRequests[index]?.framePath || "" }));
+};
+
 const classifyFrameWithVisionAtTimestamp = async ({
   renderPath,
   timestampSec,
   evidenceDir,
   label,
   videoId = "",
+  stageDeadlineAt = 0,
 }) => {
-  const framePath = path.join(evidenceDir, `${label}-${String(timestampSec).replace(/\./g, "_")}.jpg`);
-  await fs.ensureDir(path.dirname(framePath));
-  await extractVideoFrame({ inputPath: renderPath, outputPath: framePath, timeSeconds: Math.max(0, timestampSec), width: 960, height: 540 });
-  if (!hasOpenAi()) {
-    return { frame_path: framePath, method: "metadata_fallback", detected_topic: "", location: { city: "", country: "", confidence: 0 }, confidence: 0 };
-  }
-
-  const response = await describeImagesWithOpenAI({
-    prompt: `Analise o frame e retorne JSON estrito: {"topic":"","location":{"city":"","country":"","confidence":0},"landmarks":[{"name":"","confidence":0}],"overlay_text":"","overlay_visible":false,"overlay_contrast_ok":false,"confidence":0}.`,
-    imagePaths: [framePath],
-    detail: "low",
+  const [result] = await classifyFramesWithVisionAtTimestamps({
+    renderPath,
+    frameRequests: [{ timestampSec: Math.max(0, timestampSec), label }],
+    evidenceDir,
     videoId,
-  }).catch(() => null);
-
-  return {
-    frame_path: framePath,
-    method: "openai_vision_frame",
-    detected_topic: response?.topic || response?.location?.city || "",
-    location: {
-      city: response?.location?.city || "",
-      country: response?.location?.country || "",
-      confidence: Number(response?.location?.confidence || response?.confidence || 0),
-    },
-    landmarks: Array.isArray(response?.landmarks) ? response.landmarks : [],
-    overlay_visible: Boolean(response?.overlay_visible),
-    overlay_text: response?.overlay_text || "",
-    overlay_contrast_ok: Boolean(response?.overlay_contrast_ok),
-    confidence: Number(response?.confidence || response?.location?.confidence || 0),
-  };
+    stageDeadlineAt,
+    width: 960,
+    height: 540,
+  });
+  return result || buildVisionFallbackResult({ method: "runtime_budget_fallback", runtimeDegraded: true });
 };
 
 const scoreExpectedVsDetected = ({ expectedBlock, detected }) => {
@@ -830,6 +1005,7 @@ const validateOverlayRenderedFrames = async ({
   evidenceDir,
   overlayApplyStatus = "",
   videoId = "",
+  stageDeadlineAt = 0,
 }) => {
   const results = [];
   const normalizedStatus = String(overlayApplyStatus || "").toLowerCase();
@@ -844,15 +1020,24 @@ const validateOverlayRenderedFrames = async ({
       reason: "overlay_apply_failed",
     }));
   }
-  for (const overlay of overlays) {
+  const overlayRequests = (overlays || []).map((overlay, index) => ({
+    timestampSec: round3(Number(overlay.start_seconds || 0) + 0.5),
+    label: `overlay-${overlay.type || "overlay"}-${index + 1}`,
+  }));
+  const overlayFrames = await classifyFramesWithVisionAtTimestamps({
+    renderPath,
+    frameRequests: overlayRequests,
+    evidenceDir,
+    videoId,
+    stageDeadlineAt,
+    width: 960,
+    height: 540,
+  });
+
+  for (let index = 0; index < overlays.length; index += 1) {
+    const overlay = overlays[index] || {};
     const ts = round3(Number(overlay.start_seconds || 0) + 0.5);
-    const vision = await classifyFrameWithVisionAtTimestamp({
-      renderPath,
-      timestampSec: ts,
-      evidenceDir,
-      label: `overlay-${overlay.type || "overlay"}`,
-      videoId,
-    });
+    const vision = overlayFrames[index] || buildVisionFallbackResult({ method: "runtime_budget_fallback", runtimeDegraded: true });
     const detected = Boolean(vision.overlay_visible || (vision.overlay_text || '').trim());
     results.push({
       text: overlay.text || '',
@@ -861,17 +1046,21 @@ const validateOverlayRenderedFrames = async ({
       frame_overlay_detected: detected,
       frame_path: vision.frame_path,
       status: detected ? 'pass' : 'fail',
-      reason: detected ? "detected" : "not_detected_on_frame",
+      reason: detected ? "detected" : (vision.runtime_degraded ? "runtime_budget_fallback" : "not_detected_on_frame"),
+      runtime_degraded: Boolean(vision.runtime_degraded),
     });
   }
   return results;
 };
 
-const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir, videoId = "" }) => {
+const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir, videoId = "", stageDeadlineAt = 0 }) => {
   const rows = [];
   const mediaInfo = await probeMedia(renderPath).catch(() => ({ duration: 0 }));
   const renderDuration = Math.max(0.2, Number(mediaInfo.duration || 0));
-  for (const clip of clips) {
+  const frameRequests = [];
+  const frameRequestIndexesByClip = (clips || []).map(() => []);
+
+  clips.forEach((clip, clipArrayIndex) => {
     const startSec = Number(clip.timeline_start_sec || 0);
     const endSec = Number(clip.timeline_end_sec || startSec);
     const duration = Math.max(0, endSec - startSec);
@@ -880,18 +1069,32 @@ const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir, v
       timestamps.push(round3(Math.min(endSec - 0.5, startSec + 0.5)));
       timestamps.push(round3(Math.max(startSec + 0.5, endSec - 0.5)));
     }
-    const frameChecks = [];
     for (const ts of [...new Set(timestamps)].filter((v)=>v>=startSec && v<=endSec)) {
       const safeTs = round3(Math.min(Math.max(0, ts), Math.max(0, renderDuration - 0.05)));
-      const vision = await classifyFrameWithVisionAtTimestamp({
-        renderPath,
+      frameRequestIndexesByClip[clipArrayIndex].push({ ts: safeTs, requestIndex: frameRequests.length });
+      frameRequests.push({
         timestampSec: safeTs,
-        evidenceDir,
-        label: `clip-${clip.clip_index || 0}`,
-        videoId,
+        label: `clip-${clip.clip_index || clipArrayIndex + 1}`,
       });
-      frameChecks.push({ ts: safeTs, vision });
     }
+  });
+
+  const frameResults = await classifyFramesWithVisionAtTimestamps({
+    renderPath,
+    frameRequests,
+    evidenceDir,
+    videoId,
+    stageDeadlineAt,
+    width: 960,
+    height: 540,
+  });
+
+  for (let clipArrayIndex = 0; clipArrayIndex < clips.length; clipArrayIndex += 1) {
+    const clip = clips[clipArrayIndex] || {};
+    const frameChecks = (frameRequestIndexesByClip[clipArrayIndex] || []).map(({ ts, requestIndex }) => ({
+      ts,
+      vision: frameResults[requestIndex] || buildVisionFallbackResult({ method: "runtime_budget_fallback", runtimeDegraded: true }),
+    }));
 
     const expected = clip.macro_topic || clip.expected_location || "";
     const expectedLocation = clip.expected_location || "";
@@ -904,6 +1107,10 @@ const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir, v
       || clip.narrative_role_selected === "closing_payoff"
     );
     const metadataLocation = clip.detected_location?.city || "";
+    const inferredLocationMatch = frameChecks.find((item) => {
+      const locationCity = item.vision.location?.city || "";
+      return locationCity && metadataLocation && isSameLocation(locationCity, metadataLocation);
+    });
     const confirmed = frameChecks.find((item) => {
       const locationCity = item.vision.location?.city || "";
       return locationCity && expectedLocation && isSameLocation(locationCity, expectedLocation);
@@ -926,6 +1133,15 @@ const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir, v
     } else if (!expectedLocation && (clip.visual_truth_status === "exact" || clip.visual_truth_status === "regional") && clip.editorial_slot_ok !== false) {
       status = 'pass';
       reason = 'editorial_contract_backstop_without_explicit_location';
+    } else if (
+      !expectedLocation
+      && (clip.visual_truth_status === "exact" || clip.visual_truth_status === "regional")
+      && String(clip.micro_id || "").trim()
+      && clip.micro_slot_ok !== false
+      && inferredLocationMatch
+    ) {
+      status = 'pass';
+      reason = 'micro_sync_backstop_without_explicit_location';
     } else if (metadataLocation && expectedLocation && isSameLocation(metadataLocation, expectedLocation)) {
       status = 'pass';
       reason = 'metadata_location_backstop_with_no_vision_mismatch';
@@ -965,13 +1181,16 @@ const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir, v
       micro_match_score: Number(clip.micro_match_score || 0),
       micro_timing_score: Number(clip.micro_timing_score || 0),
       micro_timing_drift_sec: Number(clip.micro_timing_drift_sec || 0),
+      vision_method: best.vision.method || "",
+      runtime_degraded: frameChecks.some((item) => item.vision.runtime_degraded === true),
     });
   }
   return rows;
 };
 
 const writeVisualTruthFinalReport = async ({ videoId, validation }) => {
-  const outPath = path.join('pipeline','reports','visual-truth-final-report.md');
+  const safeVideoId = normalizeReportFileSegment(videoId);
+  const outPath = path.join("pipeline", "reports", `visual-truth-${safeVideoId}-${timestampForFile()}.md`);
   const boundaries = validation?.visual_alignment?.boundary_visual_audit || [];
   const clips = validation?.clip_audit || [];
   const boundaryTable = ['| Boundary | Expected | Vision | Status |','|---|---|---|---|', ...boundaries.slice(0,60).map((b)=>`| ${b.boundary_id} @ ${b.frame_timestamp}s | ${b.expected_location||''} | ${b.vision_detected_location||''} | ${b.visual_truth_status} |`) ].join('\n');
@@ -1000,7 +1219,7 @@ ${clipTable}
   await fs.writeFile(outPath, md, 'utf8');
   return outPath;
 };
-const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence, timeline, state }) => {
+const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence, timeline, state, stageDeadlineAt = 0 }) => {
   if (!renderPath || !(await fs.pathExists(renderPath))) {
     return { vision_validated: false, should_regenerate: true, reason: "render_path_not_found", metrics: { semantic_alignment_score: 0, p95_topic_lag_sec: 99, wrong_topic_exposure_sec: 99 } };
   }
@@ -1020,7 +1239,7 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
   );
   const sampleIntervalSec = Number(config.SEMANTIC_SYNC_QA_SAMPLE_INTERVAL_SEC || (config.SEMANTIC_SYNC_MODE === "high-quality" ? 1 : 2));
   const sampleTimestamps = buildQaSampleTimestamps({ duration: renderDuration, hardBoundaries, intervalSec: sampleIntervalSec });
-  const visionByTimestamp = await classifyFramesWithVision({ renderPath, sampleTimestamps, videoId });
+  const visionByTimestamp = await classifyFramesWithVision({ renderPath, sampleTimestamps, videoId, stageDeadlineAt });
 
   const samples = sampleTimestamps.map((timestamp) => {
     const expectedBlock = findNarrativeBlockAtTime(narrativeBlocks, timestamp);
@@ -1060,18 +1279,38 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
   const evidenceDir = path.join(QA_REPORTS_ROOT, `${videoId}-visual-evidence`);
   await fs.ensureDir(evidenceDir);
   const boundaryVisualAudit = [];
-  for (const boundary of hardBoundaries) {
+  const boundaryRequests = [];
+  const boundaryRequestIndexes = new Map();
+  hardBoundaries.forEach((boundary) => {
     const checks = [0.1, 0.5, 1.0];
-    let boundaryPass = false;
-    for (const offset of checks) {
+    const requestIndexes = [];
+    checks.forEach((offset, offsetIndex) => {
       const ts = round3(Math.min(Math.max(0, boundary.timestamp_sec + offset), Math.max(0, renderDuration - 0.1)));
-      const vision = await classifyFrameWithVisionAtTimestamp({
-        renderPath,
+      requestIndexes.push({ ts, requestIndex: boundaryRequests.length });
+      boundaryRequests.push({
         timestampSec: ts,
-        evidenceDir,
-        label: `boundary-${boundary.boundary_id}`,
-        videoId,
+        label: `boundary-${boundary.boundary_id}-${offsetIndex + 1}`,
       });
+    });
+    boundaryRequestIndexes.set(String(boundary.boundary_id || ""), requestIndexes);
+  });
+  const boundaryVisionResults = await classifyFramesWithVisionAtTimestamps({
+    renderPath,
+    frameRequests: boundaryRequests,
+    evidenceDir,
+    videoId,
+    stageDeadlineAt,
+    width: 960,
+    height: 540,
+  });
+
+  for (const boundary of hardBoundaries) {
+    let boundaryPass = false;
+    const frameChecks = (boundaryRequestIndexes.get(String(boundary.boundary_id || "")) || []).map(({ ts, requestIndex }) => ({
+      ts,
+      vision: boundaryVisionResults[requestIndex] || buildVisionFallbackResult({ method: "runtime_budget_fallback", runtimeDegraded: true }),
+    }));
+    for (const { ts, vision } of frameChecks) {
       const detectedCity = vision.location?.city || "";
       const metadataCity = (findClipAtTime(timeline?.clips || [], ts)?.detected_location?.city) || "";
       const hasCityMatchFromVision = boundary.expected_topic_type === "city" && detectedCity && isSameLocation(detectedCity, boundary.expected_topic);
@@ -1089,6 +1328,7 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
         metadata_location: metadataCity,
         visual_truth_status: status,
         frame_path: vision.frame_path,
+        runtime_degraded: Boolean(vision.runtime_degraded),
       });
     }
     if (!boundaryPass) {
@@ -1144,6 +1384,7 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
     threshold,
     failed_ranges: failedRanges,
     should_regenerate: shouldRegenerate,
+    runtime_degraded: boundaryVisualAudit.some((item) => item.runtime_degraded === true),
     samples: samples.slice(0, 80),
   };
 };
@@ -1477,6 +1718,7 @@ const hasNoProgressAfterRepair = ({ beforeValidation = {}, afterValidation = {} 
 
 const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
   const stageStartedAt = Date.now();
+  const stageDeadlineAt = stageStartedAt + QA_STAGE_MAX_RUNTIME_MS;
   await appendPipelineEvent({
     videoId,
     stage: "qa",
@@ -1497,7 +1739,7 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     renderPath,
     allowPlaceholderArtifacts: Boolean(mockMode || config.ALLOW_PLACEHOLDER_ASSETS),
   }).catch(() => ({ technical_score: 0, issues: [{ type: "render_probe_failed", severity: "critical" }] }));
-  const visual = await validateRenderWithVision({ videoId, renderPath, audioIntelligence, timeline, state });
+  const visual = await validateRenderWithVision({ videoId, renderPath, audioIntelligence, timeline, state, stageDeadlineAt });
   const renderProbe = await probeMedia(renderPath).catch(() => ({ width: 0, height: 0, duration: 0 }));
   const renderSha256 = await sha256File(renderPath);
   const uploadSourcePath = state.upload_source_path || state.render_path || "";
@@ -1524,6 +1766,7 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     overlayApplyStatus,
     evidenceDir: path.join(QA_REPORTS_ROOT, `${videoId}-visual-evidence`),
     videoId,
+    stageDeadlineAt,
   });
   const baseIssues = collectTimelineIssues({ timeline, technical, visual, diversityScore })
     .map((issue) => normalizeIssueSeverity({ issue, technicalScore: Number(technical.technical_score || 0) }));
@@ -1564,6 +1807,7 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     renderPath,
     evidenceDir: path.join(QA_REPORTS_ROOT, `${videoId}-visual-evidence`),
     videoId,
+    stageDeadlineAt,
   });
   const approvedPoolAudit = evaluateApprovedPoolAudit({ state, timeline });
   const sceneEditorialReadiness = Array.isArray(state.assets_json?.scene_editorial_readiness)
@@ -1580,9 +1824,8 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
   const coverageFailureScenesByCause = (sceneEditorialReadiness || []).reduce((acc, scene) => {
     const coverageStatus = String(scene.coverage_status || "").toLowerCase();
     if (!["insufficient", "partial"].includes(coverageStatus)) return acc;
-    const isBlockingScene = Boolean(scene.blocking === true || (scene.blocking_reasons || []).length);
     const needsCoverageRepair = Boolean(scene.coverage_needs_repair === true || scene.coverage_can_advance === false);
-    if (!isBlockingScene && !needsCoverageRepair) return acc;
+    if (!needsCoverageRepair) return acc;
     const cause = String(scene.coverage_primary_failure_cause || "unknown");
     const sceneIndex = Number(scene.scene_index || 0);
     if (!sceneIndex) return acc;
@@ -1593,6 +1836,11 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
   const qaProfile = getEditorialQaProfile();
   const qaRuntimeProfile = resolveQaRuntimeProfile({ mockMode });
   const strictRuntimeProfile = qaRuntimeProfile === QA_RUNTIME_PROFILES.prod_strict;
+  const qaRuntimeDegraded = Boolean(
+    visual.runtime_degraded
+    || overlayValidation.some((item) => item.runtime_degraded === true)
+    || clipAuditRows.some((row) => row.runtime_degraded === true)
+  );
   const failedClipCount = clipAuditRows.filter((row) => row.visual_truth_status === 'fail').length;
   const gate = evaluateClipAuditGate({ clipAuditRows });
   const microGate = evaluateMicroSyncGate({
@@ -1728,6 +1976,13 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
       missing_approved_window_id_count: approvedPoolAudit.missing_approved_window_id_count,
     });
   }
+  if (qaRuntimeDegraded) {
+    issues.push({
+      type: "runtime_degradation_used",
+      severity: strictRuntimeProfile ? "high" : "medium",
+      message: `qa_runtime_budget_exhausted_${QA_STAGE_MAX_RUNTIME_MS}ms`,
+    });
+  }
 
   const qualityScore = round3(Math.max(0, Math.min(1,
     Number(technical.technical_score || 0) * 0.35 +
@@ -1796,6 +2051,8 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     visual_intent_distribution: visualIntentCoverage.visual_intent_distribution,
     qa_profile: String(config.EDITORIAL_QA_PROFILE || "strict").toLowerCase(),
     qa_runtime_profile: qaRuntimeProfile,
+    qa_runtime_degraded: qaRuntimeDegraded,
+    qa_stage_max_runtime_ms: QA_STAGE_MAX_RUNTIME_MS,
     overlay_apply_status: overlayApplyStatus,
     overlay_apply_error: overlayApplyError,
     overlay_output_path: overlayOutputPath,
@@ -1904,13 +2161,14 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     videoId,
     stage: "qa",
     event: "end",
-    status: "ok",
+    status: qaRuntimeDegraded ? "warn" : "ok",
     payload: {
       duration_ms: Date.now() - stageStartedAt,
       is_publishable: Boolean(validationResult.is_publishable),
       needs_regeneration: Boolean(validationResult.needs_regeneration),
       final_hard_boundary_status: String(validationResult.final_hard_boundary_status || "unknown"),
       failure_codes: validationResult.editorial_failure_codes || [],
+      qa_runtime_degraded: qaRuntimeDegraded,
     },
   }).catch(() => null);
   return validationResult;
@@ -2089,5 +2347,7 @@ module.exports = {
     buildEditorialFailureCodes,
     buildProviderReliabilitySnapshot,
     hasNoProgressAfterRepair,
+    resolveQaVisionRequestOptions,
+    writeVisualTruthFinalReport,
   },
 };

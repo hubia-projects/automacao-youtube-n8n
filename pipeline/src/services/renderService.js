@@ -20,7 +20,7 @@ const PREFERRED_OUTPUT = { width: Number(config.OUTPUT_WIDTH || 1920), height: N
 const VIDEO_BITRATE = String(config.VIDEO_BITRATE || "6M");
 const MAX_VIDEO_BITRATE = String(config.MAX_VIDEO_BITRATE || "8M");
 const AUDIO_BITRATE = "192k";
-const TRANSITION_DURATION = 0.45;
+const TRANSITION_DURATION = 0.3;  // [M5] reduzido de 0.45 para 0.3s
 const TARGET_AVERAGE_CLIP_DURATION = 6;
 const MIN_CLIP_DURATION = 3;
 const MAX_CLIP_DURATION = 10;
@@ -995,6 +995,7 @@ const pickSceneAsset = ({
   usageByWindowKey = new Map(),
   usageBySemanticKey = new Map(),
   recentLocations = [],
+  clipScoreHint = 0,  // M1: CLIP image-text bonus (0 = no hint)
 }) => {
   if (!sceneAssets.length) {
     return {
@@ -1064,7 +1065,8 @@ const pickSceneAsset = ({
         Math.min(1.25, window.confidence || 0) +
         (asset.analysis_windows?.length ? 1.1 : 0) +
         (assetIndex === baselineIndex ? 0.35 : 0) +
-        (isVideoAsset(asset) ? 0.2 : 0) -
+        (isVideoAsset(asset) ? 0.2 : 0) +
+        clipScoreHint * 3.5 -  // M1: CLIP image-text similarity bonus
         assetReuseIndex * 2.0 -
         windowReuseIndex * 2 -
         semanticReuseIndex * 1.35 -
@@ -1238,10 +1240,45 @@ const buildClipPlan = async ({ state, audioDuration, draftVersion, fallbackAsset
   const recentLocations = [];
   const MAX_RECENT_LOCATIONS = 3;
 
-  return sceneRefs.map((ref, index) => {
+  // M1: lazy-load CLIP matcher (fail-open if unavailable)
+  let matchBlockToClipCLIP = null;
+  try { ({ matchBlockToClipCLIP } = require("./semanticMatcher")); } catch { /* no CLIP */ }
+
+  // M3: build structured_blocks lookup for DALL-E 3 override
+  const structuredBlocksMap = {};
+  if (Array.isArray(state.structured_blocks)) {
+    for (const block of state.structured_blocks) {
+      if (block?.block_id) structuredBlocksMap[block.block_id] = block;
+    }
+  }
+
+  const clips = [];
+  for (const [index, ref] of sceneRefs.entries()) {
     const scene = ref.scene;
     const occurrenceIndex = ref.occurrenceIndex;
     const clipScriptExcerpt = clipNarrationExcerptsByScene.get(scene.scene_index)?.[occurrenceIndex] || scene.narration_excerpt || scene.title;
+
+    // M1: compute CLIP score for first candidate asset (best-effort, fail-open)
+    let clipScoreHint = 0;
+    try {
+      if (matchBlockToClipCLIP) {
+        const sceneAssets = getSceneAssets({ scene, state, sceneAssetMap });
+        const firstAsset = sceneAssets[0];
+        if (firstAsset?.local_path && isVideoAsset(firstAsset)) {
+          const clipResult = await matchBlockToClipCLIP({
+            text: clipScriptExcerpt,
+            videoPath: firstAsset.local_path,
+            videoId,
+            fallbackScore: 0,
+          });
+          clipScoreHint = clipResult.score || 0;
+          if (clipScoreHint > 0) {
+            logger.debug(`[M1] CLIP score: ${clipScoreHint} para cena ${scene.scene_index}`, { method: clipResult.method });
+          }
+        }
+      }
+    } catch { /* fail-open: clipScoreHint stays 0 */ }
+
     const pickedAsset = pickSceneAsset({
       sceneAssets: getSceneAssets({ scene, state, sceneAssetMap }),
       scene,
@@ -1254,8 +1291,9 @@ const buildClipPlan = async ({ state, audioDuration, draftVersion, fallbackAsset
       usageByWindowKey,
       usageBySemanticKey,
       recentLocations,
+      clipScoreHint,
     });
-    const asset = pickedAsset.asset;
+    let asset = pickedAsset.asset;
     const assetKey = asset?.local_path || `${scene.scene_index}:${occurrenceIndex}`;
     const assetReuseIndex = pickedAsset.assetReuseIndex;
     usageByAssetKey.set(assetKey, assetReuseIndex + 1);
@@ -1277,6 +1315,24 @@ const buildClipPlan = async ({ state, audioDuration, draftVersion, fallbackAsset
       recentLocations.shift();
     }
 
+    // M3 — Vertex AI image override for blocks with visual_type="specific"
+    try {
+      const blockEntry = structuredBlocksMap[String(scene.block_id || "")];
+      if (blockEntry?.visual_type === "specific" && blockEntry?.visual_description) {
+        const videoPaths = await ensureVideoStructure(String(state.video_id || ""));
+        const vertexImageOutputPath = path.join(videoPaths.base, "assets", "raw", `vertex_image_${blockEntry.block_id}.png`);
+        if (!(await fs.pathExists(vertexImageOutputPath))) {
+          await fs.ensureDir(path.dirname(vertexImageOutputPath));
+          const { generateImageWithGemini } = require("./geminiService");
+          await generateImageWithGemini({ prompt: blockEntry.visual_description, videoId: state.video_id, outputPath: vertexImageOutputPath });
+        }
+        if (await fs.pathExists(vertexImageOutputPath)) {
+          asset = { ...asset, local_path: vertexImageOutputPath, asset_type: "image", provider: "vertex_ai_generated", query: blockEntry.visual_description, source_tier: "generated" };
+          logger.debug(`[M3] Asset substituido por Vertex AI para bloco ${blockEntry.block_id}`, { videoId });
+        }
+      }
+    } catch { /* fail-open: usar asset original */ }
+
     const clipDurationSeconds = clipDurationsByScene.get(scene.scene_index)?.[occurrenceIndex] || MIN_CLIP_DURATION;
     const sourceWindow = isVideoAsset(asset)
       ? buildVideoSourceWindow({
@@ -1294,7 +1350,7 @@ const buildClipPlan = async ({ state, audioDuration, draftVersion, fallbackAsset
           asset_duration_seconds: round3(getAssetDuration(asset)),
         };
 
-    return {
+    clips.push({
       clip_index: index + 1,
       scene_index: scene.scene_index,
       scene_role: scene.role,
@@ -1313,8 +1369,9 @@ const buildClipPlan = async ({ state, audioDuration, draftVersion, fallbackAsset
       asset_window_start_seconds: Number(pickedAsset.selectedWindow?.start_seconds || 0),
       asset_window_end_seconds: Number(pickedAsset.selectedWindow?.end_seconds || 0),
       asset,
-    };
-  });
+    });
+  }
+  return clips;
 };
 
 const buildVideoFilter = ({ width, height }) =>
@@ -1862,7 +1919,7 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
   }
 
   const requiresExactSync = Boolean(timelineResult.requiresExactSync || timelineResult.renderStrategy === "concat");
-  let renderStrategy = requiresExactSync ? "concat" : "xfade";
+  let renderStrategy = "xfade";  // [M5] xfade padrão para todos os casos; concat é fallback
   let transition = requiresExactSync ? "none" : "fade";
   logger.info("renderService: segmentos prontos, iniciando composicao final", {
     videoId,
@@ -1921,11 +1978,45 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     }
   }
 
-  if (backgroundMusicPath && !mockMode) {
-    // Optional stage reserved for future mix implementation
-  }
-
   let finalRenderPath = renderPath;
+
+  // M4 — Background music mixing (fail-open)
+  const effectiveMusicPath = backgroundMusicPath || config.BACKGROUND_MUSIC_PATH || "";
+  if (effectiveMusicPath && !mockMode) {
+    const musicExists = await fs.pathExists(effectiveMusicPath).catch(() => false);
+    if (musicExists) {
+      try {
+        const videoDuration = round3(audioDuration);
+        const fadeoutStart = round3(Math.max(0, videoDuration - 2));
+        const musicOutputPath = path.join(paths.base, "render", "final-with-music.mp4");
+        await runFfmpeg([
+          "-y",
+          "-i", finalRenderPath,
+          "-stream_loop", "-1",
+          "-i", effectiveMusicPath,
+          "-filter_complex",
+          `[1:a]aloop=loop=-1:size=2e+09,atrim=0:${videoDuration},` +
+          `afade=t=in:st=0:d=1,afade=t=out:st=${fadeoutStart}:d=2,volume=0.1[music];` +
+          `[0:a][music]amix=inputs=2:duration=first:normalize=0[aout]`,
+          "-map", "0:v",
+          "-map", "[aout]",
+          "-c:v", "copy",
+          "-c:a", "aac",
+          "-b:a", AUDIO_BITRATE,
+          "-shortest",
+          "-movflags", "+faststart",
+          musicOutputPath,
+        ]);
+        finalRenderPath = musicOutputPath;
+        logger.info("[M4] Background music mixed", { videoId, musicPath: effectiveMusicPath, videoDuration });
+      } catch (error) {
+        logger.warn("[M4] Background music mixing failed — skipping", { videoId, message: error.message });
+        // fail-open: usar render sem música
+      }
+    } else if (effectiveMusicPath) {
+      logger.warn("[M4] BACKGROUND_MUSIC_PATH definido mas arquivo não encontrado — pulando mix", { musicPath: effectiveMusicPath });
+    }
+  }
   let overlayApplyStatus = overlays.length ? "pending" : "skipped";
   let overlayApplyError = "";
   let overlayOutputPath = "";
@@ -2193,5 +2284,6 @@ module.exports = {
     buildSceneScriptTimingHints,
     buildVideoSourceWindow,
     evaluateRenderPreflightGate,
+    TRANSITION_DURATION,  // M5: exported for test assertions
   },
 };

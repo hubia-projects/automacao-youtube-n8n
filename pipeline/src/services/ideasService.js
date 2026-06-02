@@ -1,6 +1,6 @@
 const { v4: uuidv4 } = require("uuid");
 const { updateState } = require("./stateService");
-const { generateIdeasWithOpenAI } = require("./openaiService");
+const { generateIdeasWithGemini } = require("./geminiService");
 const {
   sendTelegramMessage,
   buildIdeasApprovalMessage,
@@ -59,7 +59,7 @@ const scoreIdea = (idea) => {
   };
 };
 
-const normalizeOpenAiIdeas = (items = []) =>
+const normalizeAiIdeas = (items = []) =>
   items.map((item) => {
     const scores = item.scores || {};
     const normalized = {
@@ -102,9 +102,9 @@ const generateIdeas = async ({ videoId, count = 5, mockMode = false }) => {
 
   let ideas = [];
   if (!mockMode) {
-    const aiIdeas = await generateIdeasWithOpenAI({ count: requested, videoId });
+    const aiIdeas = await generateIdeasWithGemini({ count: requested, videoId });
     if (aiIdeas?.length) {
-      ideas = normalizeOpenAiIdeas(aiIdeas);
+      ideas = normalizeAiIdeas(aiIdeas);
     }
   }
 

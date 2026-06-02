@@ -2,6 +2,24 @@ const { FOOD_VISUAL_INTENTS } = require("../config/editorialPolicy");
 
 const unique = (values = []) => [...new Set((values || []).filter(Boolean))];
 const normalize = (value = "") => String(value || "").toLowerCase().trim();
+const resolveBlockScopeId = (block = {}) =>
+  String(
+    block.macro_block_id
+    || block.parent_id
+    || block.block_scope_id
+    || block.block_id
+    || block.id
+    || block.scene_index
+    || ""
+  ).trim();
+const resolveClipBlockScopeId = (clip = {}) =>
+  String(
+    clip.macro_block_id
+    || clip.block_scope_id
+    || clip.block_id
+    || clip.scene_index
+    || ""
+  ).trim();
 
 const DIVERSITY_POLICY_BY_INTENT = {
   gastronomy: {
@@ -159,27 +177,36 @@ const evaluateCandidateHardDiversity = ({
   const assetId = String(candidate.asset_id || "").trim();
   const sourceUrl = String(candidate.source_url || candidate.asset?.source_url || "").trim();
   const functionName = normalize(candidate.scene_function || classifySceneFunction({ candidate, slotRole }));
+  const recentFamilyRepeatCount = family ? recentFamilies.filter((item) => item === family).length : 0;
+  const recentAssetReuseCount = assetId
+    ? recentWindow.filter((clip) => {
+      const clipAssetId = String(clip.asset_id || clip.source_asset_id || clip.asset?.asset_id || "").trim();
+      return clipAssetId && clipAssetId === assetId;
+    }).length
+    : 0;
 
-  if (family && recentFamilies.filter((item) => item === family).length >= 1) {
+  if (family && recentFamilyRepeatCount >= (criticalSlot ? 2 : 1)) {
     violations.push("repeat_visual_family_recent");
   }
   if (landmark && recentLandmarks.filter((item) => item === landmark).length >= 1) {
     violations.push("repeat_landmark_recent");
   }
-  if (recentFunctions.length >= 2 && recentFunctions.slice(-2).every((item) => item === functionName)) {
+  if (!criticalSlot && recentFunctions.length >= 2 && recentFunctions.slice(-2).every((item) => item === functionName)) {
     violations.push("stagnant_scene_function_chain");
   }
-  if (blockClips.some((clip) => String(clip.asset_id || "") === assetId)) {
+  if (assetId && recentAssetReuseCount >= 1) {
     violations.push("same_asset_reuse_block");
   }
 
   const sourceCountByBlock = blockClips.filter((clip) => normalize(clip.source_url) === normalize(sourceUrl)).length;
-  if (sourceUrl && sourceCountByBlock >= Number(policy.max_same_source_per_block || 1)) {
+  const maxSameSourcePerBlock = Number(policy.max_same_source_per_block || 1);
+  const sourceOveruseThreshold = criticalSlot ? maxSameSourcePerBlock + 1 : maxSameSourcePerBlock;
+  if (sourceUrl && sourceCountByBlock >= sourceOveruseThreshold) {
     violations.push("source_overuse_block");
   }
 
   const familyCountByBlock = blockClips.filter((clip) => normalize(clip.visual_family) === family).length;
-  if (criticalSlot && family && familyCountByBlock >= 1) {
+  if (criticalSlot && family && familyCountByBlock >= 2) {
     violations.push("critical_slot_visual_family_reuse_block");
   }
   if (family && familyCountByBlock >= Number(policy.max_same_visual_family_per_block || 2)) {
@@ -225,8 +252,8 @@ const filterCandidatesByHardDiversity = ({
   slotRole = "",
   criticalSlot = false,
 } = {}) => {
-  const blockId = String(block.block_id || block.id || block.scene_index || "");
-  const blockClips = (clips || []).filter((clip) => String(clip.block_id || clip.scene_index || "") === blockId);
+  const blockId = resolveBlockScopeId(block);
+  const blockClips = (clips || []).filter((clip) => resolveClipBlockScopeId(clip) === blockId);
   const recentBlockClips = blockClips.slice(-4);
   const allowed = [];
   const blocked = [];
@@ -259,8 +286,8 @@ const filterCandidatesByHardDiversity = ({
 };
 
 const buildBlockDiversityAudit = ({ clips = [], block = {} } = {}) => {
-  const blockId = String(block.block_id || block.id || block.scene_index || "");
-  const blockClips = (clips || []).filter((clip) => String(clip.block_id || clip.scene_index || "") === blockId);
+  const blockId = resolveBlockScopeId(block);
+  const blockClips = (clips || []).filter((clip) => resolveClipBlockScopeId(clip) === blockId);
   const policy = resolveDiversityPolicy(block);
   const families = unique(blockClips.map((clip) => normalize(clip.visual_family)));
   const landmarks = unique(blockClips.map((clip) => normalize(clip.landmark_id)));
@@ -285,7 +312,7 @@ const buildBlockDiversityAudit = ({ clips = [], block = {} } = {}) => {
   );
 
   return {
-    block_id: blockId,
+    block_id: String(block.block_id || blockId),
     intent: normalize(block.visual_intent || ""),
     total_clips: blockClips.length,
     unique_visual_families: families.length,
@@ -303,11 +330,12 @@ const buildBlockDiversityAudit = ({ clips = [], block = {} } = {}) => {
 const buildTimelineDiversityAudit = ({ clips = [], microBlocks = [] } = {}) => {
   const hasDeclaredBlocks = Array.isArray(microBlocks) && microBlocks.length > 0;
   const fallbackBlocks = !hasDeclaredBlocks
-    ? unique((clips || []).map((clip) => String(clip.block_id || clip.scene_index || "").trim()).filter(Boolean))
+    ? unique((clips || []).map((clip) => resolveClipBlockScopeId(clip)).filter(Boolean))
       .map((blockId) => {
-        const first = (clips || []).find((clip) => String(clip.block_id || clip.scene_index || "").trim() === blockId) || {};
+        const first = (clips || []).find((clip) => resolveClipBlockScopeId(clip) === blockId) || {};
         return {
-          block_id: blockId,
+          block_id: String(first.block_id || blockId),
+          macro_block_id: String(first.macro_block_id || blockId),
           scene_index: Number(first.scene_index || 0),
           visual_intent: String(first.visual_intent || ""),
         };

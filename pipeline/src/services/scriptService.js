@@ -1,6 +1,6 @@
 const { writeTextAtomic } = require("../utils/fileUtils");
 const { updateState, ensureVideoStructure, loadState } = require("./stateService");
-const { generateScriptPackageWithOpenAI } = require("./openaiService");
+const { generateScriptPackageWithGemini } = require("./geminiService");
 const { sendWorkflowStatus } = require("./telegramService");
 const { buildVisualPlan } = require("../utils/visualPlan");
 const { registerFallback, getExternalApiStats } = require("./externalApiControlService");
@@ -217,6 +217,14 @@ const buildDeterministicLocalPackage = ({
       `${String(Math.floor((chapterDuration * (chapters.length + 1)) / 60)).padStart(2, "0")}:${String((chapterDuration * (chapters.length + 1)) % 60).padStart(2, "0")} Conclusão`,
     ],
     angle: angle || "documental prático",
+    structured_blocks: sections.map((section, index) => ({
+      block_id: `b${String(index + 1).padStart(2, "0")}`,
+      text: `${section.title}. ${section.objective}`,
+      duration_estimate: chapterDuration,
+      visual_type: "generic",
+      visual_description: `Plano visual de ${section.title} com foco em ${topic}`,
+      keywords: section.title.split(/\s+/).filter((w) => w.length > 3).slice(0, 5),
+    })),
   };
 };
 
@@ -285,9 +293,9 @@ const generateScript = async ({
   let scriptFallbackUsed = false;
 
   if (!mockMode) {
-    pkg = await generateScriptPackageWithOpenAI({ topic, angle, targetDurationSeconds, videoId });
+    pkg = await generateScriptPackageWithGemini({ topic, angle, targetDurationSeconds, videoId });
     if (pkg) {
-      scriptProvider = "openai_script";
+      scriptProvider = "gemini_script";
     } else {
       pkg = buildDeterministicLocalPackage({
         topic,
@@ -299,9 +307,9 @@ const generateScript = async ({
       scriptFallbackUsed = true;
       registerFallback({
         videoId,
-        provider: "openai",
+        provider: "gemini",
         operation: "generate_script_package",
-        reason: "openai_unavailable_or_blocked",
+        reason: "gemini_unavailable_or_blocked",
       });
     }
   } else {
@@ -336,6 +344,7 @@ const generateScript = async ({
       script_fallback_used: scriptFallbackUsed,
       external_api_stats: getExternalApiStats({ videoId }),
       script_target_duration_seconds: Number(targetDurationSeconds || 0) || undefined,
+      structured_blocks: pkg.structured_blocks || [],
       error_message: "",
     },
     {

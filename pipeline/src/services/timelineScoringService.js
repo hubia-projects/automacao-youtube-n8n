@@ -11,6 +11,16 @@ const { SOURCE_TIER_PRIORITY } = require("../config/editorialPolicy");
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
+const resolveBlockScopeId = (block = {}) =>
+  String(
+    block.macro_block_id
+    || block.parent_id
+    || block.block_scope_id
+    || block.block_id
+    || block.id
+    || block.scene_index
+    || ""
+  ).trim();
 
 const SCORE_WEIGHTS = {
   semanticScore: 5.0,
@@ -310,7 +320,7 @@ const buildReuseSnapshot = ({ usage, candidate }) => {
 const computeReusePenalties = ({ block, candidate, usage, clipIndex }) => {
   const snapshot = buildReuseSnapshot({ usage, candidate });
   const sameAssetLastGap = usage.lastClipByAssetId?.get(snapshot.reuseAssetKey);
-  const blockKey = block.block_id || "";
+  const blockKey = resolveBlockScopeId(block);
   const provider = String(candidate.source || candidate.asset?.provider || "unknown").toLowerCase();
   const providerPenaltyExempt = candidate.from_clip_library === true || provider === "clip_library";
   const landmarkKey = normalizeLabel(
@@ -332,7 +342,7 @@ const computeReusePenalties = ({ block, candidate, usage, clipIndex }) => {
   const clipLibraryReusePenalty = clamp(snapshot.clipLibraryCount > 0 ? 1 : 0, 0, 1);
   const signatureReusePenalty = clamp(snapshot.signatureCount > 0 ? Math.min(1, snapshot.signatureCount / 2) : 0, 0, 1);
   const minGapPenalty = sameAssetLastGap && clipIndex - sameAssetLastGap < 3 ? 1 : 0;
-  const blockOverusePenalty = block.block_id && (usage.usedBlockAssetIds?.get(`${block.block_id}:${snapshot.reuseAssetKey}`) || 0) > 0.5 ? 0.5 : 0;
+  const blockOverusePenalty = blockKey && (usage.usedBlockAssetIds?.get(`${blockKey}:${snapshot.reuseAssetKey}`) || 0) > 0.5 ? 0.5 : 0;
   const blockSignaturePenalty = clamp(blockSignatureCount > 0 ? Math.min(1, blockSignatureCount / 1.5) : 0, 0, 1);
   const blockProviderPenalty = providerPenaltyExempt
     ? 0
@@ -687,6 +697,7 @@ const registerClipUsage = ({ usage, block, candidate, clipIndex }) => {
   const provider = candidate.source || candidate.asset?.provider || "unknown";
   const signature = buildVisualSignature(candidate);
   const reuseAssetKey = getCandidateReuseAssetKey(candidate);
+  const blockKey = resolveBlockScopeId(block);
 
   usage.usedSourceUrls = usage.usedSourceUrls || new Map();
   usage.usedAssetIds = usage.usedAssetIds || new Map();
@@ -713,19 +724,19 @@ const registerClipUsage = ({ usage, block, candidate, clipIndex }) => {
     usage.usedClipLibraryIds.set(clipLibraryId, (usage.usedClipLibraryIds.get(clipLibraryId) || 0) + 1);
   }
   usage.usedVisualSignatures.set(signature, (usage.usedVisualSignatures.get(signature) || 0) + 1);
-  if (block.block_id) {
+  if (blockKey) {
     if (reuseAssetKey) {
-      const blockKey = `${block.block_id}:${reuseAssetKey}`;
-      usage.usedBlockAssetIds.set(blockKey, (usage.usedBlockAssetIds.get(blockKey) || 0) + 1);
+      const blockAssetKey = `${blockKey}:${reuseAssetKey}`;
+      usage.usedBlockAssetIds.set(blockAssetKey, (usage.usedBlockAssetIds.get(blockAssetKey) || 0) + 1);
     }
-    const signatureKey = `${block.block_id}:${signature}`;
+    const signatureKey = `${blockKey}:${signature}`;
     usage.usedBlockVisualSignatures.set(signatureKey, (usage.usedBlockVisualSignatures.get(signatureKey) || 0) + 1);
-    const providerKey = `${block.block_id}:${String(provider).toLowerCase()}`;
+    const providerKey = `${blockKey}:${String(provider).toLowerCase()}`;
     usage.usedBlockProviders.set(providerKey, (usage.usedBlockProviders.get(providerKey) || 0) + 1);
     const landmark = (candidate.landmarks || [])[0];
     const landmarkKey = normalizeLabel(`${landmark?.name || landmark || ""}|${landmark?.city || candidate.location?.city || ""}`);
     if (landmarkKey) {
-      const blockLandmarkKey = `${block.block_id}:${landmarkKey}`;
+      const blockLandmarkKey = `${blockKey}:${landmarkKey}`;
       usage.usedBlockLandmarks.set(blockLandmarkKey, (usage.usedBlockLandmarks.get(blockLandmarkKey) || 0) + 1);
     }
   }

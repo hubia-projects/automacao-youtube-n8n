@@ -1,4 +1,6 @@
 const fs = require("fs");
+const https = require("https");
+const http = require("http");
 const path = require("path");
 const OpenAI = require("openai");
 const { config } = require("../config/env");
@@ -186,6 +188,48 @@ const buildScriptDurationHint = (targetDurationSeconds = 0) => {
   };
 };
 
+// M7 — Zod schema for structured script package validation
+const { z } = require("zod");
+
+const StructuredBlockSchema = z.object({
+  block_id: z.string().min(1),
+  text: z.string().min(1),
+  duration_estimate: z.number().positive(),
+  visual_type: z.enum(["specific", "generic"]),
+  visual_description: z.string(),
+  keywords: z.array(z.string()),
+});
+
+const ScriptPackageSchema = z.object({
+  video_objective: z.string(),
+  intro_hook: z.string(),
+  research_json: z.object({
+    facts: z.array(z.string()),
+    risks: z.array(z.string()),
+    sources: z.array(z.string()),
+  }),
+  outline_json: z.object({
+    sections: z.array(z.object({ title: z.string(), objective: z.string() })),
+  }),
+  script_text: z.string().min(100),
+  visual_suggestions: z.array(z.any()),
+  factual_notes: z.array(z.string()),
+  seo_keywords: z.array(z.string()),
+  youtube_title_options: z.array(z.string()),
+  youtube_description: z.string(),
+  tags: z.array(z.string()),
+  chapters: z.array(z.string()),
+  structured_blocks: z.array(StructuredBlockSchema).optional(),
+});
+
+const validateScriptPackage = (pkg) => {
+  const result = ScriptPackageSchema.safeParse(pkg);
+  if (!result.success) {
+    logger.warn("[M7] Script package Zod validation failed", { errors: result.error.flatten() });
+  }
+  return result.success;
+};
+
 const generateScriptPackageWithOpenAI = async ({
   topic,
   angle,
@@ -202,7 +246,8 @@ const generateScriptPackageWithOpenAI = async ({
 
   const system = `Você é roteirista especialista em vídeos faceless para YouTube. Escreva em português do Brasil com alta retenção.`;
   const durationHint = buildScriptDurationHint(targetDurationSeconds);
-  const user = `Tema: ${topic}\nÂngulo: ${angle || "educativo/documental"}\n${durationHint.durationInstruction ? `\n${durationHint.durationInstruction}` : ""}\n\nGere JSON estrito com:\n{\n  "video_objective": "",\n  "intro_hook": "",\n  "research_json": {"facts": [""], "risks": [""], "sources": [""]},\n  "outline_json": {"sections": [{"title": "", "objective": ""}]},\n  "script_text": "${durationHint.scriptRequirement}",\n  "visual_suggestions": [{"section": "", "shots": [""]}],\n  "factual_notes": [""],\n  "seo_keywords": [""],\n  "youtube_title_options": [""],\n  "youtube_description": "",\n  "tags": [""],\n  "chapters": ["00:00 Introdução"]\n}`;
+  const structuredBlocksInstruction = `O array structured_blocks deve cobrir toda a narração em blocos sequenciais de 30–60s. visual_type deve ser "specific" quando a cena precisa de exatidão (prato específico, monumento real, pessoa real), ou "generic" para b-roll genérico.`;
+  const user = `Tema: ${topic}\nÂngulo: ${angle || "educativo/documental"}\n${durationHint.durationInstruction ? `\n${durationHint.durationInstruction}` : ""}\n\n${structuredBlocksInstruction}\n\nGere JSON estrito com:\n{\n  "video_objective": "",\n  "intro_hook": "",\n  "research_json": {"facts": [""], "risks": [""], "sources": [""]},\n  "outline_json": {"sections": [{"title": "", "objective": ""}]},\n  "script_text": "${durationHint.scriptRequirement}",\n  "visual_suggestions": [{"section": "", "shots": [""]}],\n  "factual_notes": [""],\n  "seo_keywords": [""],\n  "youtube_title_options": [""],\n  "youtube_description": "",\n  "tags": [""],\n  "chapters": ["00:00 Introdução"],\n  "structured_blocks": [{"block_id": "b01", "text": "", "duration_estimate": 45, "visual_type": "generic", "visual_description": "", "keywords": [""]}]\n}`;
 
   try {
     const response = await openaiClient.chat.completions.create({
@@ -215,7 +260,12 @@ const generateScriptPackageWithOpenAI = async ({
       response_format: { type: "json_object" },
     });
 
-    return safeJsonParse(response.choices?.[0]?.message?.content || "{}", null);
+    const parsed = safeJsonParse(response.choices?.[0]?.message?.content || "{}", null);
+    if (parsed) {
+      const valid = validateScriptPackage(parsed);
+      if (!valid) logger.warn("[M7] structured_blocks ausente ou inválido, continuando sem validação M7");
+    }
+    return parsed;
   } catch (error) {
     return warnAndReturnNull("OpenAI script generation", error);
   }
@@ -367,6 +417,44 @@ const describeImagesWithOpenAI = async ({
   }
 };
 
+/**
+ * M3 — Generate an image via DALL-E 3 and save it to outputPath.
+ * Returns outputPath on success, null on failure.
+ */
+const generateImageWithDallE3 = async ({ prompt, videoId = "", outputPath }) => {
+  if (!hasOpenAi()) return null;
+  const budget = consumeExternalCallBudget({ provider: "openai", videoId, operation: "generate_image_dalle3" });
+  if (!budget.allowed) return null;
+
+  try {
+    logger.info(`[M3] DALL-E 3: gerando imagem para prompt: "${String(prompt || "").slice(0, 80)}..."`, { videoId });
+    const response = await openaiClient.images.generate({
+      model: "dall-e-3",
+      prompt: String(prompt || "").slice(0, 4000),
+      n: 1,
+      size: "1792x1024",
+    });
+
+    const imageUrl = response.data?.[0]?.url;
+    if (!imageUrl) return null;
+
+    await new Promise((resolve, reject) => {
+      const fsStream = fs.createWriteStream(outputPath);
+      const transport = imageUrl.startsWith("https") ? https : http;
+      transport.get(imageUrl, (res) => {
+        res.pipe(fsStream);
+        fsStream.on("finish", () => { fsStream.close(); resolve(); });
+        fsStream.on("error", reject);
+      }).on("error", reject);
+    });
+
+    logger.info(`[M3] DALL-E 3: imagem salva em ${outputPath}`, { videoId });
+    return outputPath;
+  } catch (error) {
+    return warnAndReturnNull("DALL-E 3 image generation", error);
+  }
+};
+
 const basicOpenAIHealthcheck = async () => {
   if (isProviderDisabledInLocalTest("openai")) {
     return {
@@ -404,6 +492,8 @@ module.exports = {
   hasOpenAi,
   generateIdeasWithOpenAI,
   generateScriptPackageWithOpenAI,
+  validateScriptPackage,
+  generateImageWithDallE3,
   generateMetadataWithOpenAI,
   transcribeWithOpenAI,
   transcribeWithWordTimestamps,

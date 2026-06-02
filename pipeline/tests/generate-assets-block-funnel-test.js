@@ -50,6 +50,8 @@ const run = async () => {
   assert(Array.isArray(assetsJson.slot_query_plan), "deveria persistir slot_query_plan");
   assert(Array.isArray(assetsJson.block_candidate_funnel), "deveria persistir block_candidate_funnel");
   assert(Array.isArray(assetsJson.slot_coverage_by_block), "deveria persistir slot_coverage_by_block");
+  assert(assetsJson.stage_progress && typeof assetsJson.stage_progress === "object", "deveria persistir stage_progress");
+  assert(Number(assetsJson.stage_progress.blocks_total || 0) >= 1, "deveria registrar total de blocos");
   assert(assetsJson.editorial_asset_library_snapshot && typeof assetsJson.editorial_asset_library_snapshot === "object", "deveria persistir snapshot da biblioteca");
 
   console.log("generate-assets-block-funnel-test ok");

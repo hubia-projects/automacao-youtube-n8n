@@ -86,6 +86,7 @@ const analyzeLocalVideo = async ({
   assetMetadata = {},
   sceneContext = {},
 }) => {
+  const runtimeTimeoutMs = Math.max(5000, Number(config.LOCAL_VIDEO_UNDERSTANDING_TIMEOUT_MS || 25000));
   const mediaInfo = await probeMedia(inputPath).catch(() => ({ duration: 0 }));
   const fallbackWindows = buildFallbackWindows({
     duration: mediaInfo.duration,
@@ -149,7 +150,10 @@ const analyzeLocalVideo = async ({
       }),
     ];
 
-    const { stdout } = await runPython(python, args, { cwd: process.cwd() });
+    const { stdout } = await runPython(python, args, {
+      cwd: process.cwd(),
+      timeout: runtimeTimeoutMs,
+    });
     const payload = JSON.parse(stdout || "{}");
     const windows = Array.isArray(payload.analysis_windows) && payload.analysis_windows.length
       ? enrichWindowsWithEvidence({ windows: payload.analysis_windows, sceneContext, assetMetadata })

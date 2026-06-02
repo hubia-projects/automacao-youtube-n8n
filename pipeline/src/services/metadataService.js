@@ -1,6 +1,6 @@
 const fs = require("fs-extra");
 const { loadState, ensureVideoStructure, updateState } = require("./stateService");
-const { generateMetadataWithOpenAI } = require("./openaiService");
+const { generateMetadataWithGemini } = require("./geminiService");
 const { sendTelegramMessage, buildFinalReviewMessage } = require("./telegramService");
 const { publishReviewDraft } = require("./reviewPublishingService");
 const { config } = require("../config/env");
@@ -31,7 +31,7 @@ const generateMetadata = async ({ videoId, mockMode = false }) => {
 
   const metadata = !mockMode
     ?
-        (await generateMetadataWithOpenAI({
+        (await generateMetadataWithGemini({
           topic: state.topic,
           scriptText: state.script_text,
           videoId,
