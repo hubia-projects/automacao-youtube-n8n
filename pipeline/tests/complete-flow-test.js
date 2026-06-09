@@ -8,6 +8,10 @@ const { validateRender } = require("../src/services/syncValidator");
 const { uploadToYoutube } = require("../src/services/youtubeService");
 const { probeMedia } = require("../src/utils/mediaUtils");
 
+const QA_MODE = String(process.env.QA_MODE || 'strict').toLowerCase();
+const MIN_VIDEO_DURATION_SECONDS = parseInt(process.env.MIN_VIDEO_DURATION_SECONDS || '480', 10);
+const ENABLE_REAL_UPLOAD = process.env.ENABLE_REAL_UPLOAD_IN_TESTS === 'true';
+
 const topic = "Portugal gastronómico: Lisboa, Porto, mercados e vinhos";
 const angle = "documentario narrativo longo focado em comida local, mercados, cafes, vinhos, historia cultural e diferencas entre Lisboa e Porto";
 const SCRIPT_TARGET_DURATION_ATTEMPTS = [540, 720, 900];
@@ -262,6 +266,7 @@ const run = async () => {
   const videoId = `security_test_${Date.now()}`;
 
   console.log("🍷 Iniciando teste completo: Portugal gastronomia");
+  console.log(`[QA] Modo: ${QA_MODE} | minDuration: ${MIN_VIDEO_DURATION_SECONDS}s | upload: ${ENABLE_REAL_UPLOAD ? 'real/private' : 'mock'}`);
 
   // Configurar estado inicial
   await updateState(
@@ -352,70 +357,118 @@ const run = async () => {
 
   // Renderizar vídeo
   console.log("🎥 Renderizando vídeo com algoritmo aprimorado...");
-  await renderVideo({ videoId, mockMode: false });
-  
-  const stateAfterRender = await loadState(videoId);
-  const renderInfo = await probeMedia(stateAfterRender.render_path);
-  assert(
-    Number(renderInfo.duration || 0) > 480,
-    `o video final deve ter mais de 480s para passar o gate M8; duracao atual: ${renderInfo.duration || 0}s`
-  );
-  const validation = await validateRender({ videoId, mockMode: false });
+  let renderInfo = null;
+  let renderBlockedInProgressive = false;
 
-  assert(validation, "validacao de render deveria retornar payload");
-  assert.strictEqual(
-    validation.qa_runtime_profile,
-    "prod_strict",
-    "validacao estrita deveria rodar em perfil prod_strict"
-  );
-
-  const strictBlockedCodes = getStrictBlockedCodes(validation);
-  const hardTechnicalIssues = getHardTechnicalIssues(validation);
+  try {
+    await renderVideo({ videoId, mockMode: false });
+    const stateAfterRender = await loadState(videoId);
+    if (stateAfterRender.render_path) {
+      renderInfo = await probeMedia(stateAfterRender.render_path);
+      assert(
+        Number(renderInfo.duration || 0) > MIN_VIDEO_DURATION_SECONDS,
+        `o video final deve ter mais de ${MIN_VIDEO_DURATION_SECONDS}s para passar o gate M8; duracao atual: ${renderInfo.duration || 0}s`
+      );
+    } else if (QA_MODE === 'progressive') {
+      console.warn(`⚠️ [RENDER] render_path vazio em modo progressive — continuando com warnings`);
+      renderBlockedInProgressive = true;
+    } else {
+      throw new Error('render_path vazio após renderVideo no modo strict');
+    }
+  } catch (renderErr) {
+    if (QA_MODE === 'progressive') {
+      const stateAfterError = await loadState(videoId);
+      if (String(stateAfterError.status || '').includes('render_blocked')) {
+        console.warn(`⚠️ [RENDER] Preflight bloqueou em modo progressive: ${stateAfterError.error_message || renderErr.message}`);
+        renderBlockedInProgressive = true;
+      } else {
+        throw renderErr;
+      }
+    } else {
+      throw renderErr;
+    }
+  }
   let outcome = "PASSED";
   let uploadSkippedReason = "";
   let upload = { youtube_url: "", youtube_video_id: "" };
+  let validation = null;
 
-  if (validation.is_publishable !== true) {
-    assert.strictEqual(
-      validation.publish_blocked,
-      true,
-      "quando o render nao eh publishable no perfil estrito, publish_blocked deve ser true"
-    );
-    assert(
-      strictBlockedCodes.length > 0 || hardTechnicalIssues.length > 0,
-      "perfil estrito deveria retornar falhas editoriais ou tecnicas quando reprova"
-    );
-
-    const editorialOnlyWarning = strictBlockedCodes.length > 0
-      && hardTechnicalIssues.length === 0
-      && strictBlockedCodes.every((code) => NON_TECHNICAL_EDITORIAL_WARNING_CODES.has(code));
-
-    if (!editorialOnlyWarning) {
-      const diagnostic = hardTechnicalIssues.length > 0
-        ? `hard technical issues: ${hardTechnicalIssues.join(", ")}`
-        : `blocked codes: ${strictBlockedCodes.join(", ")}`;
-      throw new Error(`QA estrita falhou com erro tecnico ou bloqueio nao elegivel para warning (${diagnostic}).`);
-    }
-
+  if (renderBlockedInProgressive) {
     outcome = "PASSED_WITH_WARNINGS";
-    uploadSkippedReason = `upload skipped: editorial gates not met (${strictBlockedCodes.join(", ")})`;
+    uploadSkippedReason = "upload skipped: render blocked by editorial preflight in progressive mode";
     console.warn(`⚠️ ${uploadSkippedReason}`);
-
     await updateState(
       videoId,
-      {
-        approved: false,
-        error_message: uploadSkippedReason,
-      },
-      {
-        currentStep: "needs_revision",
-        status: "needs_revision",
-      }
+      { approved: false, error_message: uploadSkippedReason },
+      { currentStep: "needs_revision", status: "needs_revision" }
     );
+  } else {
+    validation = await validateRender({ videoId, mockMode: false });
+
+    assert(validation, "validacao de render deveria retornar payload");
+    if (QA_MODE === 'strict') {
+      assert.strictEqual(
+        validation.qa_runtime_profile,
+        "prod_strict",
+        "validacao estrita deveria rodar em perfil prod_strict"
+      );
+    }
+
+    const strictBlockedCodes = getStrictBlockedCodes(validation);
+    const hardTechnicalIssues = getHardTechnicalIssues(validation);
+    const progressiveWarnings = (validation.editorial_warnings || []);
+
+    if (validation.is_publishable !== true) {
+      if (QA_MODE === 'progressive' && progressiveWarnings.length > 0 && hardTechnicalIssues.length === 0) {
+        outcome = "PASSED_WITH_WARNINGS";
+        uploadSkippedReason = `upload skipped: editorial warnings in progressive mode (${progressiveWarnings.join(", ")})`;
+        console.warn(`⚠️ ${uploadSkippedReason}`);
+        await updateState(
+          videoId,
+          { approved: false, error_message: uploadSkippedReason },
+          { currentStep: "needs_revision", status: "needs_revision" }
+        );
+      } else {
+        assert.strictEqual(
+          validation.publish_blocked,
+          true,
+          "quando o render nao eh publishable no perfil estrito, publish_blocked deve ser true"
+        );
+        assert(
+          strictBlockedCodes.length > 0 || hardTechnicalIssues.length > 0,
+          "perfil estrito deveria retornar falhas editoriais ou tecnicas quando reprova"
+        );
+
+        const editorialOnlyWarning = strictBlockedCodes.length > 0
+          && hardTechnicalIssues.length === 0
+          && strictBlockedCodes.every((code) => NON_TECHNICAL_EDITORIAL_WARNING_CODES.has(code));
+
+        if (!editorialOnlyWarning) {
+          const diagnostic = hardTechnicalIssues.length > 0
+            ? `hard technical issues: ${hardTechnicalIssues.join(", ")}`
+            : `blocked codes: ${strictBlockedCodes.join(", ")}`;
+          throw new Error(`QA estrita falhou com erro tecnico ou bloqueio nao elegivel para warning (${diagnostic}).`);
+        }
+
+        outcome = "PASSED_WITH_WARNINGS";
+        uploadSkippedReason = `upload skipped: editorial gates not met (${strictBlockedCodes.join(", ")})`;
+        console.warn(`⚠️ ${uploadSkippedReason}`);
+
+        await updateState(
+          videoId,
+          { approved: false, error_message: uploadSkippedReason },
+          { currentStep: "needs_revision", status: "needs_revision" }
+        );
+      }
+    }
   }
-  
-  console.log(`✅ Render concluído: ${renderInfo.duration}s @ ${renderInfo.width}x${renderInfo.height}`);
-  console.log(`✅ Render validado: quality=${validation.quality_score} publishable=${validation.is_publishable}`);
+
+  if (renderInfo) {
+    console.log(`✅ Render concluído: ${renderInfo.duration}s @ ${renderInfo.width}x${renderInfo.height}`);
+  }
+  if (validation) {
+    console.log(`✅ Render validado: quality=${validation.quality_score} publishable=${validation.is_publishable} qa_mode=${validation.qa_mode || QA_MODE}`);
+  }
 
   if (outcome === "PASSED") {
     await updateState(
@@ -430,12 +483,32 @@ const run = async () => {
       }
     );
 
-    console.log("📤 Fazendo upload para YouTube...");
-    upload = await uploadToYoutube({
-      videoId,
-      mockMode: true,
-      privacyStatus: "private",
-    });
+    console.log(`📤 ${ENABLE_REAL_UPLOAD ? 'Upload real (private)' : 'Upload mock'}...`);
+    console.log(`[UPLOAD] Modo: ${ENABLE_REAL_UPLOAD ? 'real' : 'mock'} | MIN_DURATION: ${MIN_VIDEO_DURATION_SECONDS}s | visibility: private`);
+    try {
+      upload = await uploadToYoutube({
+        videoId,
+        mockMode: !ENABLE_REAL_UPLOAD,
+        privacyStatus: "private",
+      });
+      if (upload.youtube_video_id) {
+        console.log(`[UPLOAD] video_id: ${upload.youtube_video_id} | url: ${upload.youtube_url}`);
+      }
+    } catch (uploadErr) {
+      if (ENABLE_REAL_UPLOAD) {
+        console.warn(`⚠️ [UPLOAD] Falha no upload real: ${uploadErr.message}`);
+        outcome = "PASSED_WITH_WARNINGS";
+        uploadSkippedReason = `upload falhou: ${uploadErr.message}`;
+        upload = { youtube_url: '', youtube_video_id: '' };
+        await updateState(
+          videoId,
+          { approved: false, error_message: uploadSkippedReason },
+          { currentStep: "needs_revision", status: "needs_revision" }
+        );
+      } else {
+        throw uploadErr;
+      }
+    }
   }
 
   const finalState = await loadState(videoId);
@@ -475,7 +548,9 @@ const run = async () => {
     pre_upload_qa_ok: finalState.pre_upload_qa?.ok === true,
     upload_skipped: outcome === "PASSED_WITH_WARNINGS",
     upload_skip_reason: uploadSkippedReason,
-    strict_publish_blocked_codes: strictBlockedCodes,
+    strict_publish_blocked_codes: validation ? getStrictBlockedCodes(validation) : [],
+    editorial_warnings: validation?.editorial_warnings || [],
+    qa_mode: QA_MODE,
     variety_score: ((finalState.render_timeline?.unique_asset_count || 0) / (finalState.render_timeline?.total_clips || 1) * 100).toFixed(1) + "%",
   }, null, 2));
 

@@ -438,3 +438,4 @@ O gargalo atual esta entre as etapas 8 e 9, com reflexo nas 10, 12 e 13:
 3. por fim inspecionar `pipeline/src/services/timelinePlanner.js` para ver se clips `generic` estao entrando por falta de opcao ou por score indevidamente alto
 
 4. em paralelo, revisar o caso `overlay_not_rendered` em `pipeline/src/services/syncValidator.js` e no ponto do render que aplica overlays, porque este issue agora nao bloqueia sozinho o fluxo, mas continua sinalizando uma divergencia entre overlay esperado e overlay detectado
+

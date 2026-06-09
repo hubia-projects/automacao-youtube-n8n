@@ -1499,7 +1499,14 @@ const refreshFinalDiversityViolationCodesInPlace = ({ clips = [] } = {}) => {
   });
 };
 
-const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset, allowPlaceholderFallback = config.ALLOW_PLACEHOLDER_ASSETS }) => {
+const buildTimeline = async ({
+  state,
+  audioDuration,
+  draftVersion,
+  fallbackAsset,
+  allowPlaceholderFallback = config.ALLOW_PLACEHOLDER_ASSETS,
+  allowApprovedPoolDegrade = true,
+}) => {
   const videoId = state.video_id || "unknown";
   const policy = getSyncPolicy();
   const hardBoundaryPolicy = getHardBoundaryPolicy();
@@ -1701,7 +1708,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
           return candidateHasThemeEvidence({ block, candidate: item });
         })
         .sort((left, right) => Number(right.editorial_confidence || right.confidence || 0) - Number(left.editorial_confidence || left.confidence || 0));
-      const approvedDegradeCandidate = approvedDegradePool[0]
+      const approvedDegradeCandidate = allowApprovedPoolDegrade && approvedDegradePool[0]
         ? {
             candidate: approvedDegradePool[0],
             score: -8,
@@ -1755,6 +1762,9 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
       });
       let selected = adjacencySelection;
       if (!selected?.candidate) {
+        if (!allowApprovedPoolDegrade) {
+          throw new Error(`Timeline blocked: no strict publishable candidate available for scene ${block.scene_index}.`);
+        }
         const emergencyByScene = assetWindows.find((item) =>
           item.editorial_approved === true
           && Number(item.scene_index || 0) === Number(block.scene_index || 0)

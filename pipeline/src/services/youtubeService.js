@@ -435,12 +435,24 @@ const uploadToYoutube = async ({ videoId, mockMode = false, privacyStatus = conf
     throw new Error("Arquivo de vídeo final não encontrado para upload.");
   }
 
+  // M8 — Pre-upload QA (runs for all uploads — mock and real)
+  const preUploadQaResult = { ok: false, checked_at: new Date().toISOString(), mock: Boolean(effectiveMockMode) };
+  try {
+    await runPreUploadQA({ renderPath: state.render_path, state });
+    preUploadQaResult.ok = true;
+  } catch (qaErr) {
+    preUploadQaResult.error = qaErr.message;
+    if (!effectiveMockMode) throw qaErr;
+    console.warn(`[M8] QA falhou em modo mock (continuando): ${qaErr.message}`);
+  }
+
   if (effectiveMockMode || !hasYoutubeCredentials()) {
     const fakeId = `mock_${videoId.slice(0, 8)}`;
     const mockCaptionSource = resolveCaptionUploadSource(state);
     const nextState = await updateState(
       videoId,
       {
+        pre_upload_qa: preUploadQaResult,
         youtube_video_id: fakeId,
         youtube_url: `https://youtube.com/watch?v=${fakeId}`,
         youtube_privacy_status: privacyStatus || config.YOUTUBE_DEFAULT_PRIVACY,
@@ -479,9 +491,6 @@ const uploadToYoutube = async ({ videoId, mockMode = false, privacyStatus = conf
       state_path: nextState.state_path,
     };
   }
-
-  // M8 — Pre-upload QA (only runs for real uploads)
-  await runPreUploadQA({ renderPath: state.render_path, state });
 
   const oauth2Client = createYoutubeOAuthClient();
   const youtube = google.youtube({ version: "v3", auth: oauth2Client });
@@ -530,6 +539,7 @@ const uploadToYoutube = async ({ videoId, mockMode = false, privacyStatus = conf
   const nextState = await updateState(
     videoId,
     {
+      pre_upload_qa: preUploadQaResult,
       youtube_video_id: youtubeId || "",
       youtube_url: youtubeUrl,
       youtube_privacy_status: privacyStatus || config.YOUTUBE_DEFAULT_PRIVACY,

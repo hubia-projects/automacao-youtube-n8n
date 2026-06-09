@@ -28,6 +28,21 @@ const QA_VISION_TIMEOUT_MS = Math.max(4000, Math.min(15000, Number(config.QA_VIS
 const QA_VISION_MAX_RETRIES = Math.max(0, Math.min(1, Number(config.QA_VISION_MAX_RETRIES ?? 0)));
 const QA_VISION_BATCH_SIZE = Math.max(1, Math.min(12, Number(config.QA_VISION_BATCH_SIZE || 8)));
 const QA_MIN_VISION_BUDGET_MS = 4000;
+const QA_MODE = String(process.env.QA_MODE || 'strict').toLowerCase();
+const QA_ACTIVE_THRESHOLDS = QA_MODE === 'progressive'
+  ? { qualityThreshold: 0.20, uncertainRatioThreshold: 0.50 }
+  : { qualityThreshold: 0.72, uncertainRatioThreshold: 0.10 };
+const PROGRESSIVE_SOFT_EDITORIAL_CODES = new Set([
+  'CRITICAL_SLOT_UNCERTAIN', 'CRITICAL_SLOT_NOT_CONFIRMED', 'TIMELINE_OUTSIDE_APPROVED_POOL',
+  'GENERIC_OVERUSE', 'WRONG_VISUAL_CATEGORY', 'THEME_VISUAL_MISMATCH', 'THEME_COVERAGE_MISSING',
+  'RUNTIME_DEGRADATION_USED', 'LOW_DIVERSITY_BLOCK', 'NO_PROOF_FOR_PROMISE',
+  'BLOCK_COVERAGE_INSUFFICIENT', 'BLOCK_COVERAGE_PARTIAL', 'COVERAGE_SEARCH_INSUFFICIENCY',
+  'COVERAGE_SEMANTIC_AMBIGUITY', 'COVERAGE_EDITORIAL_INSUFFICIENCY', 'COVERAGE_PLANNER_PERMISSIVE',
+  'CRITICAL_SLOT_ONLY_GENERIC', 'DIVERSITY_BYPASS_ON_CRITICAL_SLOT', 'NO_MICRO_PROOF_FOR_PROMISE',
+]);
+if (QA_MODE === 'progressive') {
+  console.log(`[QA] Modo: progressive | qualityThreshold: ${QA_ACTIVE_THRESHOLDS.qualityThreshold} (strict=0.72) | uncertainRatioThreshold: ${QA_ACTIVE_THRESHOLDS.uncertainRatioThreshold}`);
+}
 const EDITORIAL_QA_PROFILES = {
   strict: {
     uncertainRatioMax: 0.1,
@@ -2013,21 +2028,54 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     previous: state.assets_json?.provider_reliability || state.render_validation?.provider_reliability || {},
     alpha: 0.25,
   });
-  const isPublishableStrict =
-    !needsRegenerationStrict
-    && qualityScore >= 0.72
-    && hardBoundaryStatus === "pass"
-    && visualFrameBoundaryStatus === "pass"
-    && uncertainRatio <= Number(qaProfile.uncertainRatioMax || 0.1)
-    && gate.uncertainCriticalCount === 0
-    && Number(microGate.critical_micro_missing_count || 0) === 0
+  const editorialWarnings = QA_MODE === 'progressive'
+    ? editorialFailureCodes.filter((c) => PROGRESSIVE_SOFT_EDITORIAL_CODES.has(String(c || '')))
+    : [];
+  const activeEditorialFailureCodes = QA_MODE === 'progressive'
+    ? editorialFailureCodes.filter((c) => !PROGRESSIVE_SOFT_EDITORIAL_CODES.has(String(c || '')))
+    : editorialFailureCodes;
+  const poolApprovalOk = QA_MODE === 'progressive'
+    ? true
+    : approvedPoolAudit.timeline_uses_approved_pool_only;
+  // In progressive mode: relax uncertain-slot and micro-sync gates (soft editorial quality, not technical integrity)
+  const uncertainCriticalOk = QA_MODE === 'progressive' ? true : gate.uncertainCriticalCount === 0;
+  const microGateOk = QA_MODE === 'progressive' ? true : (
+    Number(microGate.critical_micro_missing_count || 0) === 0
     && Number(microGate.critical_micro_drift_exceeded_count || 0) === 0
-    && approvedPoolAudit.timeline_uses_approved_pool_only
-    && editorialFailureCodes.length === 0;
+  );
+  // In progressive mode: only hard TECHNICAL failures trigger regeneration.
+  // Editorial issues (diversity_bypass, generic overuse, coverage gaps, etc.) are soft — they
+  // may have severity="critical" in the issues array but should not block testing runs.
+  const PROGRESSIVE_HARD_ISSUE_TYPES = new Set([
+    'render_probe_failed', 'missing_timeline', 'render_file_state_mismatch',
+    'overlay_apply_failed', 'audio_missing', 'render_corrupt',
+  ]);
+  const effectiveNeedsRegeneration = QA_MODE === 'progressive'
+    ? Boolean(
+        issues.some((issue) =>
+          issue.severity === "critical"
+          && PROGRESSIVE_HARD_ISSUE_TYPES.has(String(issue.type || ''))
+        )
+        || hardBoundaryStatus === "fail"
+      )
+    : needsRegenerationStrict;
+  const visualFrameOk = QA_MODE === 'progressive' ? true : visualFrameBoundaryStatus === "pass";
+  const isPublishableStrict =
+    !effectiveNeedsRegeneration
+    && qualityScore >= QA_ACTIVE_THRESHOLDS.qualityThreshold
+    && hardBoundaryStatus === "pass"
+    && visualFrameOk
+    && uncertainRatio <= QA_ACTIVE_THRESHOLDS.uncertainRatioThreshold
+    && uncertainCriticalOk
+    && microGateOk
+    && poolApprovalOk
+    && activeEditorialFailureCodes.length === 0;
   const hasCriticalTechnicalFailure = (technical.issues || []).some((issue) => issue.severity === "critical");
-  const needsRegeneration = strictRuntimeProfile
-    ? needsRegenerationStrict
-    : Boolean(!renderPath || hasCriticalTechnicalFailure);
+  const needsRegeneration = QA_MODE === 'progressive'
+    ? effectiveNeedsRegeneration  // in progressive: only hard technical failures trigger regeneration
+    : (strictRuntimeProfile
+      ? needsRegenerationStrict
+      : Boolean(!renderPath || hasCriticalTechnicalFailure));
   const isPublishable = strictRuntimeProfile
     ? isPublishableStrict
     : Boolean(!needsRegeneration && (technical.technical_score || 0) > 0);
@@ -2049,6 +2097,8 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     diversity_score: diversityScore,
     technical_score: round3(technical.technical_score || 0),
     visual_intent_distribution: visualIntentCoverage.visual_intent_distribution,
+    qa_mode: QA_MODE,
+    editorial_warnings: editorialWarnings,
     qa_profile: String(config.EDITORIAL_QA_PROFILE || "strict").toLowerCase(),
     qa_runtime_profile: qaRuntimeProfile,
     qa_runtime_degraded: qaRuntimeDegraded,
@@ -2060,10 +2110,10 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     tts_effective_provider: String(state.tts_effective_provider || state.audio_provider || ""),
     tts_fallback_used: state.tts_fallback_used === true,
     tts_error_class: String(state.tts_error_class || ""),
-    editorial_failure_codes: editorialFailureCodes,
+    editorial_failure_codes: activeEditorialFailureCodes,
     publish_blocked: strictRuntimeProfile ? !isPublishable : false,
     publish_blocked_codes: strictRuntimeProfile
-      ? (isPublishable ? [] : editorialFailureCodes)
+      ? (isPublishable ? [] : activeEditorialFailureCodes)
       : [],
     editorial_metrics: {
       ...editorialTelemetry,

@@ -6,6 +6,7 @@ const { loadState, ensureVideoStructure, updateState } = require("./stateService
 const { sendWorkflowStatus } = require("./telegramService");
 const { buildVisualPlan } = require("../utils/visualPlan");
 const { createPlaceholderImage, extractVideoFrame, probeMedia, getResolutionLabel } = require("../utils/mediaUtils");
+const { buildLocalLibraryIndex, searchLocalLibrary } = require("../utils/localLibrary");
 const {
   hasGemini,
   describeImagesWithGemini,
@@ -81,8 +82,128 @@ const AUTO_REPAIR_MAX_ROUNDS = Math.max(0, Number(process.env.ASSET_AUTO_REPAIR_
 const GENERATED_VERTEX_PROVIDER = "vertex_ai_generated";
 const GENERATED_VERTEX_SOURCE_PREFIX = "vertex-ai-generated://";
 const CRITICAL_SCENE_GENERATION_MAX_ASSETS = 2;
+const PROVIDER_RATE_LIMIT_COOLDOWN_MS = 15 * 60 * 1000;
+const DOWNLOAD_TIMEOUT_MS = 15000;
+const DOWNLOAD_BATCH_SIZE = 3;
+const AI_FALLBACK_CRITICAL_SLOT_TYPES = new Set(["intro", "hook", "chapter_opening", "closing", "hard_boundary_first_clip"]);
 
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
+const localLibraryIndexedPaths = new Set();
+const providerRateLimitState = new Map();
+
+const getProviderRateLimitSnapshot = (provider = "") => providerRateLimitState.get(String(provider || "").toLowerCase()) || null;
+
+const parseRateLimitRemaining = (headers = {}) => {
+  const headerEntries = Object.entries(headers || {});
+  const remainingEntry = headerEntries.find(([key]) => /x-ratelimit-remaining/i.test(String(key || "")));
+  if (!remainingEntry) return null;
+  const parsed = Number(remainingEntry[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const trackProviderRateLimit = (provider = "", headers = {}) => {
+  const providerKey = String(provider || "").toLowerCase();
+  if (!providerKey) return null;
+  const remaining = parseRateLimitRemaining(headers);
+  if (remaining === null) return getProviderRateLimitSnapshot(providerKey);
+
+  const nextState = {
+    remaining,
+    trackedAt: Date.now(),
+    cooldownUntil: remaining <= 0 ? Date.now() + PROVIDER_RATE_LIMIT_COOLDOWN_MS : 0,
+  };
+  providerRateLimitState.set(providerKey, nextState);
+  if (remaining < 10) {
+    logger.warn("[RATE_LIMIT] Provider com remaining baixo", { provider: providerKey, remaining });
+  }
+  return nextState;
+};
+
+const markProviderRateLimited = (provider = "", reason = "429") => {
+  const providerKey = String(provider || "").toLowerCase();
+  if (!providerKey) return null;
+  const nextState = {
+    remaining: 0,
+    trackedAt: Date.now(),
+    cooldownUntil: Date.now() + PROVIDER_RATE_LIMIT_COOLDOWN_MS,
+    reason,
+  };
+  providerRateLimitState.set(providerKey, nextState);
+  logger.warn("[RATE_LIMIT] Provider temporariamente indisponivel", {
+    provider: providerKey,
+    reason,
+    cooldownUntil: nextState.cooldownUntil,
+  });
+  return nextState;
+};
+
+const isProviderAvailable = (provider = "") => {
+  const providerKey = String(provider || "").toLowerCase();
+  if (!providerKey) return true;
+  const snapshot = getProviderRateLimitSnapshot(providerKey);
+  if (!snapshot) return true;
+  return Number(snapshot.cooldownUntil || 0) <= Date.now();
+};
+
+const clearProviderRateLimitState = () => {
+  providerRateLimitState.clear();
+};
+
+const getLocalAssetLibraryPath = () => String(process.env.LOCAL_ASSET_LIBRARY_PATH || "").trim();
+
+const buildLocalLibraryCandidates = ({ matches = [], query = "", limit = SEARCH_RESULTS_PER_QUERY } = {}) =>
+  (matches || [])
+    .slice(0, Math.max(0, Number(limit || SEARCH_RESULTS_PER_QUERY)))
+    .map((match) => ({
+      provider: "local_curated",
+      asset_type: String(match.type || "video").toLowerCase() === "image" ? "image" : "video",
+      type: String(match.type || "video").toLowerCase() === "image" ? "image" : "video",
+      query,
+      semantic_text: String((match.tags || []).join(" ") || query).trim(),
+      provider_tags: match.tags || [],
+      provider_title: match.title || path.basename(match.path || ""),
+      source_url: `local_library://${path.basename(match.path || "asset")}`,
+      local_path: match.path,
+      width: Number(match.width || PREFERRED_WIDTH),
+      height: Number(match.height || PREFERRED_HEIGHT),
+      duration_estimate: Number(match.duration || PREFERRED_VIDEO_DURATION_SECONDS),
+      source_tier: "curated",
+      curated_asset: true,
+      provider_reliability_score: 0.95,
+      pre_download_score: Number(match.score || 0),
+    }));
+
+const searchLocalAssetLibraryCandidates = async ({ query, limit = SEARCH_RESULTS_PER_QUERY }) => {
+  const libraryPath = getLocalAssetLibraryPath();
+  if (!libraryPath) return [];
+
+  let matches = await searchLocalLibrary(query, libraryPath).catch((error) => {
+    logger.warn("[LOCAL_LIB] Falha ao consultar index local", { message: error.message, libraryPath });
+    return [];
+  });
+
+  if (!matches.length && !localLibraryIndexedPaths.has(libraryPath)) {
+    localLibraryIndexedPaths.add(libraryPath);
+    const payload = await buildLocalLibraryIndex(libraryPath).catch((error) => {
+      logger.warn("[LOCAL_LIB] Falha ao indexar biblioteca local", { message: error.message, libraryPath });
+      return null;
+    });
+    if (payload?.assets?.length) {
+      matches = await searchLocalLibrary(query, libraryPath).catch(() => []);
+    }
+  }
+
+  if (matches.length) {
+    logger.info("[LOCAL_LIB] Matches encontrados para query local", {
+      libraryPath,
+      query,
+      matches: matches.length,
+    });
+  }
+
+  return buildLocalLibraryCandidates({ matches, query, limit });
+};
+
 const mapWithConcurrency = async (items = [], concurrency = 1, mapper = async (item) => item) => {
   const safeItems = Array.isArray(items) ? items : [];
   const results = new Array(safeItems.length);
@@ -1883,7 +2004,7 @@ const analyzeDownloadedAssetSemantics = async ({
 const downloadFile = async (url, outputPath) => {
   const response = await axios.get(url, {
     responseType: "stream",
-    timeout: 45000,
+    timeout: DOWNLOAD_TIMEOUT_MS,
     maxRedirects: 5,
   });
   await fs.ensureDir(path.dirname(outputPath));
@@ -2033,6 +2154,40 @@ const resolveCriticalSceneSlots = ({ scene = {}, blockPackage = {}, sceneReadine
     .filter(Boolean);
 
   return unique([...(matchedMissingSlots || []), ...(criticalSlots || [])]).slice(0, CRITICAL_SCENE_GENERATION_MAX_ASSETS);
+};
+
+const hasVertexAiFallbackConfigured = () => Boolean(config.GEMINI_VERTEX_ENABLED && String(config.GOOGLE_APPLICATION_CREDENTIALS || "").trim());
+
+const isCriticalAiFallbackScene = (scene = {}) => {
+  const role = String(scene.role || "").toLowerCase();
+  return role === "intro"
+    || role === "outro"
+    || scene.hard_boundary === true
+    || scene.chapter_card_required === true;
+};
+
+const isCriticalAiFallbackSlot = (slot = {}) => AI_FALLBACK_CRITICAL_SLOT_TYPES.has(String(slot.slot_type || "").toLowerCase());
+
+const resolveAiFallbackCriticalSlots = ({ scene = {}, slots = [] } = {}) => {
+  const criticalSlots = (Array.isArray(slots) ? slots : []).filter((slot) => isCriticalAiFallbackSlot(slot));
+  if (criticalSlots.length) {
+    return criticalSlots.slice(0, CRITICAL_SCENE_GENERATION_MAX_ASSETS);
+  }
+  return isCriticalAiFallbackScene(scene) ? (Array.isArray(slots) ? slots : []).slice(0, CRITICAL_SCENE_GENERATION_MAX_ASSETS) : [];
+};
+
+const sceneHasCoveredCriticalFallbackSlot = ({ scene = {}, slots = [], downloadedItems = [] } = {}) => {
+  const sceneIndex = Number(scene.scene_index || 0);
+  if (!sceneIndex) return false;
+  const slotTypes = new Set((Array.isArray(slots) ? slots : []).map((slot) => String(slot.slot_type || "").toLowerCase()).filter(Boolean));
+  return (Array.isArray(downloadedItems) ? downloadedItems : []).some((item) => {
+    if (Number(item.scene_index || 0) !== sceneIndex) return false;
+    const contentSlotType = String(item.content_slot_type || item.content_need || "").toLowerCase();
+    if (slotTypes.has(contentSlotType)) return true;
+    if (slotTypes.has("intro") && item.block_intro_candidate === true) return true;
+    if (slotTypes.has("chapter_opening") && item.chapter_card_candidate === true) return true;
+    return false;
+  });
 };
 
 const buildCriticalSceneGenerationQueries = ({ scene = {}, sceneReadiness = {}, topic = "", slots = [] } = {}) => {
@@ -2313,6 +2468,7 @@ const searchPexels = async (query, limit = SEARCH_RESULTS_PER_QUERY) => {
   const items = [];
 
   if (videoRes.status === "fulfilled") {
+    trackProviderRateLimit("pexels", videoRes.value.headers || {});
     const videos = videoRes.value.data?.videos || [];
     videos.forEach((video) => {
       const file = pickBestPexelsVideoFile(video);
@@ -2331,8 +2487,12 @@ const searchPexels = async (query, limit = SEARCH_RESULTS_PER_QUERY) => {
       }
     });
   }
+  if (videoRes.status === "rejected" && Number(videoRes.reason?.response?.status || 0) === 429) {
+    markProviderRateLimited("pexels", "videos_search_429");
+  }
 
   if (imageRes.status === "fulfilled") {
+    trackProviderRateLimit("pexels", imageRes.value.headers || {});
     const photos = imageRes.value.data?.photos || [];
     photos.forEach((photo) => {
       if (photo?.src?.original && isHorizontal({ width: Number(photo.width || 0), height: Number(photo.height || 0) })) {
@@ -2348,6 +2508,9 @@ const searchPexels = async (query, limit = SEARCH_RESULTS_PER_QUERY) => {
         });
       }
     });
+  }
+  if (imageRes.status === "rejected" && Number(imageRes.reason?.response?.status || 0) === 429) {
+    markProviderRateLimited("pexels", "image_search_429");
   }
 
   return sortCandidatesForMotion(items.filter((item) => isHorizontal(item)));
@@ -2411,13 +2574,18 @@ const searchPixabay = async (query, limit = SEARCH_RESULTS_PER_QUERY) => {
   const items = [];
 
   if (videoResponse.status === "fulfilled") {
+    trackProviderRateLimit("pixabay", videoResponse.value.headers || {});
     (videoResponse.value.data?.hits || []).forEach((hit) => {
       const normalized = normalizePixabayVideo(query, hit);
       if (normalized) items.push(normalized);
     });
   }
+  if (videoResponse.status === "rejected" && Number(videoResponse.reason?.response?.status || 0) === 429) {
+    markProviderRateLimited("pixabay", "videos_search_429");
+  }
 
   if (imageResponse.status === "fulfilled") {
+    trackProviderRateLimit("pixabay", imageResponse.value.headers || {});
     (imageResponse.value.data?.hits || []).forEach((hit) => {
       if (!isHorizontal({ width: Number(hit.imageWidth || 0), height: Number(hit.imageHeight || 0) })) return;
       items.push({
@@ -2436,6 +2604,9 @@ const searchPixabay = async (query, limit = SEARCH_RESULTS_PER_QUERY) => {
       });
     });
   }
+  if (imageResponse.status === "rejected" && Number(imageResponse.reason?.response?.status || 0) === 429) {
+    markProviderRateLimited("pixabay", "image_search_429");
+  }
 
   return sortCandidatesForMotion(items);
 };
@@ -2453,6 +2624,10 @@ const pixabayProvider = {
 const localCuratedProvider = {
   name: "local_curated",
   search: async ({ query, limit = SEARCH_RESULTS_PER_QUERY }) => {
+    const libraryMatches = await searchLocalAssetLibraryCandidates({ query, limit });
+    if (libraryMatches.length) {
+      return libraryMatches;
+    }
     const entries = await readLocalCuratedAssetIndex();
     return buildLocalCuratedCandidatesFromIndex({ entries, query, limit });
   },
@@ -2486,7 +2661,9 @@ const providerAdapters = [localCuratedProvider, pexelsProvider, pixabayProvider,
 const searchProviderCandidates = async ({ query, limit = SEARCH_RESULTS_PER_QUERY, filters = {} }) => {
   const responses = await Promise.allSettled(
     providerAdapters.map((provider) =>
-      provider.search({ query, limit, filters }).catch(() => [])
+      (isProviderAvailable(provider.name)
+        ? provider.search({ query, limit, filters }).catch(() => [])
+        : (logger.warn("[RATE_LIMIT] Provider pulado por cooldown ativo", { provider: provider.name, query }), []))
     )
   );
 
@@ -2625,6 +2802,73 @@ const downloadSceneCandidate = async ({ candidate, scene, paths, sequence, video
     vertex_video_pending: effectiveCandidate.vertex_video_pending === true,
     orientation: "horizontal",
   };
+};
+
+const downloadCandidatesInBatches = async ({
+  finalists = [],
+  activeScenes = [],
+  representativeScene = null,
+  seenUrls = new Set(),
+  perSceneSequence = new Map(),
+  paths,
+  videoId = "",
+  blockPackage = {},
+  downloader = downloadSceneCandidate,
+  batchSize = DOWNLOAD_BATCH_SIZE,
+} = {}) => {
+  const plans = [];
+
+  for (const candidate of finalists) {
+    if (seenUrls.has(candidate.source_url)) continue;
+    seenUrls.add(candidate.source_url);
+
+    const sceneForCandidate = activeScenes.find((scene) => Number(scene.scene_index || 0) === Number(candidate.slot_scene_index_hint || 0))
+      || representativeScene;
+    const sequence = Number(perSceneSequence.get(Number(sceneForCandidate.scene_index || 0)) || 0) + 1;
+    perSceneSequence.set(Number(sceneForCandidate.scene_index || 0), sequence);
+    plans.push({ candidate, sceneForCandidate, sequence });
+  }
+
+  const downloadedItems = [];
+  const effectiveBatchSize = Math.max(1, Number(batchSize || DOWNLOAD_BATCH_SIZE));
+
+  for (let index = 0; index < plans.length; index += effectiveBatchSize) {
+    const batch = plans.slice(index, index + effectiveBatchSize);
+    logger.info("[DOWNLOAD] Iniciando lote de downloads", {
+      block_id: blockPackage.block_id,
+      batch_size: batch.length,
+      batch_start: index,
+    });
+
+    const settled = await Promise.allSettled(batch.map((plan) => downloader({
+      candidate: plan.candidate,
+      scene: plan.sceneForCandidate,
+      paths,
+      sequence: plan.sequence,
+      videoId,
+    })));
+
+    batch.forEach((plan, batchIndex) => {
+      const result = settled[batchIndex];
+      if (result.status !== "fulfilled" || !result.value) return;
+
+      const downloaded = result.value;
+      downloaded.content_slot_id = plan.candidate.slot_id || "";
+      downloaded.content_slot_type = plan.candidate.slot_type || "";
+      downloaded.content_need = plan.candidate.content_need || plan.candidate.slot_type || "";
+      downloaded.block_id = blockPackage.block_id;
+      downloaded.block_package_id = blockPackage.package_id;
+      downloadedItems.push(downloaded);
+    });
+
+    logger.info("[DOWNLOAD] Lote de downloads concluido", {
+      block_id: blockPackage.block_id,
+      batch_size: batch.length,
+      total_downloaded: downloadedItems.length,
+    });
+  }
+
+  return downloadedItems;
 };
 
 const generateAssets = async ({
@@ -3243,34 +3487,17 @@ const generateAssets = async ({
         finalists = dedupeCandidatesByUrl([...finalists, ...topFallback]).slice(0, finalistLimit);
       }
 
-      for (const candidate of finalists) {
-        if (seenUrls.has(candidate.source_url)) continue;
-        seenUrls.add(candidate.source_url);
-
-        const sceneForCandidate = activeScenes.find((scene) => Number(scene.scene_index || 0) === Number(candidate.slot_scene_index_hint || 0))
-          || representativeScene;
-        const sequence = Number(perSceneSequence.get(Number(sceneForCandidate.scene_index || 0)) || 0) + 1;
-        perSceneSequence.set(Number(sceneForCandidate.scene_index || 0), sequence);
-        try {
-          const downloaded = await downloadSceneCandidate({
-            candidate,
-            scene: sceneForCandidate,
-            paths,
-            sequence,
-            videoId,
-          });
-          if (downloaded) {
-            downloaded.content_slot_id = candidate.slot_id || "";
-            downloaded.content_slot_type = candidate.slot_type || "";
-            downloaded.content_need = candidate.content_need || candidate.slot_type || "";
-            downloaded.block_id = blockPackage.block_id;
-            downloaded.block_package_id = blockPackage.package_id;
-            downloadedItems.push(downloaded);
-          }
-        } catch {
-          // ignore
-        }
-      }
+      const batchDownloadedItems = await downloadCandidatesInBatches({
+        finalists,
+        activeScenes,
+        representativeScene,
+        seenUrls,
+        perSceneSequence,
+        paths,
+        videoId,
+        blockPackage,
+      }).catch(() => []);
+      downloadedItems.push(...batchDownloadedItems);
 
       if (generatedRepairMode) {
         for (const scene of activeScenes) {
@@ -3338,11 +3565,29 @@ const generateAssets = async ({
           blockPackage,
           sceneReadiness: effectiveSceneReadiness,
         });
+        const aiFallbackSlots = resolveAiFallbackCriticalSlots({ scene, slots: slotsForScene });
+        if (!aiFallbackSlots.length) {
+          continue;
+        }
+        if (sceneHasCoveredCriticalFallbackSlot({
+          scene,
+          slots: aiFallbackSlots,
+          downloadedItems,
+        })) {
+          continue;
+        }
+        if (!hasVertexAiFallbackConfigured()) {
+          logger.warn("[AI_FALLBACK] Vertex AI nao configurado; pulando fallback critico", {
+            scene_index: sceneIndex,
+            slot_types: aiFallbackSlots.map((slot) => slot.slot_type).filter(Boolean),
+          });
+          continue;
+        }
         const generationPlans = buildCriticalSceneGenerationQueries({
           scene,
           sceneReadiness: effectiveSceneReadiness,
           topic: state.topic || "",
-          slots: slotsForScene,
+          slots: aiFallbackSlots,
         });
         const existingTargetedGenerations = downloadedItems.filter((item) =>
           Number(item.scene_index || 0) === sceneIndex
@@ -3355,6 +3600,10 @@ const generateAssets = async ({
 
         for (const plan of generationPlans.slice(0, remainingGenerationBudget)) {
           const slot = plan.slot || {};
+          logger.info("[AI_FALLBACK] Gerando asset para slot critico", {
+            scene_index: sceneIndex,
+            slot_type: slot.slot_type || scene.visual_intent || "critical_repair",
+          });
           const generatedCriticalAsset = await createSceneFallbackAsset({
             scene,
             paths,
@@ -3365,7 +3614,13 @@ const generateAssets = async ({
             queryOverride: plan.query,
           }).catch(() => null);
 
-          if (!generatedCriticalAsset?.local_path) continue;
+          if (!generatedCriticalAsset?.local_path) {
+            logger.warn("[AI_FALLBACK] Falha ao gerar asset critico", {
+              scene_index: sceneIndex,
+              slot_type: slot.slot_type || scene.visual_intent || "critical_repair",
+            });
+            continue;
+          }
 
           generatedCriticalAsset.block_id = blockPackage.block_id;
           generatedCriticalAsset.block_package_id = blockPackage.package_id;
@@ -3375,6 +3630,10 @@ const generateAssets = async ({
           generatedCriticalAsset.query = plan.query;
           generatedCriticalAsset.search_reason = `blocking_scene_ai_${String(slot.slot_type || scene.visual_intent || "critical_repair")}`;
           downloadedItems.push(generatedCriticalAsset);
+          logger.info("[AI_FALLBACK] Asset critico gerado com sucesso", {
+            scene_index: sceneIndex,
+            slot_type: generatedCriticalAsset.content_slot_type,
+          });
           targetedSceneGenerationResults.push({
             scene_index: sceneIndex,
             slot_type: generatedCriticalAsset.content_slot_type,
@@ -4060,6 +4319,16 @@ module.exports = {
   basicPexelsHealthcheck,
   basicPixabayHealthcheck,
   __test__: {
+    clearProviderRateLimitState,
+    getProviderRateLimitSnapshot,
+    trackProviderRateLimit,
+    markProviderRateLimited,
+    isProviderAvailable,
+    downloadCandidatesInBatches,
+    hasVertexAiFallbackConfigured,
+    isCriticalAiFallbackSlot,
+    resolveAiFallbackCriticalSlots,
+    sceneHasCoveredCriticalFallbackSlot,
     filterSlotCandidatesByProviderPolicy,
     selectCoverageFirstFinalists,
     scoreCandidateForSlot,

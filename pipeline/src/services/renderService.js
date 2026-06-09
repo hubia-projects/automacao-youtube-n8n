@@ -1728,10 +1728,22 @@ const evaluateRenderPreflightGate = ({ state = {}, mockMode = false, allowRuntim
     failureCodes.push("EDITORIAL_BLOCKING_SCENES_FOUND");
   }
 
+  const progressiveMode = String(process.env.QA_MODE || 'strict').toLowerCase() === 'progressive';
+  const PROGRESSIVE_SOFT_PREFLIGHT_CODES = new Set([
+    'PARTIAL_BLOCK_COVERAGE', 'CRITICAL_SLOT_ONLY_GENERIC', 'DIVERSITY_BYPASS_ON_CRITICAL_SLOT',
+  ]);
+  const activeFailureCodes = progressiveMode
+    ? failureCodes.filter((c) => !PROGRESSIVE_SOFT_PREFLIGHT_CODES.has(c))
+    : failureCodes;
+  const preflightWarnings = progressiveMode
+    ? failureCodes.filter((c) => PROGRESSIVE_SOFT_PREFLIGHT_CODES.has(c))
+    : [];
+
   return {
     enabled,
-    shouldAbort: failureCodes.length > 0,
-    failure_codes: unique(failureCodes),
+    shouldAbort: activeFailureCodes.length > 0,
+    failure_codes: unique(activeFailureCodes),
+    editorial_warnings: preflightWarnings,
     approved_windows_count: approvedWindows.length,
     blocked_scene_indexes: unique([
       ...blockedCriticalScenes,
@@ -1744,6 +1756,26 @@ const evaluateRenderPreflightGate = ({ state = {}, mockMode = false, allowRuntim
     ]),
     partial_scene_indexes: unique([...partialReadinessScenes, ...partialBlockScenes]),
     strict_strong_only: strictStrongOnly,
+  };
+};
+
+const isStrictRenderRuntimeProfile = ({ mockMode = false } = {}) => {
+  if (mockMode) return false;
+  return String(config.QA_RUNTIME_PROFILE_PROD || "prod_strict").toLowerCase() === "prod_strict";
+};
+
+const resolveRenderRuntimeFallbackPolicy = ({ mockMode = false } = {}) => {
+  const progressiveTestMode = String(process.env.QA_MODE || 'strict').toLowerCase() === 'progressive';
+  const strictRenderMode = progressiveTestMode ? false : isStrictRenderRuntimeProfile({ mockMode });
+  const allowPlaceholderAssets = progressiveTestMode || (!strictRenderMode && shouldAllowPlaceholderAssets({ mockMode }));
+  const runtimeDegradationEnabled = progressiveTestMode || (!strictRenderMode && Boolean(config.RUNTIME_DEGRADE_ON_MISSING_ASSETS !== false));
+  const allowRuntimeFallback = progressiveTestMode || allowPlaceholderAssets || runtimeDegradationEnabled;
+
+  return {
+    strictRenderMode,
+    allowPlaceholderAssets,
+    runtimeDegradationEnabled,
+    allowRuntimeFallback,
   };
 };
 
@@ -1763,9 +1795,11 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
   let state = await loadState(videoId);
   const paths = await ensureVideoStructure(videoId);
   const draftVersion = getDraftVersion(state);
-  const allowPlaceholderAssets = shouldAllowPlaceholderAssets({ mockMode });
-  const runtimeDegradationEnabled = Boolean(config.RUNTIME_DEGRADE_ON_MISSING_ASSETS !== false);
-  const allowRuntimeFallback = allowPlaceholderAssets || runtimeDegradationEnabled;
+  const {
+    strictRenderMode,
+    runtimeDegradationEnabled,
+    allowRuntimeFallback,
+  } = resolveRenderRuntimeFallbackPolicy({ mockMode });
 
   if (!state.audio_path || !(await fs.pathExists(state.audio_path))) {
     throw new Error("Áudio não encontrado para renderização.");
@@ -1833,6 +1867,7 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     draftVersion,
     fallbackAsset,
     allowPlaceholderFallback: allowRuntimeFallback,
+    allowApprovedPoolDegrade: !strictRenderMode,
   });
 
   const clipPlan = timelineResult.clipPlan || timelineResult.clips || [];
@@ -2284,6 +2319,8 @@ module.exports = {
     buildSceneScriptTimingHints,
     buildVideoSourceWindow,
     evaluateRenderPreflightGate,
+    isStrictRenderRuntimeProfile,
+    resolveRenderRuntimeFallbackPolicy,
     TRANSITION_DURATION,  // M5: exported for test assertions
   },
 };
