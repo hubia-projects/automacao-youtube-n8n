@@ -41,6 +41,7 @@ frontend/.env
 
 *token.json*
 *credentials.json*
+youtube-videos-automacao-*.json
 
 # Logs and debug files
 npm-debug.log*
@@ -82,6 +83,12 @@ agenthub/agents/youtube/db
 
 # Generated pipeline artifacts
 pipeline/output/draft/
+pipeline/output/test_reports/
+pipeline/output/editorial/clip-library/
+pipeline/pipeline/reports/
+pipeline/output-local-*/
+pipeline/*.log
+output/draft/
 
 # Embedded multivozes workspace internals
 multivozes_br_engine/.git/
