@@ -14,6 +14,7 @@ const { buildSceneQueryPlan } = require("./assetQueryPlanner");
 const { scorePreDownloadCandidate } = require("./assetRejectionService");
 const { summarizeAssetReadiness, shouldAllowPlaceholderAssets } = require("./assetReadinessService");
 const { evaluateVisualEvidence } = require("./visualIntentService");
+const { searchLocalLibrary } = require("./localLibraryService");
 const { logger } = require("../utils/logger");
 
 const hasPexels = () => Boolean(config.PEXELS_API_KEY);
@@ -159,6 +160,31 @@ const partitionSceneCandidates = (candidates = []) => {
     shortVideos: sortCandidatesForMotion(shortVideos),
     images: images.sort((left, right) => resolutionScore(right) - resolutionScore(left)),
   };
+};
+
+const normalizeCountryName = (value = "") =>
+  String(value)
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+
+// Filtro geográfico HARD: rejeita clips de países que claramente não batem
+const passesGeographicFilter = (clip, expectedCountry) => {
+  if (!expectedCountry) return true;
+
+  const clipCountry = normalizeCountryName(
+    clip.location?.country || clip.provider_location?.country || ""
+  );
+  const expected = normalizeCountryName(expectedCountry);
+
+  if (clipCountry && clipCountry !== expected) {
+    logger.info(`[GEO_FILTER] REJEITADO: ${clip.source_url || clip.local_path || ""} é "${clipCountry}", esperava "${expected}"`);
+    return false;
+  }
+
+  return true;
 };
 
 const extractKeywords = (text = "", limit = 8) => {
@@ -877,6 +903,8 @@ const generateAssets = async ({
   const sceneQueries = [];
   const searchCache = new Map();
   const perSceneTarget = Math.max(1, Math.min(MAX_ASSETS_PER_SCENE, Number(maxAssets || MAX_ASSETS_PER_SCENE)));
+  // Hard dedup: clips usados em qualquer cena não são reutilizados em outras
+  const usedClipIds = new Set();
 
   for (const scene of selectedScenes) {
     const queryPlan = buildSceneQueryPlan({ scene, topic: state.topic });
@@ -887,6 +915,9 @@ const generateAssets = async ({
     const shortVideoCandidates = [];
     const imageCandidates = [];
     const previouslyUsedSourceUrls = selectiveRefresh ? getSceneSourceUrlSet(previousItems, scene.scene_index) : new Set();
+    // País esperado para filtro geográfico desta cena
+    const expectedCountry = scene.location?.country || "";
+
     sceneQueries.push({
       scene_index: scene.scene_index,
       block_id: scene.block_id || "",
@@ -905,66 +936,126 @@ const generateAssets = async ({
       visual_intent: scene.visual_intent || "",
       queries_count: queries.length,
       selective_refresh: selectiveRefresh,
+      expected_country: expectedCountry || "any",
     });
 
     if (!mockMode) {
-      for (const queryDetail of queryPlan.queryDetails || []) {
-        const candidates = await cacheSearchResults({ query: queryDetail.query, cache: searchCache });
-        const scoredCandidates = [...candidates]
-          .map((candidate) => ({
-            ...candidate,
-            query_used: queryDetail.query,
-            search_reason: queryDetail.reason,
-            ...scorePreDownloadCandidate({ candidate: { ...candidate, query_used: queryDetail.query }, scene }),
-          }))
-          .filter((candidate) => !candidate.pre_download_rejected)
-          .map((candidate) => ({
-            ...candidate,
-            search_relevance_score: Number(candidate.pre_download_score || 0) * 1_000_000,
-          }))
-          .sort((left, right) => Number(right.search_relevance_score || 0) - Number(left.search_relevance_score || 0));
-        const partitioned = partitionSceneCandidates(scoredCandidates);
-        longVideoCandidates.push(...partitioned.longVideos);
-        shortVideoCandidates.push(...partitioned.shortVideos);
-        imageCandidates.push(...partitioned.images);
+      // PASSO 1: Biblioteca local — primeiro provider
+      const localQuery = `${scene.narration_excerpt || scene.title || ""} ${(scene.keywords || []).join(" ")}`.trim();
+      const localResults = await searchLocalLibrary(localQuery, {
+        city: scene.location?.city || "",
+        country: expectedCountry,
+        maxResults: perSceneTarget,
+      }).catch(() => []);
+
+      for (const localClip of localResults) {
+        if (downloadedItems.length >= perSceneTarget) break;
+        const clipId = localClip.path;
+        if (usedClipIds.has(clipId)) continue;
+        seenUrls.add(clipId);
+        usedClipIds.add(clipId);
+        downloadedItems.push({
+          scene_index: scene.scene_index,
+          provider: "local_library",
+          asset_type: localClip.type || "video",
+          type: localClip.type || "video",
+          query: localQuery,
+          query_used: localQuery,
+          search_reason: "local_library_match",
+          block_intro_candidate: false,
+          chapter_card_candidate: false,
+          pre_download_score: localClip.pre_download_score || 0,
+          intent_match: true,
+          generic_asset: false,
+          rejection_reason: "",
+          semantic_text: localClip.description || localQuery,
+          provider_tags: localClip.tags || [],
+          provider_title: localClip.description || "",
+          source_url: clipId,
+          local_path: clipId,
+          resolution: { width: 1920, height: 1080, label: "Full HD" },
+          duration_estimate: 10,
+          source_duration_seconds: 0,
+          is_fallback: false,
+          orientation: "horizontal",
+        });
       }
 
-      const candidatePasses = [
-        dedupeCandidatesByUrl(longVideoCandidates).slice(0, CANDIDATE_POOL_PER_SCENE),
-        dedupeCandidatesByUrl(shortVideoCandidates).slice(0, Math.max(4, Math.ceil(CANDIDATE_POOL_PER_SCENE / 2))),
-        dedupeCandidatesByUrl(imageCandidates).slice(0, Math.max(4, Math.ceil(CANDIDATE_POOL_PER_SCENE / 3))),
-      ];
+      if (localResults.length > 0) {
+        logger.info(`assetsService: biblioteca local cena ${scene.scene_index}`, {
+          found: localResults.length,
+          used: downloadedItems.length,
+        });
+      }
 
-      const candidateRounds = selectiveRefresh && previouslyUsedSourceUrls.size ? [false, true] : [true];
+      // PASSO 2: Completar com Pexels/Pixabay se necessário
+      if (downloadedItems.length < perSceneTarget) {
+        for (const queryDetail of queryPlan.queryDetails || []) {
+          const candidates = await cacheSearchResults({ query: queryDetail.query, cache: searchCache });
+          const scoredCandidates = [...candidates]
+            .map((candidate) => ({
+              ...candidate,
+              query_used: queryDetail.query,
+              search_reason: queryDetail.reason,
+              ...scorePreDownloadCandidate({ candidate: { ...candidate, query_used: queryDetail.query }, scene }),
+            }))
+            .filter((candidate) => !candidate.pre_download_rejected)
+            // Filtro geográfico HARD: rejeita clips de países errados
+            .filter((candidate) => passesGeographicFilter(candidate, expectedCountry))
+            .map((candidate) => ({
+              ...candidate,
+              search_relevance_score: Number(candidate.pre_download_score || 0) * 1_000_000,
+            }))
+            .sort((left, right) => Number(right.search_relevance_score || 0) - Number(left.search_relevance_score || 0));
+          const partitioned = partitionSceneCandidates(scoredCandidates);
+          longVideoCandidates.push(...partitioned.longVideos);
+          shortVideoCandidates.push(...partitioned.shortVideos);
+          imageCandidates.push(...partitioned.images);
+        }
 
-      for (const allowPreviouslyUsedSourceUrls of candidateRounds) {
-        if (downloadedItems.length >= perSceneTarget) break;
+        const candidatePasses = [
+          dedupeCandidatesByUrl(longVideoCandidates).slice(0, CANDIDATE_POOL_PER_SCENE),
+          dedupeCandidatesByUrl(shortVideoCandidates).slice(0, Math.max(4, Math.ceil(CANDIDATE_POOL_PER_SCENE / 2))),
+          dedupeCandidatesByUrl(imageCandidates).slice(0, Math.max(4, Math.ceil(CANDIDATE_POOL_PER_SCENE / 3))),
+        ];
 
-        for (const candidatePass of candidatePasses) {
+        const candidateRounds = selectiveRefresh && previouslyUsedSourceUrls.size ? [false, true] : [true];
+
+        for (const allowPreviouslyUsedSourceUrls of candidateRounds) {
           if (downloadedItems.length >= perSceneTarget) break;
-          if (downloadedItems.length > 0 && candidatePass === candidatePasses[2]) break;
 
-          for (const candidate of candidatePass) {
-            if (seenUrls.has(candidate.source_url)) continue;
-            if (!allowPreviouslyUsedSourceUrls && previouslyUsedSourceUrls.has(candidate.source_url)) continue;
-            seenUrls.add(candidate.source_url);
-
-            try {
-              const downloaded = await downloadSceneCandidate({
-                candidate,
-                scene,
-                paths,
-                sequence: downloadedItems.length + 1,
-              });
-
-              if (downloaded) {
-                downloadedItems.push(downloaded);
-              }
-            } catch {
-              // ignore one-off download/probe failures
-            }
-
+          for (const candidatePass of candidatePasses) {
             if (downloadedItems.length >= perSceneTarget) break;
+            if (downloadedItems.length > 0 && candidatePass === candidatePasses[2]) break;
+
+            for (const candidate of candidatePass) {
+              if (seenUrls.has(candidate.source_url)) continue;
+              if (!allowPreviouslyUsedSourceUrls && previouslyUsedSourceUrls.has(candidate.source_url)) continue;
+              // Hard dedup: não reutilizar clip já usado em outra cena
+              if (usedClipIds.has(candidate.source_url)) {
+                logger.info(`[DEDUP] Cena ${scene.scene_index}: clip já usado, pulando: ${String(candidate.source_url).slice(0, 80)}`);
+                continue;
+              }
+              seenUrls.add(candidate.source_url);
+
+              try {
+                const downloaded = await downloadSceneCandidate({
+                  candidate,
+                  scene,
+                  paths,
+                  sequence: downloadedItems.length + 1,
+                });
+
+                if (downloaded) {
+                  usedClipIds.add(candidate.source_url);
+                  downloadedItems.push(downloaded);
+                }
+              } catch {
+                // ignore one-off download/probe failures
+              }
+
+              if (downloadedItems.length >= perSceneTarget) break;
+            }
           }
         }
       }

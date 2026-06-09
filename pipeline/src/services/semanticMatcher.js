@@ -5,6 +5,7 @@ const { config } = require("../config/env");
 const { logger } = require("../utils/logger");
 const { writeJsonAtomic, readJsonSafe } = require("../utils/fileUtils");
 const { ensureVideoStructure } = require("./stateService");
+const { generateEmbedding: generateGeminiEmbedding, hasGemini } = require("./geminiService");
 
 const EMBEDDING_MODEL = "text-embedding-3-small";
 const EMBEDDING_BATCH_SIZE = 20;
@@ -18,7 +19,8 @@ const openaiClient = config.OPENAI_API_KEY
     })
   : null;
 
-const hasEmbeddings = () => Boolean(openaiClient && config.OPENAI_API_KEY);
+// Embeddings disponíveis se OpenAI OU Gemini configurado
+const hasEmbeddings = () => Boolean((openaiClient && config.OPENAI_API_KEY) || hasGemini());
 
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
 
@@ -57,16 +59,25 @@ const getCacheKey = (text) => {
 const generateEmbedding = async (text) => {
   if (!hasEmbeddings() || !text || !text.trim()) return null;
 
-  try {
-    const response = await openaiClient.embeddings.create({
-      model: EMBEDDING_MODEL,
-      input: text.trim().slice(0, 8000),
-    });
-    return response?.data?.[0]?.embedding || null;
-  } catch (error) {
-    logger.warn("semanticMatcher: falha ao gerar embedding", { message: error.message, textLength: text.length });
-    return null;
+  // Provider 1: OpenAI (quando disponível)
+  if (openaiClient && config.OPENAI_API_KEY) {
+    try {
+      const response = await openaiClient.embeddings.create({
+        model: EMBEDDING_MODEL,
+        input: text.trim().slice(0, 8000),
+      });
+      return response?.data?.[0]?.embedding || null;
+    } catch (error) {
+      logger.warn("semanticMatcher: falha OpenAI embedding, tentando Gemini", { message: error.message });
+    }
   }
+
+  // Provider 2: Gemini text-embedding-004
+  if (hasGemini()) {
+    return generateGeminiEmbedding(text);
+  }
+
+  return null;
 };
 
 const generateEmbeddingsBatch = async (texts) => {
@@ -75,36 +86,47 @@ const generateEmbeddingsBatch = async (texts) => {
   const validTexts = texts.map((t) => String(t || "").trim().slice(0, 8000));
   const results = [];
 
-  for (let i = 0; i < validTexts.length; i += EMBEDDING_BATCH_SIZE) {
-    const batch = validTexts.slice(i, i + EMBEDDING_BATCH_SIZE);
-    const validBatch = batch.filter((t) => t.length > 0);
+  // OpenAI suporta batch; Gemini precisa de chamadas individuais
+  if (openaiClient && config.OPENAI_API_KEY) {
+    for (let i = 0; i < validTexts.length; i += EMBEDDING_BATCH_SIZE) {
+      const batch = validTexts.slice(i, i + EMBEDDING_BATCH_SIZE);
+      const validBatch = batch.filter((t) => t.length > 0);
 
-    if (!validBatch.length) {
-      batch.forEach(() => results.push(null));
-      continue;
-    }
+      if (!validBatch.length) {
+        batch.forEach(() => results.push(null));
+        continue;
+      }
 
-    try {
-      const response = await openaiClient.embeddings.create({
-        model: EMBEDDING_MODEL,
-        input: validBatch,
-      });
+      try {
+        const response = await openaiClient.embeddings.create({
+          model: EMBEDDING_MODEL,
+          input: validBatch,
+        });
 
-      const embeddings = response?.data || [];
-      let embedIndex = 0;
+        const embeddings = response?.data || [];
+        let embedIndex = 0;
 
-      batch.forEach((text) => {
-        if (text.length > 0) {
-          results.push(embeddings[embedIndex]?.embedding || null);
-          embedIndex += 1;
-        } else {
-          results.push(null);
+        batch.forEach((text) => {
+          if (text.length > 0) {
+            results.push(embeddings[embedIndex]?.embedding || null);
+            embedIndex += 1;
+          } else {
+            results.push(null);
+          }
+        });
+      } catch (error) {
+        logger.warn("semanticMatcher: falha batch OpenAI, usando Gemini individual", { message: error.message });
+        for (const text of batch) {
+          results.push(text.length > 0 ? await generateGeminiEmbedding(text) : null);
         }
-      });
-    } catch (error) {
-      logger.warn("semanticMatcher: falha no batch de embeddings", { message: error.message, batchSize: validBatch.length });
-      batch.forEach(() => results.push(null));
+      }
     }
+    return results;
+  }
+
+  // Gemini: sem suporte a batch nativo
+  for (const text of validTexts) {
+    results.push(text.length > 0 ? await generateGeminiEmbedding(text) : null);
   }
 
   return results;
