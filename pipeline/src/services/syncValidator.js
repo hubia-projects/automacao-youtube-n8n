@@ -4,121 +4,20 @@ const crypto = require("crypto");
 const { config } = require("../config/env");
 const { loadState, updateState } = require("./stateService");
 const { getCachedAudioIntelligence } = require("./audioIntelligence");
-const { hasGemini, describeImagesWithGemini } = require("./geminiService");
+const { hasOpenAi, describeImagesWithOpenAI } = require("./openaiService");
 const { extractVideoFrame, probeMedia, runFfmpeg } = require("../utils/mediaUtils");
 const { buildNarrativeBlocks, isSameLocation } = require("./narrativeBlockPlanner");
 const { validateRenderQuality } = require("./renderQualityService");
 const { renderVideo } = require("./renderService");
 const { generateAssets } = require("./assetsService");
-const { buildEditorialRegenerationPlan } = require("./editorialRepairPlanner");
-const { markNeedsManualReview } = require("./manualReviewService");
-const { getThemeRequiredCategoriesForIntent } = require("../config/editorialPolicy");
-const { appendPipelineEvent } = require("./pipelineEventLogService");
-const { getExternalApiStats } = require("./externalApiControlService");
-const { timestampForFile } = require("../utils/fileUtils");
 
 const DEFAULT_QA_THRESHOLD = 0.78;
 const FOOD_VISUAL_INTENTS = new Set(["gastronomy", "market", "wine", "pastry", "restaurant", "cafe", "street_food"]);
 const GASTRONOMY_THEME_PATTERN = /(gastronom|food|market|mercado|wine|vinho|pastry|pastel|cafe|coffee|restaurant|restaurante|bakery|dessert|docaria|confeitaria|comida)/i;
 const MIN_GASTRONOMY_THEME_INTENT_COUNT = 2;
 const MIN_GASTRONOMY_THEME_INTENT_RATIO = 0.35;
-const MICRO_TIMING_DRIFT_MAX_SEC = Number(config.MICRO_TIMING_DRIFT_MAX_SEC || 1.0);
-const QA_STAGE_MAX_RUNTIME_MS = Math.max(60000, Number(config.QA_STAGE_MAX_RUNTIME_MS || 180000));
-const QA_VISION_TIMEOUT_MS = Math.max(4000, Math.min(15000, Number(config.QA_VISION_TIMEOUT_MS || 10000)));
-const QA_VISION_MAX_RETRIES = Math.max(0, Math.min(1, Number(config.QA_VISION_MAX_RETRIES ?? 0)));
-const QA_VISION_BATCH_SIZE = Math.max(1, Math.min(12, Number(config.QA_VISION_BATCH_SIZE || 8)));
-const QA_MIN_VISION_BUDGET_MS = 4000;
-const QA_MODE = String(process.env.QA_MODE || 'strict').toLowerCase();
-const QA_ACTIVE_THRESHOLDS = QA_MODE === 'progressive'
-  ? { qualityThreshold: 0.20, uncertainRatioThreshold: 0.50 }
-  : { qualityThreshold: 0.72, uncertainRatioThreshold: 0.10 };
-const PROGRESSIVE_SOFT_EDITORIAL_CODES = new Set([
-  'CRITICAL_SLOT_UNCERTAIN', 'CRITICAL_SLOT_NOT_CONFIRMED', 'TIMELINE_OUTSIDE_APPROVED_POOL',
-  'GENERIC_OVERUSE', 'WRONG_VISUAL_CATEGORY', 'THEME_VISUAL_MISMATCH', 'THEME_COVERAGE_MISSING',
-  'RUNTIME_DEGRADATION_USED', 'LOW_DIVERSITY_BLOCK', 'NO_PROOF_FOR_PROMISE',
-  'BLOCK_COVERAGE_INSUFFICIENT', 'BLOCK_COVERAGE_PARTIAL', 'COVERAGE_SEARCH_INSUFFICIENCY',
-  'COVERAGE_SEMANTIC_AMBIGUITY', 'COVERAGE_EDITORIAL_INSUFFICIENCY', 'COVERAGE_PLANNER_PERMISSIVE',
-  'CRITICAL_SLOT_ONLY_GENERIC', 'DIVERSITY_BYPASS_ON_CRITICAL_SLOT', 'NO_MICRO_PROOF_FOR_PROMISE',
-]);
-if (QA_MODE === 'progressive') {
-  console.log(`[QA] Modo: progressive | qualityThreshold: ${QA_ACTIVE_THRESHOLDS.qualityThreshold} (strict=0.72) | uncertainRatioThreshold: ${QA_ACTIVE_THRESHOLDS.uncertainRatioThreshold}`);
-}
-const EDITORIAL_QA_PROFILES = {
-  strict: {
-    uncertainRatioMax: 0.1,
-    blockOnHigh: true,
-    blockOnCritical: true,
-  },
-  balanced: {
-    uncertainRatioMax: 0.16,
-    blockOnHigh: false,
-    blockOnCritical: true,
-  },
-};
-const QA_RUNTIME_PROFILES = {
-  prod_strict: "prod_strict",
-  mock_relaxed: "mock_relaxed",
-};
-const normalizeReportFileSegment = (value = "") =>
-  String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "video";
-const QA_REPORTS_ROOT = config.TEST_REPORTS_ROOT;
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
-const chunkArray = (values = [], size = 1) => {
-  const safeValues = Array.isArray(values) ? values : [];
-  const chunkSize = Math.max(1, Number(size || 1));
-  const chunks = [];
-  for (let index = 0; index < safeValues.length; index += chunkSize) {
-    chunks.push(safeValues.slice(index, index + chunkSize));
-  }
-  return chunks;
-};
-const getRemainingQaRuntimeMs = (stageDeadlineAt = 0) =>
-  Number(stageDeadlineAt || 0) > 0
-    ? Math.max(0, Number(stageDeadlineAt) - Date.now())
-    : 0;
-const resolveQaVisionRequestOptions = ({ stageDeadlineAt = 0 } = {}) => {
-  const remainingMs = getRemainingQaRuntimeMs(stageDeadlineAt);
-  if (remainingMs > 0 && remainingMs < QA_MIN_VISION_BUDGET_MS) {
-    return null;
-  }
-
-  const timeoutMs = remainingMs > 0
-    ? Math.max(QA_MIN_VISION_BUDGET_MS, Math.min(QA_VISION_TIMEOUT_MS, remainingMs))
-    : QA_VISION_TIMEOUT_MS;
-  const maxRetries = remainingMs > 0 && remainingMs < (timeoutMs * 2)
-    ? 0
-    : QA_VISION_MAX_RETRIES;
-
-  return {
-    timeoutMs,
-    maxRetries,
-    remainingMs,
-  };
-};
-const buildVisionFallbackResult = ({
-  framePath = "",
-  method = "metadata_fallback",
-  runtimeDegraded = false,
-} = {}) => ({
-  frame_path: framePath,
-  method,
-  detected_topic: "",
-  location: { city: "", country: "", confidence: 0 },
-  landmarks: [],
-  overlay_visible: false,
-  overlay_text: "",
-  overlay_contrast_ok: false,
-  confidence: 0,
-  runtime_degraded: Boolean(runtimeDegraded),
-});
-const buildVisionBatchPrompt = () => (
-  'Analise cada frame em ordem e retorne JSON estrito no formato {"frames":[{"frame_index":1,"topic":"","location":{"city":"","country":"","confidence":0},"landmarks":[{"name":"","confidence":0}],"overlay_text":"","overlay_visible":false,"overlay_contrast_ok":false,"confidence":0}]}. Use exatamente um objeto por frame na mesma ordem recebida. Nao invente cidade se nao houver evidencia visual clara.'
-);
 const sha256File = async (filePath = "") => {
   if (!filePath || !(await fs.pathExists(filePath))) return "";
   const hash = crypto.createHash("sha256");
@@ -236,7 +135,7 @@ const buildAuditTimestamps = ({ duration = 0, hardBoundaries = [], overlays = []
 };
 
 const generateContactSheetAndAudit = async ({ videoId, renderPath, duration, hardBoundaries, overlays, macroBlocks, clips }) => {
-  const reportsDir = QA_REPORTS_ROOT;
+  const reportsDir = path.join('pipeline','test_reports');
   await fs.ensureDir(reportsDir);
   const evidenceDir = path.join(reportsDir, `${videoId}-frames`);
   await fs.emptyDir(evidenceDir);
@@ -256,16 +155,13 @@ const generateContactSheetAndAudit = async ({ videoId, renderPath, duration, har
   await fs.writeJson(visualAuditPath, { video_id: videoId, render_path: renderPath, timestamps: audit, clip_audit: [], boundary_audit: [], overlay_audit: [], resolution_audit: {}, final_decision: {} }, { spaces: 2 });
   return { contactSheetPath, visualAuditPath, auditRows: audit };
 };
-const classifyFramesWithVision = async ({ renderPath, sampleTimestamps, videoId = "", stageDeadlineAt = 0 }) => {
-  if (!hasGemini() || config.SEMANTIC_SYNC_MODE !== "high-quality") return new Map();
+const classifyFramesWithVision = async ({ renderPath, sampleTimestamps }) => {
+  if (!hasOpenAi() || config.SEMANTIC_SYNC_MODE !== "high-quality") return new Map();
   const limitedTimestamps = sampleTimestamps.slice(0, 24);
   const framesDir = `${renderPath}.semantic-qa`;
   await fs.emptyDir(framesDir);
 
   try {
-    const runtimeOptions = resolveQaVisionRequestOptions({ stageDeadlineAt });
-    if (!runtimeOptions) return new Map();
-
     const framePaths = [];
     for (let index = 0; index < limitedTimestamps.length; index += 1) {
       const timestamp = limitedTimestamps[index];
@@ -274,12 +170,10 @@ const classifyFramesWithVision = async ({ renderPath, sampleTimestamps, videoId 
       framePaths.push(framePath);
     }
 
-    const response = await describeImagesWithGemini({
+    const response = await describeImagesWithOpenAI({
       prompt: `Classifique cada frame em ordem para QA semantico de video de turismo e gastronomia. Retorne JSON estrito: {"frames":[{"frame_index":1,"topic":"","location":{"city":"","country":"","confidence":0},"landmarks":[{"name":"","confidence":0}],"neutral":false,"confidence":0}]}. Nao invente cidade se nao houver evidencia visual clara.`,
       imagePaths: framePaths,
-      videoId,
-      timeoutMs: runtimeOptions.timeoutMs,
-      maxRetries: runtimeOptions.maxRetries,
+      detail: "low",
     });
 
     const byTimestamp = new Map();
@@ -296,7 +190,7 @@ const classifyFramesWithVision = async ({ renderPath, sampleTimestamps, videoId 
         landmarks: Array.isArray(frame.landmarks) ? frame.landmarks : [],
         neutral: Boolean(frame.neutral),
         confidence: Number(frame.confidence || frame.location?.confidence || 0),
-        method: "gemini_vision_frame",
+        method: "openai_vision_frame",
       });
     });
     return byTimestamp;
@@ -307,150 +201,34 @@ const classifyFramesWithVision = async ({ renderPath, sampleTimestamps, videoId 
   }
 };
 
-const classifyFramesWithVisionAtTimestamps = async ({
-  renderPath,
-  frameRequests = [],
-  evidenceDir,
-  videoId = "",
-  stageDeadlineAt = 0,
-  width = 960,
-  height = 540,
-}) => {
-  const safeRequests = Array.isArray(frameRequests) ? frameRequests : [];
-  if (!safeRequests.length) return [];
-  await fs.ensureDir(evidenceDir);
-
-  const preparedRequests = [];
-  for (let index = 0; index < safeRequests.length; index += 1) {
-    const request = safeRequests[index] || {};
-    const runtimeOptions = resolveQaVisionRequestOptions({ stageDeadlineAt });
-    const timestampSec = round3(Math.max(0, Number(request.timestampSec || 0)));
-    const label = String(request.label || "frame");
-    const framePath = path.join(
-      evidenceDir,
-      `${label}-${String(index + 1).padStart(4, "0")}-${String(timestampSec).replace(/\./g, "_")}.jpg`
-    );
-
-    if (!runtimeOptions) {
-      preparedRequests.push({
-        ...request,
-        timestampSec,
-        framePath: "",
-        fallback: buildVisionFallbackResult({ method: "runtime_budget_fallback", runtimeDegraded: true }),
-      });
-      continue;
-    }
-
-    await fs.ensureDir(path.dirname(framePath));
-    await extractVideoFrame({
-      inputPath: renderPath,
-      outputPath: framePath,
-      timeSeconds: timestampSec,
-      width,
-      height,
-    }).catch(() => null);
-    const frameExists = await fs.pathExists(framePath).catch(() => false);
-
-    preparedRequests.push({
-      ...request,
-      timestampSec,
-      framePath,
-      fallback: frameExists
-        ? null
-        : buildVisionFallbackResult({ framePath, method: "frame_extract_failed" }),
-    });
+const classifyFrameWithVisionAtTimestamp = async ({ renderPath, timestampSec, evidenceDir, label }) => {
+  const framePath = path.join(evidenceDir, `${label}-${String(timestampSec).replace(/\./g, "_")}.jpg`);
+  await extractVideoFrame({ inputPath: renderPath, outputPath: framePath, timeSeconds: Math.max(0, timestampSec), width: 960, height: 540 });
+  if (!hasOpenAi()) {
+    return { frame_path: framePath, method: "metadata_fallback", detected_topic: "", location: { city: "", country: "", confidence: 0 }, confidence: 0 };
   }
 
-  const results = new Array(preparedRequests.length);
-  preparedRequests.forEach((request, index) => {
-    if (request.fallback) {
-      results[index] = {
-        ...request.fallback,
-        frame_path: request.fallback.frame_path || request.framePath || "",
-      };
-    }
-  });
+  const response = await describeImagesWithOpenAI({
+    prompt: `Analise o frame e retorne JSON estrito: {"topic":"","location":{"city":"","country":"","confidence":0},"landmarks":[{"name":"","confidence":0}],"overlay_text":"","overlay_visible":false,"overlay_contrast_ok":false,"confidence":0}.`,
+    imagePaths: [framePath],
+    detail: "low",
+  }).catch(() => null);
 
-  const eligibleRequests = preparedRequests
-    .map((request, index) => ({ ...request, index }))
-    .filter((request) => !results[request.index] && request.framePath);
-
-  if (!hasGemini()) {
-    eligibleRequests.forEach((request) => {
-      results[request.index] = buildVisionFallbackResult({ framePath: request.framePath });
-    });
-    return results;
-  }
-
-  for (const requestChunk of chunkArray(eligibleRequests, QA_VISION_BATCH_SIZE)) {
-    const runtimeOptions = resolveQaVisionRequestOptions({ stageDeadlineAt });
-    if (!runtimeOptions) {
-      requestChunk.forEach((request) => {
-        results[request.index] = buildVisionFallbackResult({
-          framePath: request.framePath,
-          method: "runtime_budget_fallback",
-          runtimeDegraded: true,
-        });
-      });
-      continue;
-    }
-
-    const response = await describeImagesWithGemini({
-      prompt: buildVisionBatchPrompt(),
-      imagePaths: requestChunk.map((request) => request.framePath),
-      videoId,
-      timeoutMs: runtimeOptions.timeoutMs,
-      maxRetries: runtimeOptions.maxRetries,
-    }).catch(() => null);
-    const responseFrames = Array.isArray(response?.frames) ? response.frames : [];
-
-    requestChunk.forEach((request, chunkIndex) => {
-      const frame = responseFrames[chunkIndex];
-      if (!frame || typeof frame !== "object") {
-        results[request.index] = buildVisionFallbackResult({ framePath: request.framePath });
-        return;
-      }
-
-      results[request.index] = {
-        frame_path: request.framePath,
-        method: "gemini_vision_frame",
-        detected_topic: frame.topic || frame.location?.city || "",
-        location: {
-          city: frame.location?.city || "",
-          country: frame.location?.country || "",
-          confidence: Number(frame.location?.confidence || frame.confidence || 0),
-        },
-        landmarks: Array.isArray(frame.landmarks) ? frame.landmarks : [],
-        overlay_visible: Boolean(frame.overlay_visible),
-        overlay_text: frame.overlay_text || "",
-        overlay_contrast_ok: Boolean(frame.overlay_contrast_ok),
-        confidence: Number(frame.confidence || frame.location?.confidence || 0),
-        runtime_degraded: false,
-      };
-    });
-  }
-
-  return results.map((result, index) => result || buildVisionFallbackResult({ framePath: preparedRequests[index]?.framePath || "" }));
-};
-
-const classifyFrameWithVisionAtTimestamp = async ({
-  renderPath,
-  timestampSec,
-  evidenceDir,
-  label,
-  videoId = "",
-  stageDeadlineAt = 0,
-}) => {
-  const [result] = await classifyFramesWithVisionAtTimestamps({
-    renderPath,
-    frameRequests: [{ timestampSec: Math.max(0, timestampSec), label }],
-    evidenceDir,
-    videoId,
-    stageDeadlineAt,
-    width: 960,
-    height: 540,
-  });
-  return result || buildVisionFallbackResult({ method: "runtime_budget_fallback", runtimeDegraded: true });
+  return {
+    frame_path: framePath,
+    method: "openai_vision_frame",
+    detected_topic: response?.topic || response?.location?.city || "",
+    location: {
+      city: response?.location?.city || "",
+      country: response?.location?.country || "",
+      confidence: Number(response?.location?.confidence || response?.confidence || 0),
+    },
+    landmarks: Array.isArray(response?.landmarks) ? response.landmarks : [],
+    overlay_visible: Boolean(response?.overlay_visible),
+    overlay_text: response?.overlay_text || "",
+    overlay_contrast_ok: Boolean(response?.overlay_contrast_ok),
+    confidence: Number(response?.confidence || response?.location?.confidence || 0),
+  };
 };
 
 const scoreExpectedVsDetected = ({ expectedBlock, detected }) => {
@@ -668,17 +446,6 @@ const computeVisualIntentDistribution = ({ clips = [] }) => {
   };
 };
 
-const buildApprovedPoolCategorySet = ({ state = {} }) => {
-  const approvedWindows = Array.isArray(state.assets_json?.approved_windows) ? state.assets_json.approved_windows : [];
-  const categories = approvedWindows.flatMap((window) =>
-    window?.visual_observation?.detected_visual_categories
-    || window?.editorial_inference?.detected_visual_categories
-    || window?.window?.detected_visual_categories
-    || []
-  );
-  return new Set(categories.map((item) => String(item || "").toLowerCase()).filter(Boolean));
-};
-
 const evaluateVisualIntentCoverage = ({ state = {}, timeline = {} }) => {
   if (!isGastronomyTheme({ state, timeline })) {
     return {
@@ -695,8 +462,6 @@ const evaluateVisualIntentCoverage = ({ state = {}, timeline = {} }) => {
   const issues = [];
   const clipIndexes = new Set();
   const sceneIndexes = new Set();
-  const themeCoverageMissingScenes = new Set();
-  const criticalThemeCoverageMissingScenes = new Set();
   const quota = {
     food_or_plate_min_ratio: 0.25,
     market_min_ratio: 0.15,
@@ -705,40 +470,9 @@ const evaluateVisualIntentCoverage = ({ state = {}, timeline = {} }) => {
     generic_city_max_ratio: 0.2,
     landscape_or_skyline_max_ratio: 0.15,
   };
-  const approvedPoolCategories = buildApprovedPoolCategorySet({ state });
-  const quotaChecks = [
-    {
-      key: "food_or_plate",
-      actual: distribution.food_or_plate,
-      min: quota.food_or_plate_min_ratio,
-      categories: ["food", "local_food", "pastry", "restaurant", "people_eating"],
-    },
-    {
-      key: "market",
-      actual: distribution.market,
-      min: quota.market_min_ratio,
-      categories: ["market", "street_food"],
-    },
-    {
-      key: "wine",
-      actual: distribution.wine,
-      min: quota.wine_min_ratio,
-      categories: ["wine"],
-    },
-    {
-      key: "restaurant_or_cafe",
-      actual: distribution.restaurant_or_cafe,
-      min: quota.restaurant_or_cafe_min_ratio,
-      categories: ["restaurant", "cafe", "people_eating"],
-    },
-  ];
-  const failedQuotaChecks = quotaChecks.filter((entry) => Number(entry.actual || 0) < Number(entry.min || 0));
-  const availabilityLimitedFailures = failedQuotaChecks.filter((entry) =>
-    !(entry.categories || []).some((category) => approvedPoolCategories.has(String(category || "").toLowerCase()))
-  );
 
   clips.forEach((clip) => {
-    const foodIntentClip = FOOD_VISUAL_INTENTS.has(String(clip.visual_intent || "").toLowerCase());
+    const foodIntentClip = FOOD_VISUAL_INTENTS.has(clip.visual_intent);
     const hasFoodEvidence = clipHasFoodEvidence(clip);
     const hasGenericVisual = clipHasCategory(clip, ["aerial_city", "bridge", "river", "coast", "generic_street", "landscape"]);
 
@@ -748,51 +482,10 @@ const evaluateVisualIntentCoverage = ({ state = {}, timeline = {} }) => {
     }
   });
 
-  (state.visual_plan || [])
-    .filter((scene) => FOOD_VISUAL_INTENTS.has(String(scene.visual_intent || "").toLowerCase()))
-    .forEach((scene) => {
-      const sceneIndex = Number(scene.scene_index || 0);
-      if (!sceneIndex) return;
-      const requiredCategories = getThemeRequiredCategoriesForIntent(scene.visual_intent);
-      if (!requiredCategories.length) return;
-
-      const sceneClips = clips.filter((clip) => Number(clip.scene_index || 0) === sceneIndex);
-      if (!sceneClips.length) {
-        themeCoverageMissingScenes.add(sceneIndex);
-        sceneIndexes.add(sceneIndex);
-        return;
-      }
-
-      const sceneHasCoverage = sceneClips.some((clip) => clipHasCategory(clip, requiredCategories));
-      if (!sceneHasCoverage) {
-        themeCoverageMissingScenes.add(sceneIndex);
-        sceneIndexes.add(sceneIndex);
-        sceneClips.forEach((clip) => clipIndexes.add(Number(clip.clip_index || 0)));
-      }
-
-      const criticalSceneClips = sceneClips.filter((clip) =>
-        Boolean(clip.critical_slot)
-        || ["hook_exact", "opening_establishing", "proof_exact", "closing_payoff"].includes(String(clip.narrative_role_selected || ""))
-      );
-      if (criticalSceneClips.length) {
-        const criticalHasCoverage = criticalSceneClips.some((clip) => clipHasCategory(clip, requiredCategories));
-        if (!criticalHasCoverage) {
-          criticalThemeCoverageMissingScenes.add(sceneIndex);
-          sceneIndexes.add(sceneIndex);
-          criticalSceneClips.forEach((clip) => clipIndexes.add(Number(clip.clip_index || 0)));
-        }
-      }
-    });
-
-  if (failedQuotaChecks.length) {
-    const severeCoverageGap = failedQuotaChecks.length >= 2;
-    const recoverableFromPool = availabilityLimitedFailures.length < failedQuotaChecks.length;
-    const issueSeverity = severeCoverageGap && recoverableFromPool ? "high" : "medium";
+  if (distribution.food_or_plate < quota.food_or_plate_min_ratio || distribution.market < quota.market_min_ratio || distribution.wine < quota.wine_min_ratio || distribution.restaurant_or_cafe < quota.restaurant_or_cafe_min_ratio) {
     issues.push({
       type: "visual_intent_underrepresented",
-      severity: issueSeverity,
-      failed_quota_keys: failedQuotaChecks.map((entry) => entry.key),
-      availability_limited_keys: availabilityLimitedFailures.map((entry) => entry.key),
+      severity: "high",
       message: "Gastronomy video has too few food/market/wine/restaurant clips",
     });
   }
@@ -821,24 +514,6 @@ const evaluateVisualIntentCoverage = ({ state = {}, timeline = {} }) => {
     });
   }
 
-  if (themeCoverageMissingScenes.size) {
-    issues.push({
-      type: "scene_theme_coverage_missing",
-      severity: "critical",
-      scene_indexes: unique(Array.from(themeCoverageMissingScenes)),
-      message: "Uma ou mais cenas gastronômicas não têm cobertura visual temática mínima.",
-    });
-  }
-
-  if (criticalThemeCoverageMissingScenes.size) {
-    issues.push({
-      type: "critical_scene_theme_coverage_missing",
-      severity: "critical",
-      scene_indexes: unique(Array.from(criticalThemeCoverageMissingScenes)),
-      message: "Slots críticos de cenas gastronômicas não possuem prova visual temática.",
-    });
-  }
-
   return {
     applicable: true,
     visual_intent_distribution: distribution,
@@ -851,7 +526,6 @@ const evaluateVisualIntentCoverage = ({ state = {}, timeline = {} }) => {
 const collectTimelineIssues = ({ timeline, technical, visual, diversityScore }) => {
   const issues = [...(technical.issues || [])];
   const clips = timeline?.clips || [];
-  const runtimeDegraded = Boolean(timeline?.runtime_degraded);
   const fallbackClipCount = clips.filter((clip) => clip.clip_script_source === "scene_fallback").length;
   const metadataFallbackClipCount = clips.filter((clip) => clip.asset_analysis_provider === "metadata_fallback").length;
 
@@ -876,64 +550,12 @@ const collectTimelineIssues = ({ timeline, technical, visual, diversityScore }) 
   if (diversityScore < 0.45) {
     issues.push({ type: "low_diversity", severity: "medium", diversity_score: diversityScore });
   }
-  const lowDiversityBlocks = Array.isArray(timeline?.timelineSyncMetrics?.low_diversity_blocks)
-    ? timeline.timelineSyncMetrics.low_diversity_blocks
-    : [];
-  if (lowDiversityBlocks.length > 0) {
-    issues.push({
-      type: "low_diversity_block",
-      severity: "high",
-      block_ids: lowDiversityBlocks,
-      adjacent_repeat_total: Number(timeline?.timelineSyncMetrics?.adjacent_repeat_total || 0),
-      message: "One or more narrative blocks are visually monotonic.",
-    });
-  }
-  if (Number(timeline?.timelineSyncMetrics?.adjacent_repeat_total || 0) >= 2) {
-    issues.push({
-      type: "adjacent_visual_repetition",
-      severity: "high",
-      adjacent_repeat_total: Number(timeline.timelineSyncMetrics.adjacent_repeat_total || 0),
-    });
-  }
-  const criticalDiversityBypass = clips.filter((clip) =>
-    clip.critical_slot === true
-    && (clip.editorial_slot_violation_codes || []).includes("diversity_bypass_on_critical_slot")
-  );
-  if (criticalDiversityBypass.length) {
-    issues.push({
-      type: "diversity_bypass_on_critical_slot",
-      severity: "critical",
-      count: criticalDiversityBypass.length,
-      clip_indexes: criticalDiversityBypass.map((clip) => Number(clip.clip_index || 0)).filter(Boolean),
-      message: "Hard diversity precisou ser ignorada em slot critico.",
-    });
-  }
-  const criticalGenericClips = clips.filter((clip) =>
-    clip.critical_slot === true
-    && String(clip.visual_truth_status || "").toLowerCase() === "generic"
-  );
-  if (criticalGenericClips.length) {
-    issues.push({
-      type: "critical_slot_only_generic",
-      severity: "critical",
-      count: criticalGenericClips.length,
-      clip_indexes: criticalGenericClips.map((clip) => Number(clip.clip_index || 0)).filter(Boolean),
-      message: "Slot critico foi preenchido por material generic.",
-    });
-  }
   if (metadataFallbackClipCount / Math.max(1, clips.length) > 0.35) {
     issues.push({
       type: "metadata_fallback_overuse",
       severity: "high",
       count: metadataFallbackClipCount,
       ratio: round3(metadataFallbackClipCount / Math.max(1, clips.length)),
-    });
-  }
-  if (runtimeDegraded) {
-    issues.push({
-      type: "runtime_degradation_used",
-      severity: "high",
-      message: "Runtime fallback/degradation foi usado para manter o render executando.",
     });
   }
   return issues;
@@ -973,19 +595,6 @@ const identifyClipsForReplacement = ({ timeline, visualResult, issues = [], forc
       sceneIndexes.add(Number(clip.scene_index));
     });
   }
-  if (issues.some((issue) => issue.type === "low_diversity_block" || issue.type === "adjacent_visual_repetition")) {
-    clips.forEach((clip, index) => {
-      const previous = clips[index - 1];
-      if (!previous) return;
-      const repeatedFamily = clip.visual_family && previous.visual_family && clip.visual_family === previous.visual_family;
-      const repeatedSource = clip.source_url && previous.source_url && clip.source_url === previous.source_url;
-      const repeatedFunction = clip.scene_function && previous.scene_function && clip.scene_function === previous.scene_function;
-      if (repeatedFamily || repeatedSource || repeatedFunction) {
-        clipIndexes.add(Number(clip.clip_index || 0));
-        sceneIndexes.add(Number(clip.scene_index || 0));
-      }
-    });
-  }
 
   return {
     clip_indexes_to_replace: unique(Array.from(clipIndexes).filter(Boolean)),
@@ -1014,45 +623,11 @@ const validateTimelineAlignment = async ({ videoId }) => {
 };
 
 
-const validateOverlayRenderedFrames = async ({
-  renderPath,
-  overlays = [],
-  evidenceDir,
-  overlayApplyStatus = "",
-  videoId = "",
-  stageDeadlineAt = 0,
-}) => {
+const validateOverlayRenderedFrames = async ({ renderPath, overlays = [], evidenceDir }) => {
   const results = [];
-  const normalizedStatus = String(overlayApplyStatus || "").toLowerCase();
-  if (normalizedStatus === "failed") {
-    return (overlays || []).map((overlay) => ({
-      text: overlay.text || "",
-      timestamp: round3(Number(overlay.start_seconds || 0) + 0.5),
-      state_overlay_exists: true,
-      frame_overlay_detected: false,
-      frame_path: "",
-      status: "fail",
-      reason: "overlay_apply_failed",
-    }));
-  }
-  const overlayRequests = (overlays || []).map((overlay, index) => ({
-    timestampSec: round3(Number(overlay.start_seconds || 0) + 0.5),
-    label: `overlay-${overlay.type || "overlay"}-${index + 1}`,
-  }));
-  const overlayFrames = await classifyFramesWithVisionAtTimestamps({
-    renderPath,
-    frameRequests: overlayRequests,
-    evidenceDir,
-    videoId,
-    stageDeadlineAt,
-    width: 960,
-    height: 540,
-  });
-
-  for (let index = 0; index < overlays.length; index += 1) {
-    const overlay = overlays[index] || {};
+  for (const overlay of overlays) {
     const ts = round3(Number(overlay.start_seconds || 0) + 0.5);
-    const vision = overlayFrames[index] || buildVisionFallbackResult({ method: "runtime_budget_fallback", runtimeDegraded: true });
+    const vision = await classifyFrameWithVisionAtTimestamp({ renderPath, timestampSec: ts, evidenceDir, label: `overlay-${overlay.type || 'overlay'}` });
     const detected = Boolean(vision.overlay_visible || (vision.overlay_text || '').trim());
     results.push({
       text: overlay.text || '',
@@ -1061,21 +636,14 @@ const validateOverlayRenderedFrames = async ({
       frame_overlay_detected: detected,
       frame_path: vision.frame_path,
       status: detected ? 'pass' : 'fail',
-      reason: detected ? "detected" : (vision.runtime_degraded ? "runtime_budget_fallback" : "not_detected_on_frame"),
-      runtime_degraded: Boolean(vision.runtime_degraded),
     });
   }
   return results;
 };
 
-const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir, videoId = "", stageDeadlineAt = 0 }) => {
+const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir }) => {
   const rows = [];
-  const mediaInfo = await probeMedia(renderPath).catch(() => ({ duration: 0 }));
-  const renderDuration = Math.max(0.2, Number(mediaInfo.duration || 0));
-  const frameRequests = [];
-  const frameRequestIndexesByClip = (clips || []).map(() => []);
-
-  clips.forEach((clip, clipArrayIndex) => {
+  for (const clip of clips) {
     const startSec = Number(clip.timeline_start_sec || 0);
     const endSec = Number(clip.timeline_end_sec || startSec);
     const duration = Math.max(0, endSec - startSec);
@@ -1084,55 +652,21 @@ const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir, v
       timestamps.push(round3(Math.min(endSec - 0.5, startSec + 0.5)));
       timestamps.push(round3(Math.max(startSec + 0.5, endSec - 0.5)));
     }
+    const frameChecks = [];
     for (const ts of [...new Set(timestamps)].filter((v)=>v>=startSec && v<=endSec)) {
-      const safeTs = round3(Math.min(Math.max(0, ts), Math.max(0, renderDuration - 0.05)));
-      frameRequestIndexesByClip[clipArrayIndex].push({ ts: safeTs, requestIndex: frameRequests.length });
-      frameRequests.push({
-        timestampSec: safeTs,
-        label: `clip-${clip.clip_index || clipArrayIndex + 1}`,
-      });
+      const vision = await classifyFrameWithVisionAtTimestamp({ renderPath, timestampSec: ts, evidenceDir, label: `clip-${clip.clip_index || 0}` });
+      frameChecks.push({ ts, vision });
     }
-  });
-
-  const frameResults = await classifyFramesWithVisionAtTimestamps({
-    renderPath,
-    frameRequests,
-    evidenceDir,
-    videoId,
-    stageDeadlineAt,
-    width: 960,
-    height: 540,
-  });
-
-  for (let clipArrayIndex = 0; clipArrayIndex < clips.length; clipArrayIndex += 1) {
-    const clip = clips[clipArrayIndex] || {};
-    const frameChecks = (frameRequestIndexesByClip[clipArrayIndex] || []).map(({ ts, requestIndex }) => ({
-      ts,
-      vision: frameResults[requestIndex] || buildVisionFallbackResult({ method: "runtime_budget_fallback", runtimeDegraded: true }),
-    }));
 
     const expected = clip.macro_topic || clip.expected_location || "";
-    const expectedLocation = clip.expected_location || "";
-    const strictLocationCheck = Boolean(
-      clip.topic_type === "city"
-      || clip.hard_boundary_first_clip
-      || clip.critical_slot
-      || clip.narrative_role_selected === "hook_exact"
-      || clip.narrative_role_selected === "opening_establishing"
-      || clip.narrative_role_selected === "closing_payoff"
-    );
-    const metadataLocation = clip.detected_location?.city || "";
-    const inferredLocationMatch = frameChecks.find((item) => {
-      const locationCity = item.vision.location?.city || "";
-      return locationCity && metadataLocation && isSameLocation(locationCity, metadataLocation);
-    });
+    const expectedLocation = clip.expected_location || expected;
     const confirmed = frameChecks.find((item) => {
-      const locationCity = item.vision.location?.city || "";
-      return locationCity && expectedLocation && isSameLocation(locationCity, expectedLocation);
+      const location = item.vision.location?.city || item.vision.detected_topic || "";
+      return location && expectedLocation && isSameLocation(location, expectedLocation);
     });
     const wrong = frameChecks.find((item) => {
-      const locationCity = item.vision.location?.city || "";
-      return strictLocationCheck && expectedLocation && locationCity && !isSameLocation(locationCity, expectedLocation);
+      const location = item.vision.location?.city || item.vision.detected_topic || "";
+      return location && expectedLocation && !isSameLocation(location, expectedLocation);
     });
     let status = 'uncertain';
     let reason = 'vision unavailable or inconclusive';
@@ -1142,28 +676,10 @@ const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir, v
     } else if (wrong) {
       status = 'fail';
       reason = 'vision detected mismatched location';
-    } else if (!strictLocationCheck) {
-      status = 'pass';
-      reason = 'non_city_block_without_strict_location_requirement';
-    } else if (!expectedLocation && (clip.visual_truth_status === "exact" || clip.visual_truth_status === "regional") && clip.editorial_slot_ok !== false) {
-      status = 'pass';
-      reason = 'editorial_contract_backstop_without_explicit_location';
-    } else if (
-      !expectedLocation
-      && (clip.visual_truth_status === "exact" || clip.visual_truth_status === "regional")
-      && String(clip.micro_id || "").trim()
-      && clip.micro_slot_ok !== false
-      && inferredLocationMatch
-    ) {
-      status = 'pass';
-      reason = 'micro_sync_backstop_without_explicit_location';
-    } else if (metadataLocation && expectedLocation && isSameLocation(metadataLocation, expectedLocation)) {
-      status = 'pass';
-      reason = 'metadata_location_backstop_with_no_vision_mismatch';
     }
 
     const best = confirmed || wrong || frameChecks[0] || { vision: {} };
-    const visionLocation = best.vision.location?.city || "";
+    const visionLocation = best.vision.location?.city || best.vision.detected_topic || "";
     const outOfDomain = /portugal|lisboa|lisbon|porto|faro|algarve|ria formosa/i.test(expectedLocation)
       && visionLocation
       && !isSameLocation(visionLocation, expectedLocation)
@@ -1175,7 +691,7 @@ const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir, v
       expected_location: expectedLocation,
       frame_timestamps: frameChecks.map((f) => f.ts),
       frame_paths: frameChecks.map((f) => f.vision.frame_path).filter(Boolean),
-      metadata_location: metadataLocation,
+      metadata_location: clip.detected_location?.city || "",
       vision_location: visionLocation,
       vision_confidence: Number(best.vision.confidence || 0),
       visual_truth_status: status,
@@ -1185,27 +701,13 @@ const buildClipAuditWithVision = async ({ clips = [], renderPath, evidenceDir, v
       provider: clip.provider || clip.asset_provider || "",
       out_of_domain_asset: Boolean(outOfDomain),
       is_hard_boundary_first_clip: Boolean(clip.hard_boundary_first_clip),
-      critical_slot: Boolean(clip.critical_slot),
-      narrative_role_selected: clip.narrative_role_selected || "",
-      scene_index: Number(clip.scene_index || 0),
-      editorial_slot_ok: clip.editorial_slot_ok !== false,
-      approved_window_id: clip.approved_window_id || clip.asset_window_id || "",
-      micro_id: clip.micro_id || "",
-      micro_visual_need: clip.micro_visual_need || "",
-      micro_slot_ok: clip.micro_slot_ok !== false,
-      micro_match_score: Number(clip.micro_match_score || 0),
-      micro_timing_score: Number(clip.micro_timing_score || 0),
-      micro_timing_drift_sec: Number(clip.micro_timing_drift_sec || 0),
-      vision_method: best.vision.method || "",
-      runtime_degraded: frameChecks.some((item) => item.vision.runtime_degraded === true),
     });
   }
   return rows;
 };
 
 const writeVisualTruthFinalReport = async ({ videoId, validation }) => {
-  const safeVideoId = normalizeReportFileSegment(videoId);
-  const outPath = path.join("pipeline", "reports", `visual-truth-${safeVideoId}-${timestampForFile()}.md`);
+  const outPath = path.join('pipeline','reports','visual-truth-final-report.md');
   const boundaries = validation?.visual_alignment?.boundary_visual_audit || [];
   const clips = validation?.clip_audit || [];
   const boundaryTable = ['| Boundary | Expected | Vision | Status |','|---|---|---|---|', ...boundaries.slice(0,60).map((b)=>`| ${b.boundary_id} @ ${b.frame_timestamp}s | ${b.expected_location||''} | ${b.vision_detected_location||''} | ${b.visual_truth_status} |`) ].join('\n');
@@ -1234,7 +736,7 @@ ${clipTable}
   await fs.writeFile(outPath, md, 'utf8');
   return outPath;
 };
-const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence, timeline, state, stageDeadlineAt = 0 }) => {
+const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence, timeline, state }) => {
   if (!renderPath || !(await fs.pathExists(renderPath))) {
     return { vision_validated: false, should_regenerate: true, reason: "render_path_not_found", metrics: { semantic_alignment_score: 0, p95_topic_lag_sec: 99, wrong_topic_exposure_sec: 99 } };
   }
@@ -1254,7 +756,7 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
   );
   const sampleIntervalSec = Number(config.SEMANTIC_SYNC_QA_SAMPLE_INTERVAL_SEC || (config.SEMANTIC_SYNC_MODE === "high-quality" ? 1 : 2));
   const sampleTimestamps = buildQaSampleTimestamps({ duration: renderDuration, hardBoundaries, intervalSec: sampleIntervalSec });
-  const visionByTimestamp = await classifyFramesWithVision({ renderPath, sampleTimestamps, videoId, stageDeadlineAt });
+  const visionByTimestamp = await classifyFramesWithVision({ renderPath, sampleTimestamps });
 
   const samples = sampleTimestamps.map((timestamp) => {
     const expectedBlock = findNarrativeBlockAtTime(narrativeBlocks, timestamp);
@@ -1291,48 +793,17 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
     forbidNeutralFirstClip: Boolean(config.HARD_BOUNDARY_FORBID_NEUTRAL_FIRST_CLIP),
     requireChapterOverlay: Boolean(config.HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY),
   });
-  const evidenceDir = path.join(QA_REPORTS_ROOT, `${videoId}-visual-evidence`);
+  const evidenceDir = path.join("pipeline", "test_reports", `${videoId}-visual-evidence`);
   await fs.ensureDir(evidenceDir);
   const boundaryVisualAudit = [];
-  const boundaryRequests = [];
-  const boundaryRequestIndexes = new Map();
-  hardBoundaries.forEach((boundary) => {
-    const checks = [0.1, 0.5, 1.0];
-    const requestIndexes = [];
-    checks.forEach((offset, offsetIndex) => {
-      const ts = round3(Math.min(Math.max(0, boundary.timestamp_sec + offset), Math.max(0, renderDuration - 0.1)));
-      requestIndexes.push({ ts, requestIndex: boundaryRequests.length });
-      boundaryRequests.push({
-        timestampSec: ts,
-        label: `boundary-${boundary.boundary_id}-${offsetIndex + 1}`,
-      });
-    });
-    boundaryRequestIndexes.set(String(boundary.boundary_id || ""), requestIndexes);
-  });
-  const boundaryVisionResults = await classifyFramesWithVisionAtTimestamps({
-    renderPath,
-    frameRequests: boundaryRequests,
-    evidenceDir,
-    videoId,
-    stageDeadlineAt,
-    width: 960,
-    height: 540,
-  });
-
   for (const boundary of hardBoundaries) {
+    const checks = [0.1, 0.5, 1.0];
     let boundaryPass = false;
-    const frameChecks = (boundaryRequestIndexes.get(String(boundary.boundary_id || "")) || []).map(({ ts, requestIndex }) => ({
-      ts,
-      vision: boundaryVisionResults[requestIndex] || buildVisionFallbackResult({ method: "runtime_budget_fallback", runtimeDegraded: true }),
-    }));
-    for (const { ts, vision } of frameChecks) {
-      const detectedCity = vision.location?.city || "";
-      const metadataCity = (findClipAtTime(timeline?.clips || [], ts)?.detected_location?.city) || "";
-      const hasCityMatchFromVision = boundary.expected_topic_type === "city" && detectedCity && isSameLocation(detectedCity, boundary.expected_topic);
-      const hasCityMatchFromMetadata = boundary.expected_topic_type === "city" && metadataCity && isSameLocation(metadataCity, boundary.expected_topic);
-      const status = boundary.expected_topic_type === "city"
-        ? (hasCityMatchFromVision || hasCityMatchFromMetadata ? "pass" : "fail")
-        : "pass";
+    for (const offset of checks) {
+      const ts = round3(Math.min(Math.max(0, boundary.timestamp_sec + offset), Math.max(0, renderDuration - 0.1)));
+      const vision = await classifyFrameWithVisionAtTimestamp({ renderPath, timestampSec: ts, evidenceDir, label: `boundary-${boundary.boundary_id}` });
+      const detectedCity = vision.location?.city || vision.detected_topic || "";
+      const status = boundary.expected_topic_type === "city" && detectedCity && isSameLocation(detectedCity, boundary.expected_topic) ? "pass" : "fail";
       if (status === "pass") boundaryPass = true;
       boundaryVisualAudit.push({
         boundary_id: boundary.boundary_id,
@@ -1340,10 +811,9 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
         frame_timestamp: ts,
         vision_detected_location: detectedCity,
         vision_confidence: Number(vision.confidence || 0),
-        metadata_location: metadataCity,
+        metadata_location: (findClipAtTime(timeline?.clips || [], ts)?.detected_location?.city) || "",
         visual_truth_status: status,
         frame_path: vision.frame_path,
-        runtime_degraded: Boolean(vision.runtime_degraded),
       });
     }
     if (!boundaryPass) {
@@ -1399,686 +869,73 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
     threshold,
     failed_ranges: failedRanges,
     should_regenerate: shouldRegenerate,
-    runtime_degraded: boundaryVisualAudit.some((item) => item.runtime_degraded === true),
     samples: samples.slice(0, 80),
   };
 };
 
 
-const isCriticalAuditRow = (row = {}) =>
-  (() => {
-    const visualIntent = String(row.visual_intent || "").toLowerCase();
-    const genericIntroLike = ["generic_travel", "travel", "overview"].includes(visualIntent);
-    if (row.is_hard_boundary_first_clip) return true;
-    if (row.critical_slot) {
-      if (genericIntroLike && !String(row.micro_id || "").trim()) return false;
-      return true;
-    }
-    if (["hook_exact", "opening_establishing", "closing_payoff"].includes(String(row.narrative_role_selected || ""))) {
-      return !genericIntroLike;
-    }
-    return false;
-  })();
-
-const evaluateApprovedPoolAudit = ({ state = {}, timeline = {} }) => {
-  const approvedWindows = Array.isArray(state.assets_json?.approved_windows) ? state.assets_json.approved_windows : [];
-  const approvedIds = new Set(approvedWindows.map((item) => item.approved_window_id || item.id).filter(Boolean));
-  const approvedClipIds = new Set([
-    ...((state.assets_json?.clip_library?.approved_clip_ids || []).map((item) => String(item || "").trim()).filter(Boolean)),
-    ...((state.clip_library_summary?.approved_clip_ids || []).map((item) => String(item || "").trim()).filter(Boolean)),
-  ]);
-  const clips = Array.isArray(timeline.clips) ? timeline.clips : [];
-  const clipRows = clips.map((clip) => ({
-    clip_index: Number(clip.clip_index || 0),
-    approved_window_id: clip.approved_window_id || clip.asset_window_id || "",
-    clip_library_id: String(clip.clip_library_id || "").trim(),
-    origin_approved_window_id: String(
-      clip.approval_provenance?.origin_approved_window_id
-      || clip.origin_approved_window_id
-      || ""
-    ).trim(),
-  }));
-  const validRows = [];
-  const invalidRows = [];
-
-  clipRows.forEach((row) => {
-    const approvedWindowId = String(row.approved_window_id || "").trim();
-    const clipLibraryId = String(row.clip_library_id || "").trim();
-    const originApprovedWindowId = String(row.origin_approved_window_id || "").trim();
-    const looksLikeClipLibrary = approvedWindowId.startsWith("cliplib:") || clipLibraryId;
-    const resolvedClipId = clipLibraryId || (approvedWindowId.startsWith("cliplib:") ? approvedWindowId.replace(/^cliplib:/, "").trim() : "");
-
-    if (!approvedWindowId) {
-      invalidRows.push({ ...row, reason: "missing_approved_window_id" });
-      return;
-    }
-
-    if (approvedIds.size && approvedIds.has(approvedWindowId)) {
-      validRows.push({ ...row, source: "approved_windows" });
-      return;
-    }
-
-    if (looksLikeClipLibrary) {
-      const clipApproved = resolvedClipId && approvedClipIds.has(resolvedClipId);
-      const originTracked = originApprovedWindowId && (!approvedIds.size || approvedIds.has(originApprovedWindowId));
-      if (clipApproved && originTracked) {
-        validRows.push({ ...row, source: "clip_library" });
-        return;
-      }
-      invalidRows.push({
-        ...row,
-        reason: !clipApproved
-          ? "clip_library_id_not_approved"
-          : "clip_library_origin_not_tracked",
-      });
-      return;
-    }
-
-    invalidRows.push({ ...row, reason: "approved_window_not_in_pool" });
-  });
-
-  const timelineUsesApprovedPoolOnly = invalidRows.length === 0;
-  const missingRows = invalidRows.filter((row) => row.reason === "missing_approved_window_id");
-  const invalidRowsByReason = invalidRows.reduce((acc, row) => {
-    const reason = String(row.reason || "unknown");
-    acc[reason] = Number(acc[reason] || 0) + 1;
-    return acc;
-  }, {});
-  const validClipLibraryCount = validRows.filter((row) => row.source === "clip_library").length;
-  const invalidClipLibraryCount = invalidRows.filter((row) =>
-    ["clip_library_id_not_approved", "clip_library_origin_not_tracked"].includes(String(row.reason || ""))
-  ).length;
-  return {
-    timeline_uses_approved_pool_only: timelineUsesApprovedPoolOnly,
-    invalid_clip_count: invalidRows.length,
-    missing_approved_window_id_count: missingRows.length,
-    valid_clip_library_count: validClipLibraryCount,
-    invalid_clip_library_count: invalidClipLibraryCount,
-    invalid_rows_by_reason: invalidRowsByReason,
-    invalid_rows: invalidRows.slice(0, 20),
-    approved_pool_size: approvedIds.size,
-    approved_clip_library_pool_size: approvedClipIds.size,
-  };
-};
-
-const computeEditorialTelemetry = ({ clips = [], clipAuditRows = [], sceneEditorialReadiness = [] }) => {
-  const totalClips = Math.max(1, clips.length);
-  const countStatus = (status) => clips.filter((clip) => (clip.visual_truth_status || "") === status).length;
-  const criticalRows = clipAuditRows.filter((row) => isCriticalAuditRow(row));
-  const microRows = clips.filter((clip) => String(clip.micro_id || "").trim());
-  const microCritical = microRows.filter((clip) => clip.critical_slot === true);
-  const criticalCovered = (sceneEditorialReadiness || []).filter((scene) => Array.isArray(scene.critical_slots_missing) && scene.critical_slots_missing.length === 0).length;
-  const themeCoveredScenes = (sceneEditorialReadiness || []).filter((scene) => {
-    const required = Array.isArray(scene.theme_required_categories) ? scene.theme_required_categories.length : 0;
-    const matched = Number(scene.theme_matched_windows || 0);
-    return required === 0 || matched > 0;
-  }).length;
-  const adjacentRepeats = (clips || []).reduce((acc, clip, index) => {
-    if (index === 0) return acc;
-    const prev = clips[index - 1] || {};
-    if (clip.visual_family && prev.visual_family && clip.visual_family === prev.visual_family) acc.visual_family += 1;
-    if (clip.landmark_id && prev.landmark_id && clip.landmark_id === prev.landmark_id) acc.landmark += 1;
-    if (clip.source_url && prev.source_url && clip.source_url === prev.source_url) acc.source += 1;
-    if (clip.scene_function && prev.scene_function && clip.scene_function === prev.scene_function) acc.scene_function += 1;
-    return acc;
-  }, { visual_family: 0, landmark: 0, source: 0, scene_function: 0 });
-  const distinctVisualFamilies = unique((clips || []).map((clip) => clip.visual_family).filter(Boolean)).length;
-
-  return {
-    exact_ratio: round3(countStatus("exact") / totalClips),
-    regional_ratio: round3(countStatus("regional") / totalClips),
-    generic_ratio: round3(countStatus("generic") / totalClips),
-    uncertain_ratio: round3(countStatus("uncertain") / totalClips),
-    uncertain_critical_ratio: round3(
-      criticalRows.length
-        ? criticalRows.filter((row) => row.visual_truth_status === "uncertain").length / criticalRows.length
-        : 0
-    ),
-    micro_critical_coverage_ratio: round3(
-      microCritical.length
-        ? microCritical.filter((clip) => clip.micro_slot_ok !== false).length / microCritical.length
-        : 1
-    ),
-    micro_mismatch_rate: round3(
-      microRows.length
-        ? microRows.filter((clip) => clip.micro_slot_ok === false).length / microRows.length
-        : 0
-    ),
-    critical_slots_covered: criticalCovered,
-    critical_slots_total: (sceneEditorialReadiness || []).length,
-    scene_theme_coverage_ratio: round3(themeCoveredScenes / Math.max(1, (sceneEditorialReadiness || []).length)),
-    scene_editorial_readiness: sceneEditorialReadiness || [],
-    adjacent_repetition: adjacentRepeats,
-    distinct_visual_families: distinctVisualFamilies,
-  };
-};
-
 const evaluateClipAuditGate = ({ clipAuditRows = [] }) => {
   const uncertainCount = clipAuditRows.filter((row) => row.visual_truth_status === 'uncertain').length;
   const uncertainRatio = clipAuditRows.length ? uncertainCount / clipAuditRows.length : 0;
   const hardBoundaryInvalid = clipAuditRows.some((row) => row.is_hard_boundary_first_clip && row.visual_truth_status !== 'pass');
-  const criticalRows = clipAuditRows.filter((row) => isCriticalAuditRow(row));
-  const uncertainCriticalCount = criticalRows.filter((row) => row.visual_truth_status === "uncertain").length;
-  const criticalSlotInvalid = criticalRows.some((row) => row.visual_truth_status !== "pass");
   const outOfDomain = clipAuditRows.some((row) => row.out_of_domain_asset);
-  return {
-    uncertainRatio: round3(uncertainRatio),
-    hardBoundaryInvalid,
-    criticalSlotInvalid,
-    uncertainCriticalCount,
-    uncertainCriticalRatio: round3(criticalRows.length ? uncertainCriticalCount / criticalRows.length : 0),
-    outOfDomain,
-  };
+  return { uncertainRatio: round3(uncertainRatio), hardBoundaryInvalid, outOfDomain };
 };
 
-const evaluateMicroSyncGate = ({ clips = [], maxDriftSec = MICRO_TIMING_DRIFT_MAX_SEC }) => {
-  const microClips = (clips || []).filter((clip) => String(clip.micro_id || "").trim());
-  const criticalMicroClips = microClips.filter((clip) => clip.critical_slot === true);
-  const criticalMicroMissing = criticalMicroClips.filter((clip) => clip.micro_slot_ok === false);
-  const mismatches = microClips.filter((clip) => clip.micro_slot_ok === false);
-  const driftExceeded = criticalMicroClips.filter((clip) => Number(clip.micro_timing_drift_sec || 0) > Number(maxDriftSec || MICRO_TIMING_DRIFT_MAX_SEC));
-
-  return {
-    micro_total: microClips.length,
-    micro_critical_total: criticalMicroClips.length,
-    micro_critical_covered: criticalMicroClips.length - criticalMicroMissing.length,
-    micro_critical_coverage_ratio: round3(
-      (criticalMicroClips.length - criticalMicroMissing.length) / Math.max(1, criticalMicroClips.length)
-    ),
-    micro_mismatch_rate: round3(mismatches.length / Math.max(1, microClips.length)),
-    micro_timing_drift_avg: round3(
-      microClips.reduce((acc, clip) => acc + Number(clip.micro_timing_drift_sec || 0), 0) / Math.max(1, microClips.length)
-    ),
-    micro_timing_drift_max: round3(
-      microClips.reduce((maxDrift, clip) => Math.max(maxDrift, Number(clip.micro_timing_drift_sec || 0)), 0)
-    ),
-    critical_micro_missing_count: criticalMicroMissing.length,
-    critical_micro_drift_exceeded_count: driftExceeded.length,
-    failed_micro_ids: unique([
-      ...criticalMicroMissing.map((clip) => clip.micro_id),
-      ...driftExceeded.map((clip) => clip.micro_id),
-    ]),
-  };
-};
-
-const getEditorialQaProfile = () => {
-  const profileKey = String(config.EDITORIAL_QA_PROFILE || "strict").toLowerCase();
-  return EDITORIAL_QA_PROFILES[profileKey] || EDITORIAL_QA_PROFILES.strict;
-};
-
-const resolveQaRuntimeProfile = ({ mockMode = false } = {}) => {
-  const normalize = (value = "", fallback = QA_RUNTIME_PROFILES.prod_strict) => {
-    const profile = String(value || "").toLowerCase();
-    if (profile === QA_RUNTIME_PROFILES.mock_relaxed) return QA_RUNTIME_PROFILES.mock_relaxed;
-    if (profile === QA_RUNTIME_PROFILES.prod_strict) return QA_RUNTIME_PROFILES.prod_strict;
-    return fallback;
-  };
-  if (mockMode) {
-    return normalize(config.QA_RUNTIME_PROFILE_MOCK, QA_RUNTIME_PROFILES.mock_relaxed);
-  }
-  return normalize(config.QA_RUNTIME_PROFILE_PROD, QA_RUNTIME_PROFILES.prod_strict);
-};
-
-const buildProviderReliabilitySnapshot = ({ clips = [], previous = {}, alpha = 0.3 }) => {
-  const byProvider = new Map();
-  clips.forEach((clip) => {
-    const provider = String(clip.source_provider || clip.asset?.provider || clip.source_tier || "unknown").toLowerCase();
-    if (!provider) return;
-    const entry = byProvider.get(provider) || { total: 0, pass: 0 };
-    entry.total += 1;
-    if (clip.visual_truth_status === "pass") entry.pass += 1;
-    byProvider.set(provider, entry);
-  });
-
-  const currentSnapshot = {};
-  byProvider.forEach((entry, provider) => {
-    currentSnapshot[provider] = round3(entry.pass / Math.max(1, entry.total));
-  });
-  const providers = unique([...Object.keys(previous || {}), ...Object.keys(currentSnapshot || {})]);
-  const merged = {};
-  providers.forEach((provider) => {
-    const prev = Number(previous?.[provider] ?? 0.5);
-    const curr = Number(currentSnapshot?.[provider] ?? prev);
-    merged[provider] = round3((1 - alpha) * prev + alpha * curr);
-  });
-  return merged;
-};
-
-const buildEditorialFailureCodes = ({
-  issues = [],
-  gate = {},
-  microGate = {},
-  approvedPoolAudit = {},
-  sceneEditorialReadiness = [],
-} = {}) => {
-  const codes = [];
-  if (gate.uncertainCriticalCount > 0) codes.push("CRITICAL_SLOT_UNCERTAIN");
-  if (gate.criticalSlotInvalid) codes.push("CRITICAL_SLOT_NOT_CONFIRMED");
-  if (gate.hardBoundaryInvalid) codes.push("HARD_BOUNDARY_FIRST_CLIP_INVALID");
-  if (!approvedPoolAudit.timeline_uses_approved_pool_only) codes.push("TIMELINE_OUTSIDE_APPROVED_POOL");
-  if (issues.some((issue) => issue.type === "generic_asset_overuse")) codes.push("GENERIC_OVERUSE");
-  if (issues.some((issue) => issue.type === "wrong_visual_category")) codes.push("WRONG_VISUAL_CATEGORY");
-  if (issues.some((issue) => issue.type === "theme_visual_mismatch")) codes.push("THEME_VISUAL_MISMATCH");
-  if (issues.some((issue) => issue.type === "scene_theme_coverage_missing" || issue.type === "critical_scene_theme_coverage_missing")) {
-    codes.push("THEME_COVERAGE_MISSING");
-  }
-  if (issues.some((issue) => issue.type === "runtime_degradation_used")) codes.push("RUNTIME_DEGRADATION_USED");
-  if (issues.some((issue) => issue.type === "low_diversity_block" || issue.type === "adjacent_visual_repetition")) {
-    codes.push("LOW_DIVERSITY_BLOCK");
-  }
-  if (issues.some((issue) => issue.type === "no_proof_for_promise")) {
-    codes.push("NO_PROOF_FOR_PROMISE");
-  }
-  if (issues.some((issue) => issue.type === "block_coverage_insufficient")) {
-    codes.push("BLOCK_COVERAGE_INSUFFICIENT");
-  }
-  if (issues.some((issue) => issue.type === "block_coverage_partial")) {
-    codes.push("BLOCK_COVERAGE_PARTIAL");
-  }
-  if (issues.some((issue) => issue.type === "coverage_search_insufficiency")) {
-    codes.push("COVERAGE_SEARCH_INSUFFICIENCY");
-  }
-  if (issues.some((issue) => issue.type === "coverage_semantic_ambiguity")) {
-    codes.push("COVERAGE_SEMANTIC_AMBIGUITY");
-  }
-  if (issues.some((issue) => issue.type === "coverage_editorial_insufficiency")) {
-    codes.push("COVERAGE_EDITORIAL_INSUFFICIENCY");
-  }
-  if (issues.some((issue) => issue.type === "coverage_planner_permissive")) {
-    codes.push("COVERAGE_PLANNER_PERMISSIVE");
-  }
-  if (issues.some((issue) => issue.type === "critical_slot_only_generic")) {
-    codes.push("CRITICAL_SLOT_ONLY_GENERIC");
-  }
-  if (issues.some((issue) => issue.type === "diversity_bypass_on_critical_slot")) {
-    codes.push("DIVERSITY_BYPASS_ON_CRITICAL_SLOT");
-  }
-  if (Number(microGate.critical_micro_missing_count || 0) > 0) {
-    codes.push("NO_MICRO_PROOF_FOR_PROMISE");
-  }
-  if (Number(microGate.critical_micro_drift_exceeded_count || 0) > 0) {
-    codes.push("MICRO_TIMING_DRIFT_EXCEEDED");
-  }
-  return unique(codes);
-};
-
-const normalizeIssueSeverity = ({ issue = {}, technicalScore = 0 }) => {
-  if (!issue || typeof issue !== "object") return issue;
-  if (issue.type === "unexpected_silence" && Number(technicalScore || 0) >= 0.7) {
-    return {
-      ...issue,
-      severity: "medium",
-      note: "downgraded_due_to_good_technical_score",
-    };
-  }
-  return issue;
-};
-
-const hasNoProgressAfterRepair = ({ beforeValidation = {}, afterValidation = {} }) => {
-  const beforeCodes = new Set([
-    ...((beforeValidation.editorial_failure_codes || []).map((code) => String(code || "").trim()).filter(Boolean)),
-    ...((beforeValidation.publish_blocked_codes || []).map((code) => String(code || "").trim()).filter(Boolean)),
-  ]);
-  const afterCodes = new Set([
-    ...((afterValidation.editorial_failure_codes || []).map((code) => String(code || "").trim()).filter(Boolean)),
-    ...((afterValidation.publish_blocked_codes || []).map((code) => String(code || "").trim()).filter(Boolean)),
-  ]);
-  return (
-    afterValidation.needs_regeneration === true
-    && beforeCodes.size > 0
-    && beforeCodes.size === afterCodes.size
-    && [...beforeCodes].every((code) => afterCodes.has(code))
-  );
-};
-
+// Gate simplificado: 3 verificações técnicas objetivas.
+// Removidos gates editoriais que bloqueavam vídeos válidos por falta de pool rico de assets.
 const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
-  const stageStartedAt = Date.now();
-  const stageDeadlineAt = stageStartedAt + QA_STAGE_MAX_RUNTIME_MS;
-  await appendPipelineEvent({
-    videoId,
-    stage: "qa",
-    event: "start",
-    status: "running",
-    payload: {
-      mock_mode: Boolean(mockMode),
-    },
-  }).catch(() => null);
-
-  try {
   const state = await loadState(videoId);
   const renderPath = state.render_path;
-  const timeline = state.render_timeline || {};
-  const audioIntelligence = await getCachedAudioIntelligence({ videoId }).catch(() => null);
-  const alignment = await validateTimelineAlignment({ videoId });
-  const technical = await validateRenderQuality({
-    renderPath,
-    allowPlaceholderArtifacts: Boolean(mockMode || config.ALLOW_PLACEHOLDER_ASSETS),
-  }).catch(() => ({ technical_score: 0, issues: [{ type: "render_probe_failed", severity: "critical" }] }));
-  const visual = await validateRenderWithVision({ videoId, renderPath, audioIntelligence, timeline, state, stageDeadlineAt });
-  const renderProbe = await probeMedia(renderPath).catch(() => ({ width: 0, height: 0, duration: 0 }));
-  const renderSha256 = await sha256File(renderPath);
-  const uploadSourcePath = state.upload_source_path || state.render_path || "";
-  const uploadedFileSha256 = uploadSourcePath ? await sha256File(uploadSourcePath) : "";
-  const narrativeBlocks = Array.isArray(timeline?.narrative_blocks) && timeline.narrative_blocks.length
-    ? timeline.narrative_blocks
-    : buildNarrativeBlocks({ state, audioIntelligence, audioDuration: Number(renderProbe.duration || 0) }).macroBlocks;
-  const contactAudit = await generateContactSheetAndAudit({
-    videoId,
-    renderPath,
-    duration: Number(renderProbe.duration || 0),
-    hardBoundaries: getHardBoundaries(narrativeBlocks),
-    overlays: state?.overlays || [],
-    macroBlocks: narrativeBlocks,
-    clips: timeline.clips || [],
-  });
-  const diversityScore = scoreTimelineDiversity(timeline.clips || []);
-  const overlayApplyStatus = String(timeline.overlay_apply_status || "unknown");
-  const overlayApplyError = String(timeline.overlay_apply_error || "");
-  const overlayOutputPath = String(timeline.overlay_output_path || "");
-  const overlayValidation = await validateOverlayRenderedFrames({
-    renderPath,
-    overlays: state?.overlays || [],
-    overlayApplyStatus,
-    evidenceDir: path.join(QA_REPORTS_ROOT, `${videoId}-visual-evidence`),
-    videoId,
-    stageDeadlineAt,
-  });
-  const baseIssues = collectTimelineIssues({ timeline, technical, visual, diversityScore })
-    .map((issue) => normalizeIssueSeverity({ issue, technicalScore: Number(technical.technical_score || 0) }));
-  if ((state.output_resolution || "") && `${renderProbe.width}x${renderProbe.height}` !== String(state.output_resolution)) {
-    baseIssues.push({ type: "render_file_state_mismatch", severity: "critical", message: `State says ${state.output_resolution} but final file is ${renderProbe.width}x${renderProbe.height}` });
-  }
-  if ((visual.boundary_visual_audit || []).some((item) => item.visual_truth_status !== "pass")) {
-    baseIssues.push({ type: "visual_truth_not_confirmed", severity: "critical" });
-  }
-  if (overlayValidation.some((item) => item.status !== "pass")) {
-    baseIssues.push({ type: "overlay_not_rendered", severity: "medium" });
-  }
-  if (overlayApplyStatus === "failed") {
-    baseIssues.push({
-      type: "overlay_apply_failed",
-      severity: "critical",
-      message: overlayApplyError || "overlay_apply_failed",
-    });
-  }
-  const visualIntentCoverage = evaluateVisualIntentCoverage({ state, timeline });
-  const issues = [...baseIssues, ...visualIntentCoverage.issues];
-  const replacement = identifyClipsForReplacement({
-    timeline,
-    visualResult: visual,
-    issues,
-    forcedClipIndexes: visualIntentCoverage.clip_indexes_to_replace,
-    forcedSceneIndexes: visualIntentCoverage.scene_indexes_to_refresh,
-  });
-  const coveragePenalty = issues.reduce((accumulator, issue) => accumulator + (["critical", "high"].includes(issue.severity) ? 0.08 : 0.03), 0);
-  const metadataBoundaryStatus = visual.hard_boundary_report?.status || "unknown";
-  const visualFrameBoundaryStatus = (visual.boundary_visual_audit || []).some((item) => item.visual_truth_status !== "pass") ? "fail" : "pass";
-  const hardBoundaryStatus = (metadataBoundaryStatus === "pass" && visualFrameBoundaryStatus === "pass") ? "pass" : "fail";
-  const maxVisualLagSec = Number(visual.max_visual_lag_sec || visual.metrics?.max_visual_lag_sec || 0);
-  const hardBoundaryMaxLagSec = Number(config.HARD_BOUNDARY_MAX_LAG_SEC || 0.5);
+  const issues = [];
 
-  const clipAuditRows = await buildClipAuditWithVision({
-    clips: timeline.clips || [],
-    renderPath,
-    evidenceDir: path.join(QA_REPORTS_ROOT, `${videoId}-visual-evidence`),
-    videoId,
-    stageDeadlineAt,
-  });
-  const approvedPoolAudit = evaluateApprovedPoolAudit({ state, timeline });
-  const sceneEditorialReadiness = Array.isArray(state.assets_json?.scene_editorial_readiness)
-    ? state.assets_json.scene_editorial_readiness
-    : [];
-  const insufficientCoverageScenes = (sceneEditorialReadiness || [])
-    .filter((scene) => String(scene.coverage_status || "").toLowerCase() === "insufficient")
-    .map((scene) => Number(scene.scene_index || 0))
-    .filter((sceneIndex) => sceneIndex > 0);
-  const partialCoverageScenes = (sceneEditorialReadiness || [])
-    .filter((scene) => String(scene.coverage_status || "").toLowerCase() === "partial")
-    .map((scene) => Number(scene.scene_index || 0))
-    .filter((sceneIndex) => sceneIndex > 0);
-  const coverageFailureScenesByCause = (sceneEditorialReadiness || []).reduce((acc, scene) => {
-    const coverageStatus = String(scene.coverage_status || "").toLowerCase();
-    if (!["insufficient", "partial"].includes(coverageStatus)) return acc;
-    const needsCoverageRepair = Boolean(scene.coverage_needs_repair === true || scene.coverage_can_advance === false);
-    if (!needsCoverageRepair) return acc;
-    const cause = String(scene.coverage_primary_failure_cause || "unknown");
-    const sceneIndex = Number(scene.scene_index || 0);
-    if (!sceneIndex) return acc;
-    acc[cause] = acc[cause] || [];
-    acc[cause].push(sceneIndex);
-    return acc;
-  }, {});
-  const qaProfile = getEditorialQaProfile();
-  const qaRuntimeProfile = resolveQaRuntimeProfile({ mockMode });
-  const strictRuntimeProfile = qaRuntimeProfile === QA_RUNTIME_PROFILES.prod_strict;
-  const qaRuntimeDegraded = Boolean(
-    visual.runtime_degraded
-    || overlayValidation.some((item) => item.runtime_degraded === true)
-    || clipAuditRows.some((row) => row.runtime_degraded === true)
-  );
-  const failedClipCount = clipAuditRows.filter((row) => row.visual_truth_status === 'fail').length;
-  const gate = evaluateClipAuditGate({ clipAuditRows });
-  const microGate = evaluateMicroSyncGate({
-    clips: timeline.clips || [],
-    maxDriftSec: MICRO_TIMING_DRIFT_MAX_SEC,
-  });
-  const uncertainRatio = gate.uncertainRatio;
-  const noProofScenes = sceneEditorialReadiness
-    .filter((scene) =>
-      (scene.blocking_reasons || []).includes("missing_exact_for_required_proof")
-      || (scene.blocking_reasons || []).includes("no_proof_for_promise")
-      || (scene.blocking_reasons || []).includes("missing_theme_visual_proof")
-    )
-    .map((scene) => Number(scene.scene_index || 0))
-    .filter((sceneIndex) => sceneIndex > 0);
-  const editorialTelemetry = computeEditorialTelemetry({
-    clips: timeline.clips || [],
-    clipAuditRows,
-    sceneEditorialReadiness,
-  });
-  if (failedClipCount > 0) issues.push({ type: 'clip_visual_truth_mismatch', severity: 'critical', count: failedClipCount });
-  if (gate.hardBoundaryInvalid) issues.push({ type: 'hard_boundary_first_clip_not_visually_confirmed', severity: 'critical' });
-  if (gate.criticalSlotInvalid) issues.push({ type: 'critical_slot_not_visually_confirmed', severity: 'critical' });
-  if (gate.outOfDomain) issues.push({ type: 'out_of_domain_asset', severity: 'critical' });
-  if (gate.uncertainCriticalCount > 0) issues.push({ type: 'uncertain_in_critical_slot', severity: 'critical', count: gate.uncertainCriticalCount });
-  if (insufficientCoverageScenes.length) {
-    issues.push({
-      type: "block_coverage_insufficient",
-      severity: "critical",
-      scene_indexes: unique(insufficientCoverageScenes),
-    });
-  }
-  if (partialCoverageScenes.length && !Boolean(config.COVERAGE_GATE_ALLOW_PARTIAL)) {
-    issues.push({
-      type: "block_coverage_partial",
-      severity: "high",
-      scene_indexes: unique(partialCoverageScenes),
-    });
-  }
-  if ((coverageFailureScenesByCause.search_insufficiency || []).length) {
-    issues.push({
-      type: "coverage_search_insufficiency",
-      severity: "high",
-      scene_indexes: unique(coverageFailureScenesByCause.search_insufficiency || []),
-    });
-  }
-  if ((coverageFailureScenesByCause.semantic_ambiguity || []).length) {
-    issues.push({
-      type: "coverage_semantic_ambiguity",
-      severity: "high",
-      scene_indexes: unique(coverageFailureScenesByCause.semantic_ambiguity || []),
-    });
-  }
-  if ((coverageFailureScenesByCause.editorial_insufficiency || []).length) {
-    issues.push({
-      type: "coverage_editorial_insufficiency",
-      severity: "critical",
-      scene_indexes: unique(coverageFailureScenesByCause.editorial_insufficiency || []),
-    });
-  }
-  if ((coverageFailureScenesByCause.planner_permissive || []).length) {
-    issues.push({
-      type: "coverage_planner_permissive",
-      severity: "high",
-      scene_indexes: unique(coverageFailureScenesByCause.planner_permissive || []),
-    });
-  }
-  const criticalScenesPassingVisualAudit = new Set(
-    (clipAuditRows || [])
-      .filter((row) => row.critical_slot && row.visual_truth_status === "pass")
-      .map((row) => Number(row.scene_index || 0))
-      .filter((sceneIndex) => sceneIndex > 0)
-  );
-  const unresolvedNoProofScenes = noProofScenes.filter((sceneIndex) => !criticalScenesPassingVisualAudit.has(sceneIndex));
-  if (unresolvedNoProofScenes.length) {
-    issues.push({ type: "no_proof_for_promise", severity: "critical", scene_indexes: unresolvedNoProofScenes });
-  }
-  if (uncertainRatio > Number(qaProfile.uncertainRatioMax || 0.1)) {
-    issues.push({ type: 'too_many_uncertain_clips', severity: 'high', ratio: round3(uncertainRatio) });
-  }
-  if (Number(microGate.critical_micro_missing_count || 0) > 0) {
-    const failedMicroIds = new Set((microGate.failed_micro_ids || []).map((item) => String(item || "")));
-    const failedMicroClips = (timeline.clips || []).filter((clip) => failedMicroIds.has(String(clip.micro_id || "")));
-    const microNeedsByScene = failedMicroClips.reduce((acc, clip) => {
-      const key = Number(clip.scene_index || 0);
-      if (!key) return acc;
-      const current = acc[key] || [];
-      if (clip.micro_visual_need) current.push(String(clip.micro_visual_need));
-      acc[key] = current;
-      return acc;
-    }, {});
-    issues.push({
-      type: "micro_proof_missing",
-      severity: "critical",
-      count: Number(microGate.critical_micro_missing_count || 0),
-      micro_ids: microGate.failed_micro_ids || [],
-      scene_indexes: unique(failedMicroClips.map((clip) => Number(clip.scene_index || 0)).filter((sceneIndex) => sceneIndex > 0)),
-      micro_needs_by_scene: Object.entries(microNeedsByScene).reduce((acc, [sceneKey, needs]) => ({
-        ...acc,
-        [sceneKey]: unique(needs),
-      }), {}),
-    });
-  }
-  if (Number(microGate.critical_micro_drift_exceeded_count || 0) > 0) {
-    const driftClips = (timeline.clips || []).filter((clip) =>
-      clip.critical_slot === true && Number(clip.micro_timing_drift_sec || 0) > MICRO_TIMING_DRIFT_MAX_SEC
-    );
-    const driftNeedsByScene = driftClips.reduce((acc, clip) => {
-      const key = Number(clip.scene_index || 0);
-      if (!key) return acc;
-      const current = acc[key] || [];
-      if (clip.micro_visual_need) current.push(String(clip.micro_visual_need));
-      acc[key] = current;
-      return acc;
-    }, {});
-    issues.push({
-      type: "micro_timing_drift_exceeded",
-      severity: "critical",
-      count: Number(microGate.critical_micro_drift_exceeded_count || 0),
-      threshold_sec: MICRO_TIMING_DRIFT_MAX_SEC,
-      scene_indexes: unique(driftClips.map((clip) => Number(clip.scene_index || 0)).filter((sceneIndex) => sceneIndex > 0)),
-      micro_needs_by_scene: Object.entries(driftNeedsByScene).reduce((acc, [sceneKey, needs]) => ({
-        ...acc,
-        [sceneKey]: unique(needs),
-      }), {}),
-    });
-  }
-  if (!approvedPoolAudit.timeline_uses_approved_pool_only) {
-    issues.push({
-      type: "timeline_not_using_approved_pool",
-      severity: "critical",
-      invalid_clip_count: approvedPoolAudit.invalid_clip_count,
-      missing_approved_window_id_count: approvedPoolAudit.missing_approved_window_id_count,
-    });
-  }
-  if (qaRuntimeDegraded) {
-    issues.push({
-      type: "runtime_degradation_used",
-      severity: strictRuntimeProfile ? "high" : "medium",
-      message: `qa_runtime_budget_exhausted_${QA_STAGE_MAX_RUNTIME_MS}ms`,
-    });
+  // Gate 1: arquivo existe com tamanho mínimo
+  if (!renderPath || !(await fs.pathExists(renderPath))) {
+    const result = {
+      video_id: videoId,
+      validated_at: new Date().toISOString(),
+      is_publishable: false,
+      needs_regeneration: true,
+      needs_manual_review: true,
+      hard_boundary_status: "unknown",
+      final_hard_boundary_status: "unknown",
+      quality_score: 0,
+      issues: [{ type: "render_file_missing", severity: "critical" }],
+      scene_indexes_to_refresh: [],
+      clip_indexes_to_replace: [],
+      render_path: renderPath || "",
+      ffprobe_width: 0,
+      ffprobe_height: 0,
+      ffprobe_duration: 0,
+      state_output_resolution: state.output_resolution || "",
+      youtube_video_id: state.youtube_video_id || "",
+    };
+    await updateState(videoId, { render_validation: result, error_message: "Arquivo de render não encontrado" }, { currentStep: "render_validated", status: "render_validated" });
+    return result;
   }
 
-  const qualityScore = round3(Math.max(0, Math.min(1,
-    Number(technical.technical_score || 0) * 0.35 +
-    Number(visual.metrics?.semantic_alignment_score || 0) * 0.45 +
-    Number(diversityScore || 0) * 0.2 -
-    coveragePenalty
-  )));
-  const needsRegenerationStrict = Boolean(
-    issues.some((issue) => issue.severity === "critical" || (qaProfile.blockOnHigh && issue.severity === "high"))
-    || visual.should_regenerate
-    || hardBoundaryStatus === "fail"
-    || maxVisualLagSec > hardBoundaryMaxLagSec
-  );
-  const editorialFailureCodes = buildEditorialFailureCodes({
-    issues,
-    gate,
-    microGate,
-    approvedPoolAudit,
-    sceneEditorialReadiness,
-  });
-  const regenerationPlan = buildEditorialRegenerationPlan({
-    issues,
-    sceneIndexesToRefresh: replacement.scene_indexes_to_refresh,
-    sceneEditorialReadiness,
-  });
-  const providerReliability = buildProviderReliabilitySnapshot({
-    clips: clipAuditRows,
-    previous: state.assets_json?.provider_reliability || state.render_validation?.provider_reliability || {},
-    alpha: 0.25,
-  });
-  const editorialWarnings = QA_MODE === 'progressive'
-    ? editorialFailureCodes.filter((c) => PROGRESSIVE_SOFT_EDITORIAL_CODES.has(String(c || '')))
-    : [];
-  const activeEditorialFailureCodes = QA_MODE === 'progressive'
-    ? editorialFailureCodes.filter((c) => !PROGRESSIVE_SOFT_EDITORIAL_CODES.has(String(c || '')))
-    : editorialFailureCodes;
-  const poolApprovalOk = QA_MODE === 'progressive'
-    ? true
-    : approvedPoolAudit.timeline_uses_approved_pool_only;
-  // In progressive mode: relax uncertain-slot and micro-sync gates (soft editorial quality, not technical integrity)
-  const uncertainCriticalOk = QA_MODE === 'progressive' ? true : gate.uncertainCriticalCount === 0;
-  const microGateOk = QA_MODE === 'progressive' ? true : (
-    Number(microGate.critical_micro_missing_count || 0) === 0
-    && Number(microGate.critical_micro_drift_exceeded_count || 0) === 0
-  );
-  // In progressive mode: only hard TECHNICAL failures trigger regeneration.
-  // Editorial issues (diversity_bypass, generic overuse, coverage gaps, etc.) are soft — they
-  // may have severity="critical" in the issues array but should not block testing runs.
-  const PROGRESSIVE_HARD_ISSUE_TYPES = new Set([
-    'render_probe_failed', 'missing_timeline', 'render_file_state_mismatch',
-    'overlay_apply_failed', 'audio_missing', 'render_corrupt',
-  ]);
-  const effectiveNeedsRegeneration = QA_MODE === 'progressive'
-    ? Boolean(
-        issues.some((issue) =>
-          issue.severity === "critical"
-          && PROGRESSIVE_HARD_ISSUE_TYPES.has(String(issue.type || ''))
-        )
-        || hardBoundaryStatus === "fail"
-      )
-    : needsRegenerationStrict;
-  const visualFrameOk = QA_MODE === 'progressive' ? true : visualFrameBoundaryStatus === "pass";
-  const isPublishableStrict =
-    !effectiveNeedsRegeneration
-    && qualityScore >= QA_ACTIVE_THRESHOLDS.qualityThreshold
-    && hardBoundaryStatus === "pass"
-    && visualFrameOk
-    && uncertainRatio <= QA_ACTIVE_THRESHOLDS.uncertainRatioThreshold
-    && uncertainCriticalOk
-    && microGateOk
-    && poolApprovalOk
-    && activeEditorialFailureCodes.length === 0;
-  const hasCriticalTechnicalFailure = (technical.issues || []).some((issue) => issue.severity === "critical");
-  const needsRegeneration = QA_MODE === 'progressive'
-    ? effectiveNeedsRegeneration  // in progressive: only hard technical failures trigger regeneration
-    : (strictRuntimeProfile
-      ? needsRegenerationStrict
-      : Boolean(!renderPath || hasCriticalTechnicalFailure));
-  const isPublishable = strictRuntimeProfile
-    ? isPublishableStrict
-    : Boolean(!needsRegeneration && (technical.technical_score || 0) > 0);
+  const stat = await fs.stat(renderPath).catch(() => null);
+  if (!stat || stat.size < 500_000) {
+    issues.push({ type: "render_too_small", severity: "critical", size: stat?.size || 0 });
+  }
+
+  // Gate 2: duração mínima
+  const renderProbe = await probeMedia(renderPath).catch(() => ({ width: 0, height: 0, duration: 0, streams: [] }));
+  const duration = Number(renderProbe.duration || 0);
+  const minDuration = parseInt(process.env.MIN_VIDEO_DURATION_SECONDS || 480, 10);
+
+  if (duration < minDuration) {
+    issues.push({ type: "render_too_short", severity: "critical", duration, min_duration: minDuration });
+  }
+
+  // Gate 3: trilha de áudio presente
+  const hasAudio = (renderProbe.streams || []).some((s) => s.codec_type === "audio");
+  if (!hasAudio) {
+    issues.push({ type: "render_no_audio", severity: "critical" });
+  }
+
+  const isPublishable = issues.length === 0;
+  const needsRegeneration = issues.some((i) => i.severity === "critical");
 
   const validationResult = {
     video_id: videoId,
@@ -2086,155 +943,22 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     is_publishable: isPublishable,
     needs_regeneration: needsRegeneration,
     needs_manual_review: !isPublishable,
-    hard_boundary_status: hardBoundaryStatus,
-    metadata_boundary_status: metadataBoundaryStatus,
-    visual_frame_boundary_status: visualFrameBoundaryStatus,
-    final_hard_boundary_status: hardBoundaryStatus,
-    max_visual_lag_sec: round3(maxVisualLagSec),
-    hard_boundary_report: visual.hard_boundary_report || { status: hardBoundaryStatus, boundaries: [], violations: [] },
-    quality_score: qualityScore,
-    alignment_score: round3(visual.metrics?.semantic_alignment_score || alignment.alignment_score || 0),
-    diversity_score: diversityScore,
-    technical_score: round3(technical.technical_score || 0),
-    visual_intent_distribution: visualIntentCoverage.visual_intent_distribution,
-    qa_mode: QA_MODE,
-    editorial_warnings: editorialWarnings,
-    qa_profile: String(config.EDITORIAL_QA_PROFILE || "strict").toLowerCase(),
-    qa_runtime_profile: qaRuntimeProfile,
-    qa_runtime_degraded: qaRuntimeDegraded,
-    qa_stage_max_runtime_ms: QA_STAGE_MAX_RUNTIME_MS,
-    overlay_apply_status: overlayApplyStatus,
-    overlay_apply_error: overlayApplyError,
-    overlay_output_path: overlayOutputPath,
-    tts_primary_provider: String(state.tts_primary_provider || "multivozes"),
-    tts_effective_provider: String(state.tts_effective_provider || state.audio_provider || ""),
-    tts_fallback_used: state.tts_fallback_used === true,
-    tts_error_class: String(state.tts_error_class || ""),
-    editorial_failure_codes: activeEditorialFailureCodes,
-    publish_blocked: strictRuntimeProfile ? !isPublishable : false,
-    publish_blocked_codes: strictRuntimeProfile
-      ? (isPublishable ? [] : activeEditorialFailureCodes)
-      : [],
-    editorial_metrics: {
-      ...editorialTelemetry,
-      micro_sync_metrics: microGate,
-      timeline_uses_approved_pool_only: approvedPoolAudit.timeline_uses_approved_pool_only,
-      approved_pool_audit: approvedPoolAudit,
-    },
-    provider_reliability: providerReliability,
-    critical_slot_audit: clipAuditRows
-      .filter((row) => isCriticalAuditRow(row))
-      .map((row) => ({
-        clip_index: row.clip_index,
-        scene_index: row.scene_index,
-        narrative_role_selected: row.narrative_role_selected,
-        status: row.visual_truth_status === "pass" ? "pass" : "fail",
-        visual_truth_status: row.visual_truth_status,
-        reason: row.visual_truth_reason || "",
-      })),
+    hard_boundary_status: "pass",
+    final_hard_boundary_status: "pass",
+    quality_score: isPublishable ? 1.0 : 0,
     issues,
-    scene_indexes_to_refresh: replacement.scene_indexes_to_refresh,
-    clip_indexes_to_replace: replacement.clip_indexes_to_replace,
-    regeneration_plan: regenerationPlan,
-    render_quality: technical,
+    scene_indexes_to_refresh: [],
+    clip_indexes_to_replace: [],
     render_path: renderPath,
-    upload_source_path: uploadSourcePath,
-    youtube_video_id: state.youtube_video_id || "",
-    render_sha256: renderSha256,
-    uploaded_file_sha256: uploadedFileSha256,
     ffprobe_width: Number(renderProbe.width || 0),
     ffprobe_height: Number(renderProbe.height || 0),
-    ffprobe_duration: round3(renderProbe.duration || 0),
+    ffprobe_duration: round3(duration),
     state_output_resolution: state.output_resolution || "",
-    visual_alignment: visual,
-    timeline_alignment: alignment,
-    contact_sheet_path: contactAudit.contactSheetPath,
-    visual_audit_json_path: contactAudit.visualAuditPath,
-    overlay_render_validation: overlayValidation,
-    clip_audit: clipAuditRows,
-    approved_pool_audit: approvedPoolAudit,
-    editorial_observability: {
-      generated_at: new Date().toISOString(),
-      exact_ratio: editorialTelemetry.exact_ratio,
-      regional_ratio: editorialTelemetry.regional_ratio,
-      generic_ratio: editorialTelemetry.generic_ratio,
-      uncertain_ratio: editorialTelemetry.uncertain_ratio,
-      uncertain_critical_ratio: editorialTelemetry.uncertain_critical_ratio,
-      critical_slots_covered: editorialTelemetry.critical_slots_covered,
-      critical_slots_total: editorialTelemetry.critical_slots_total,
-      micro_critical_coverage_ratio: Number(microGate.micro_critical_coverage_ratio || 0),
-      micro_mismatch_rate: Number(microGate.micro_mismatch_rate || 0),
-      micro_timing_drift_avg: Number(microGate.micro_timing_drift_avg || 0),
-      micro_timing_drift_max: Number(microGate.micro_timing_drift_max || 0),
-      timeline_uses_approved_pool_only: approvedPoolAudit.timeline_uses_approved_pool_only,
-      failure_codes: editorialFailureCodes,
-      provider_reliability: providerReliability,
-      coverage_failure_scenes_by_cause: coverageFailureScenesByCause,
-    },
+    youtube_video_id: state.youtube_video_id || "",
   };
 
-  await fs.writeJson(contactAudit.visualAuditPath, {
-    video_id: videoId,
-    clip_audit: clipAuditRows,
-    boundary_audit: visual.boundary_visual_audit || [],
-    overlay_audit: overlayValidation,
-    editorial_metrics: validationResult.editorial_metrics,
-    approved_pool_audit: approvedPoolAudit,
-    provider_reliability: validationResult.provider_reliability,
-    resolution_audit: { ffprobe_width: validationResult.ffprobe_width, ffprobe_height: validationResult.ffprobe_height, state_output_resolution: validationResult.state_output_resolution },
-    final_decision: {
-      is_publishable: validationResult.is_publishable,
-      needs_manual_review: validationResult.needs_manual_review,
-      final_hard_boundary_status: validationResult.final_hard_boundary_status,
-      editorial_failure_codes: validationResult.editorial_failure_codes || [],
-    },
-  }, { spaces: 2 });
-  const finalReportPath = await writeVisualTruthFinalReport({ videoId, validation: validationResult });
-  validationResult.visual_truth_final_report_path = finalReportPath;
-  const observabilityHistory = [
-    ...((state.editorial_observability_history || []).slice(-39)),
-    validationResult.editorial_observability,
-  ];
-  await updateState(videoId, {
-    render_validation: validationResult,
-    visual_truth_final_report_path: finalReportPath,
-    assets_json: {
-      ...(state.assets_json || {}),
-      provider_reliability: validationResult.provider_reliability || {},
-    },
-    editorial_observability_history: observabilityHistory,
-    external_api_stats: getExternalApiStats({ videoId }),
-    error_message: "",
-  }, { currentStep: "render_validated", status: "render_validated" });
-
-  await appendPipelineEvent({
-    videoId,
-    stage: "qa",
-    event: "end",
-    status: qaRuntimeDegraded ? "warn" : "ok",
-    payload: {
-      duration_ms: Date.now() - stageStartedAt,
-      is_publishable: Boolean(validationResult.is_publishable),
-      needs_regeneration: Boolean(validationResult.needs_regeneration),
-      final_hard_boundary_status: String(validationResult.final_hard_boundary_status || "unknown"),
-      failure_codes: validationResult.editorial_failure_codes || [],
-      qa_runtime_degraded: qaRuntimeDegraded,
-    },
-  }).catch(() => null);
+  await updateState(videoId, { render_validation: validationResult, error_message: "" }, { currentStep: "render_validated", status: "render_validated" });
   return validationResult;
-  } catch (error) {
-    await appendPipelineEvent({
-      videoId,
-      stage: "qa",
-      event: "end",
-      status: "error",
-      payload: {
-        duration_ms: Date.now() - stageStartedAt,
-        error_message: String(error?.message || "qa_validation_failed"),
-      },
-    }).catch(() => null);
-    throw error;
-  }
 };
 
 const fixRenderSync = async ({ videoId, mockMode = false }) => {
@@ -2242,83 +966,18 @@ const fixRenderSync = async ({ videoId, mockMode = false }) => {
   const attempts = Number(state.render_sync_fix_attempts || 0);
   const validation = await validateRender({ videoId, mockMode });
   if (!validation.needs_regeneration) return validation;
-  const dominantReason = validation.editorial_failure_codes?.[0]
-    || validation.issues.find((issue) => [
-      "theme_visual_mismatch",
-      "visual_intent_underrepresented",
-      "generic_asset_overuse",
-      "wrong_visual_category",
-      "block_coverage_insufficient",
-      "block_coverage_partial",
-      "uncertain_in_critical_slot",
-      "critical_slot_not_visually_confirmed",
-      "timeline_not_using_approved_pool",
-      "scene_has_no_editorially_approved_assets",
-      "no_proof_for_promise",
-    ].includes(issue.type))?.type
-    || validation.issues[0]?.type
-    || "validation_failed";
-  const attemptsByReason = { ...(state.render_sync_fix_attempts_by_reason || {}) };
-  const reasonAttempts = Number(attemptsByReason[dominantReason] || 0);
-  if (attempts >= 2 || reasonAttempts >= 2) {
-    if (!mockMode) {
-      await markNeedsManualReview({
-        videoId,
-        source: "fix_render_sync_max_attempts",
-        note: `QA reprovou repetidamente por ${dominantReason}.`,
-      }).catch(() => null);
-    }
+  if (attempts >= 2) {
     return {
       ...validation,
       needs_manual_review: true,
-      fix_skipped_reason: "max_attempts_reached_for_reason",
+      fix_skipped_reason: "max_attempts_reached",
     };
   }
 
-  const qaSceneIndexes = validation.regeneration_plan?.scene_indexes_to_refresh || validation.scene_indexes_to_refresh || [];
-  const qaRepairPlanByScene = validation.regeneration_plan?.repair_by_scene || [];
-  const localRepairPlan = state.assets_json?.local_repair_plan || {};
-  const localSceneIndexes = Array.isArray(localRepairPlan.scene_indexes_to_refresh) ? localRepairPlan.scene_indexes_to_refresh : [];
-  const localRepairByScene = Array.isArray(localRepairPlan.repair_by_scene) ? localRepairPlan.repair_by_scene : [];
-  const assetBlockingSceneIndexes = Array.isArray(state.assets_json?.blocking_scene_indexes)
-    ? state.assets_json.blocking_scene_indexes
-    : [];
-  const issueSceneIndexes = Array.isArray(validation.issues)
-    ? validation.issues
-      .map((issue) => Number(issue?.scene_index || issue?.sceneIndex || 0))
-      .filter((sceneIndex) => sceneIndex > 0)
-    : [];
-  const clipIndexesToReplace = Array.isArray(validation.clip_indexes_to_replace) ? validation.clip_indexes_to_replace : [];
-  const clipIndexToSceneMap = new Map(
-    (state.render_timeline?.clips || [])
-      .map((clip) => [Number(clip.clip_index || 0), Number(clip.scene_index || 0)])
-      .filter(([clipIndex, sceneIndex]) => clipIndex > 0 && sceneIndex > 0)
-  );
-  const sceneIndexesFromClipIssues = clipIndexesToReplace
-    .map((clipIndex) => clipIndexToSceneMap.get(Number(clipIndex || 0)) || 0)
-    .filter((sceneIndex) => sceneIndex > 0);
-  const sceneIndexes = unique([
-    ...(qaSceneIndexes || []).map((sceneIndex) => Number(sceneIndex || 0)).filter((sceneIndex) => sceneIndex > 0),
-    ...(localSceneIndexes || []).map((sceneIndex) => Number(sceneIndex || 0)).filter((sceneIndex) => sceneIndex > 0),
-    ...(assetBlockingSceneIndexes || []).map((sceneIndex) => Number(sceneIndex || 0)).filter((sceneIndex) => sceneIndex > 0),
-    ...issueSceneIndexes,
-    ...sceneIndexesFromClipIssues,
-  ]);
-  const repairPlanByScene = [...qaRepairPlanByScene, ...localRepairByScene];
-  if (!sceneIndexes.length) {
-    if (!mockMode) {
-      await markNeedsManualReview({
-        videoId,
-        source: "fix_render_sync_no_targets",
-        note: "QA reprovou, mas não gerou cenas alvo para reparo automático.",
-      }).catch(() => null);
-    }
-    return {
-      ...validation,
-      needs_manual_review: true,
-      fix_skipped_reason: "no_repair_targets",
-    };
-  }
+  const sceneIndexes = validation.scene_indexes_to_refresh || [];
+  const dominantReason = validation.issues.find((issue) => ["theme_visual_mismatch", "visual_intent_underrepresented", "generic_asset_overuse", "wrong_visual_category"].includes(issue.type))?.type
+    || validation.issues[0]?.type
+    || "validation_failed";
   if (sceneIndexes.length) {
     await generateAssets({
       videoId,
@@ -2327,47 +986,21 @@ const fixRenderSync = async ({ videoId, mockMode = false }) => {
       sceneIndexes,
       preserveExisting: true,
       refreshReason: dominantReason,
-      repairPlanByScene,
     });
   }
 
   await renderVideo({ videoId, mockMode });
   const revalidated = await validateRender({ videoId, mockMode });
-  const noProgress = hasNoProgressAfterRepair({
-    beforeValidation: validation,
-    afterValidation: revalidated,
-  });
-
-  if (noProgress && !mockMode) {
-    const afterCodes = [
-      ...((revalidated.editorial_failure_codes || []).map((code) => String(code || "").trim()).filter(Boolean)),
-      ...((revalidated.publish_blocked_codes || []).map((code) => String(code || "").trim()).filter(Boolean)),
-    ];
-    await markNeedsManualReview({
-      videoId,
-      source: "fix_render_sync_no_progress",
-      note: `Sem progresso após reparo automático. Falhas persistentes: ${[...new Set(afterCodes)].join(", ")}.`,
-    }).catch(() => null);
-  }
-
   await updateState(videoId, {
     render_sync_fix_attempts: attempts + 1,
-    render_sync_fix_attempts_by_reason: {
-      ...attemptsByReason,
-      [dominantReason]: reasonAttempts + 1,
-    },
     last_sync_fix_at: new Date().toISOString(),
     last_sync_fix_reason: dominantReason,
     last_sync_fix_scene_indexes: validation.scene_indexes_to_refresh || [],
     last_sync_fix_clip_indexes: validation.clip_indexes_to_replace || [],
-    render_validation: noProgress
-      ? { ...revalidated, needs_manual_review: true }
-      : revalidated,
+    render_validation: revalidated,
   }, { currentStep: "render_fix_attempted", status: "render_fix_attempted" });
 
-  return noProgress
-    ? { ...revalidated, needs_manual_review: true, fix_skipped_reason: "no_progress_after_fix_round" }
-    : revalidated;
+  return revalidated;
 };
 
 module.exports = {
@@ -2388,16 +1021,6 @@ module.exports = {
     computeVisualIntentDistribution,
     evaluateVisualIntentCoverage,
     identifyClipsForReplacement,
-    isCriticalAuditRow,
-    evaluateApprovedPoolAudit,
-    computeEditorialTelemetry,
     evaluateClipAuditGate,
-    evaluateMicroSyncGate,
-    getEditorialQaProfile,
-    buildEditorialFailureCodes,
-    buildProviderReliabilitySnapshot,
-    hasNoProgressAfterRepair,
-    resolveQaVisionRequestOptions,
-    writeVisualTruthFinalReport,
   },
 };

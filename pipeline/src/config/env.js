@@ -2,98 +2,27 @@ const path = require("path");
 const fs = require("fs-extra");
 const dotenv = require("dotenv");
 
-const PIPELINE_ROOT = path.resolve(__dirname, "..", "..");
-const REPO_ROOT = path.resolve(PIPELINE_ROOT, "..");
-
-const envCandidates = [
-  path.join(REPO_ROOT, ".env"),
-  path.join(REPO_ROOT, ".env.local"),
-  path.join(PIPELINE_ROOT, ".env"),
-  path.join(PIPELINE_ROOT, ".env.local"),
-  path.join(process.cwd(), ".env"),
-].filter((candidatePath, index, array) => array.indexOf(candidatePath) === index);
-
-envCandidates.forEach((candidatePath) => {
-  if (fs.existsSync(candidatePath)) {
-    dotenv.config({ path: candidatePath, override: false });
-  }
-});
+dotenv.config({ path: path.join(process.cwd(), ".env") });
 
 const toBool = (value, fallback = false) => {
   if (value === undefined || value === null || value === "") return fallback;
   return String(value).toLowerCase() === "true";
 };
-const toList = (value, fallback = []) =>
-  String(value || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean).length
-    ? String(value || "")
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean)
-    : fallback;
 
-const resolveProjectPath = (rawPath = "", fallbackPath = "") => {
-  const candidate = String(rawPath || "").trim();
-  if (!candidate) return fallbackPath;
-  if (path.isAbsolute(candidate)) return candidate;
-  if (/^pipeline[\\/]/i.test(candidate)) return path.resolve(REPO_ROOT, candidate);
-  return path.resolve(PIPELINE_ROOT, candidate);
-};
-
-const OUTPUT_ROOT = resolveProjectPath(
-  process.env.OUTPUT_ROOT || "",
-  path.join(PIPELINE_ROOT, "output")
-);
-const TEST_REPORTS_ROOT = resolveProjectPath(
-  process.env.TEST_REPORTS_ROOT || "",
-  path.join(OUTPUT_ROOT, "test_reports")
-);
+const OUTPUT_ROOT = process.env.OUTPUT_ROOT || path.join(process.cwd(), "output");
 
 const config = {
   APP_PORT: Number(process.env.APP_PORT || 8080),
   MOCK_MODE: toBool(process.env.MOCK_MODE, false),
-  LOCAL_TEST_MODE: toBool(process.env.LOCAL_TEST_MODE, false),
-  AUTO_APPROVE_FOR_TESTING: toBool(process.env.AUTO_APPROVE_FOR_TESTING, false),
-  LOCAL_TEST_DISABLE_OPENAI: toBool(process.env.LOCAL_TEST_DISABLE_OPENAI, true),
-  LOCAL_TEST_DISABLE_GEMINI: toBool(process.env.LOCAL_TEST_DISABLE_GEMINI, true),
-  LOCAL_TEST_DISABLE_YOUTUBE: toBool(process.env.LOCAL_TEST_DISABLE_YOUTUBE, true),
-  EXTERNAL_API_CIRCUIT_BREAKER_ENABLED: toBool(process.env.EXTERNAL_API_CIRCUIT_BREAKER_ENABLED, false),
-  EXTERNAL_API_MAX_CALLS_TOTAL: Number(process.env.EXTERNAL_API_MAX_CALLS_TOTAL || -1),
-  EXTERNAL_API_MAX_CALLS_OPENAI: Number(process.env.EXTERNAL_API_MAX_CALLS_OPENAI || -1),
-  EXTERNAL_API_MAX_CALLS_GEMINI: Number(process.env.EXTERNAL_API_MAX_CALLS_GEMINI || -1),
-  EXTERNAL_API_MAX_CALLS_YOUTUBE: Number(process.env.EXTERNAL_API_MAX_CALLS_YOUTUBE || -1),
   ALLOW_PLACEHOLDER_ASSETS: toBool(process.env.ALLOW_PLACEHOLDER_ASSETS, false),
   OUTPUT_ROOT,
-  TEST_REPORTS_ROOT,
   N8N_BASE_URL: process.env.N8N_BASE_URL || "http://n8n:5678",
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",
-  GEMINI_BASE_URL: process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta",
-  GEMINI_VERTEX_ENABLED: toBool(process.env.GEMINI_VERTEX_ENABLED, false),
-  GOOGLE_CLOUD_PROJECT: process.env.GOOGLE_CLOUD_PROJECT || "",
-  GOOGLE_CLOUD_PROJECT_NUMBER: process.env.GOOGLE_CLOUD_PROJECT_NUMBER || "",
-  GOOGLE_CLOUD_LOCATION: process.env.GOOGLE_CLOUD_LOCATION || "us-central1",
-  GOOGLE_APPLICATION_CREDENTIALS: resolveProjectPath(process.env.GOOGLE_APPLICATION_CREDENTIALS || "", ""),
-  GEMINI_VISION_ENABLED: toBool(process.env.GEMINI_VISION_ENABLED, true),
-  GEMINI_VISION_MODEL_LITE: process.env.GEMINI_VISION_MODEL_LITE || "gemini-2.5-flash-lite",
-  GEMINI_VISION_MODEL_FULL: process.env.GEMINI_VISION_MODEL_FULL || "gemini-2.5-flash",
-  GEMINI_VISION_FALLBACK_MODELS: toList(process.env.GEMINI_VISION_FALLBACK_MODELS, []),
-  GEMINI_VISION_TIMEOUT_MS: Number(process.env.GEMINI_VISION_TIMEOUT_MS || 45000),
-  GEMINI_VISION_MAX_RETRIES: Number(process.env.GEMINI_VISION_MAX_RETRIES || 3),
-  GEMINI_VISION_RETRY_BASE_MS: Number(process.env.GEMINI_VISION_RETRY_BASE_MS || 1200),
-  ASSET_STAGE_MAX_RUNTIME_MS: Number(process.env.ASSET_STAGE_MAX_RUNTIME_MS || 300000),
-  GEMINI_VISION_ESCALATION_MIN_CONFIDENCE: Number(process.env.GEMINI_VISION_ESCALATION_MIN_CONFIDENCE || 0.62),
-  GEMINI_VISION_ESCALATION_MAX_GENERIC_RATIO: Number(process.env.GEMINI_VISION_ESCALATION_MAX_GENERIC_RATIO || 0.5),
+  LOCAL_ASSET_LIBRARY_PATH: process.env.LOCAL_ASSET_LIBRARY_PATH || "",
   MULTIVOZES_BR_ENGINE:
     process.env.MULTIVOZES_BR_ENGINE || process.env.MULTIVOZEZ_BR_ENGINE || "",
   MULTIVOZES_BR_BASE_URL: process.env.MULTIVOZES_BR_BASE_URL || "http://host.docker.internal:5050/v1",
-  MULTIVOZES_DEFAULT_VOICE: process.env.MULTIVOZES_DEFAULT_VOICE || "",
-  MULTIVOZES_AUTO_START: toBool(process.env.MULTIVOZES_AUTO_START, false),
-  MULTIVOZES_PROJECT_PATH: process.env.MULTIVOZES_PROJECT_PATH || "",
-  MULTIVOZES_DOCKER_SERVICE: process.env.MULTIVOZES_DOCKER_SERVICE || "",
-  MULTIVOZES_START_TIMEOUT_MS: Number(process.env.MULTIVOZES_START_TIMEOUT_MS || 30000),
   ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY || "",
   ELEVENLABS_VOICE_ID: process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM",
   PEXELS_API_KEY: process.env.PEXELS_API_KEY || "",
@@ -113,81 +42,15 @@ const config = {
   HARD_BOUNDARY_REQUIRE_LOCATION: toBool(process.env.HARD_BOUNDARY_REQUIRE_LOCATION, true),
   HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY: toBool(process.env.HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY, true),
   HARD_BOUNDARY_FAIL_ON_MISS: toBool(process.env.HARD_BOUNDARY_FAIL_ON_MISS, true),
-  MIN_VIDEO_DURATION_SECONDS: Number(process.env.MIN_VIDEO_DURATION_SECONDS || 480),
-  EDITORIAL_QA_PROFILE: process.env.EDITORIAL_QA_PROFILE || "strict",
-  RUNTIME_DEGRADE_ON_MISSING_ASSETS: toBool(process.env.RUNTIME_DEGRADE_ON_MISSING_ASSETS, true),
-  QA_RUNTIME_PROFILE_MOCK: process.env.QA_RUNTIME_PROFILE_MOCK || "mock_relaxed",
-  QA_RUNTIME_PROFILE_PROD: process.env.QA_RUNTIME_PROFILE_PROD || "prod_strict",
-  QA_STAGE_MAX_RUNTIME_MS: Number(process.env.QA_STAGE_MAX_RUNTIME_MS || 180000),
-  QA_VISION_TIMEOUT_MS: Number(process.env.QA_VISION_TIMEOUT_MS || 10000),
-  QA_VISION_MAX_RETRIES: Number(process.env.QA_VISION_MAX_RETRIES || 0),
-  QA_VISION_BATCH_SIZE: Number(process.env.QA_VISION_BATCH_SIZE || 8),
-  PRE_RENDER_EDITORIAL_FAIL_FAST: toBool(process.env.PRE_RENDER_EDITORIAL_FAIL_FAST, true),
-  VISUAL_EVIDENCE_PROVIDER_VERSION: process.env.VISUAL_EVIDENCE_PROVIDER_VERSION || "v2_heuristic",
-  CRITICAL_SLOT_FREE_SOURCE_BUDGET_PER_BLOCK: Number(process.env.CRITICAL_SLOT_FREE_SOURCE_BUDGET_PER_BLOCK || 1),
-  CRITICAL_SLOT_FREE_CONFIDENCE_MIN: Number(process.env.CRITICAL_SLOT_FREE_CONFIDENCE_MIN || 0.82),
-  CRITICAL_SLOT_MIN_SEMANTIC_RELEVANCE: Number(process.env.CRITICAL_SLOT_MIN_SEMANTIC_RELEVANCE || 0.45),
-  CRITICAL_SLOT_MIN_EDITORIAL_EVIDENCE: Number(process.env.CRITICAL_SLOT_MIN_EDITORIAL_EVIDENCE || 0.58),
-  CRITICAL_SLOT_MAX_SEMANTIC_RISK: Number(process.env.CRITICAL_SLOT_MAX_SEMANTIC_RISK || 0.55),
   LOCAL_VIDEO_UNDERSTANDING_ENABLED: toBool(process.env.LOCAL_VIDEO_UNDERSTANDING_ENABLED, false),
   LOCAL_VIDEO_UNDERSTANDING_MODE: process.env.LOCAL_VIDEO_UNDERSTANDING_MODE || "frames",
   LOCAL_VIDEO_UNDERSTANDING_WINDOW_SECONDS: Number(process.env.LOCAL_VIDEO_UNDERSTANDING_WINDOW_SECONDS || 8),
   LOCAL_VIDEO_UNDERSTANDING_MAX_WINDOWS: Number(process.env.LOCAL_VIDEO_UNDERSTANDING_MAX_WINDOWS || 20),
-  LOCAL_VIDEO_UNDERSTANDING_TIMEOUT_MS: Number(process.env.LOCAL_VIDEO_UNDERSTANDING_TIMEOUT_MS || 25000),
   LOCAL_VIDEO_UNDERSTANDING_PYTHON: process.env.LOCAL_VIDEO_UNDERSTANDING_PYTHON || "python",
-  LOCAL_VIDEO_UNDERSTANDING_SCRIPT:
-    process.env.LOCAL_VIDEO_UNDERSTANDING_SCRIPT
-    || path.join(PIPELINE_ROOT, "tools", "video-understanding", "analyze_video.py"),
+  LOCAL_VIDEO_UNDERSTANDING_SCRIPT: process.env.LOCAL_VIDEO_UNDERSTANDING_SCRIPT || "tools/video-understanding/analyze_video.py",
   ASSET_SEARCH_RESULTS_PER_QUERY: Number(process.env.ASSET_SEARCH_RESULTS_PER_QUERY || 12),
   ASSET_CANDIDATE_POOL_PER_SCENE: Number(process.env.ASSET_CANDIDATE_POOL_PER_SCENE || 30),
   ASSET_DOWNLOAD_TOP_PER_SCENE: Number(process.env.ASSET_DOWNLOAD_TOP_PER_SCENE || 6),
-  ASSET_QUERY_SEARCH_CONCURRENCY: Number(process.env.ASSET_QUERY_SEARCH_CONCURRENCY || 3),
-  ASSET_SEMANTIC_ANALYSIS_CONCURRENCY: Number(process.env.ASSET_SEMANTIC_ANALYSIS_CONCURRENCY || 2),
-  ASSET_RAW_CANDIDATES_PER_BLOCK: Number(process.env.ASSET_RAW_CANDIDATES_PER_BLOCK || 60),
-  ASSET_CHEAP_SHORTLIST_PER_BLOCK: Number(process.env.ASSET_CHEAP_SHORTLIST_PER_BLOCK || 20),
-  ASSET_VISION_FINALISTS_PER_BLOCK: Number(process.env.ASSET_VISION_FINALISTS_PER_BLOCK || 8),
-  ASSET_MAX_REPAIR_ROUNDS_PER_BLOCK: Number(process.env.ASSET_MAX_REPAIR_ROUNDS_PER_BLOCK || 2),
-  ASSET_SCARCITY_RAW_CANDIDATES_PER_BLOCK: Number(process.env.ASSET_SCARCITY_RAW_CANDIDATES_PER_BLOCK || 120),
-  ASSET_SCARCITY_CHEAP_SHORTLIST_PER_BLOCK: Number(process.env.ASSET_SCARCITY_CHEAP_SHORTLIST_PER_BLOCK || 30),
-  ASSET_SCARCITY_VISION_FINALISTS_PER_BLOCK: Number(process.env.ASSET_SCARCITY_VISION_FINALISTS_PER_BLOCK || 12),
-  COVERAGE_GATE_MAX_REPAIR_ROUNDS_PER_BLOCK: Number(process.env.COVERAGE_GATE_MAX_REPAIR_ROUNDS_PER_BLOCK || 2),
-  COVERAGE_GATE_ALLOW_PARTIAL: toBool(process.env.COVERAGE_GATE_ALLOW_PARTIAL, true),
-  EDITORIAL_STRONG_ONLY_PRE_RENDER: toBool(process.env.EDITORIAL_STRONG_ONLY_PRE_RENDER, true),
-  REPAIR_PLANNER_MAX_LOCAL_ROUNDS: Number(process.env.REPAIR_PLANNER_MAX_LOCAL_ROUNDS || 2),
-  CRITICAL_SLOT_MIN_PROVIDER_RELIABILITY: Number(process.env.CRITICAL_SLOT_MIN_PROVIDER_RELIABILITY || 0.45),
-  CRITICAL_SLOT_PREFERRED_PROVIDER_RELIABILITY: Number(process.env.CRITICAL_SLOT_PREFERRED_PROVIDER_RELIABILITY || 0.6),
-  ASSET_PROVIDER_MAX_PER_BLOCK: Number(process.env.ASSET_PROVIDER_MAX_PER_BLOCK || 3),
-  ASSET_PROVIDER_MAX_PER_BLOCK_RELAXED: Number(process.env.ASSET_PROVIDER_MAX_PER_BLOCK_RELAXED || 8),
-  LOCAL_CURATED_ASSET_INDEX:
-    process.env.LOCAL_CURATED_ASSET_INDEX
-    || path.join(OUTPUT_ROOT, "editorial", "local-curated-assets.json"),
-  LOCAL_CURATED_ASSETS_DIR:
-    process.env.LOCAL_CURATED_ASSETS_DIR
-    || path.join(OUTPUT_ROOT, "editorial", "curated-assets"),
-  USE_CLIP_LIBRARY: toBool(process.env.USE_CLIP_LIBRARY, false),
-  USE_SCENE_INDEX: toBool(process.env.USE_SCENE_INDEX, false),
-  CLIP_LIBRARY_POLICY_VERSION: process.env.CLIP_LIBRARY_POLICY_VERSION || "v1",
-  CLIP_LIBRARY_DB_PATH:
-    process.env.CLIP_LIBRARY_DB_PATH
-    || path.join(OUTPUT_ROOT, "editorial", "clip-library.db"),
-  SCENE_INDEX_DB_PATH:
-    process.env.SCENE_INDEX_DB_PATH
-    || path.join(OUTPUT_ROOT, "editorial", "scene-index.db"),
-  CLIP_LIBRARY_ROOT_DIR:
-    process.env.CLIP_LIBRARY_ROOT_DIR
-    || path.join(OUTPUT_ROOT, "editorial", "clip-library"),
-  CLIP_LIBRARY_MAX_SEARCH_RESULTS: Number(process.env.CLIP_LIBRARY_MAX_SEARCH_RESULTS || 24),
-  CLIP_LIBRARY_TARGET_DURATIONS: process.env.CLIP_LIBRARY_TARGET_DURATIONS || "3,5,15",
-  CLIP_LIBRARY_MAX_MICROCLIPS_PER_WINDOW: Number(process.env.CLIP_LIBRARY_MAX_MICROCLIPS_PER_WINDOW || 8),
-  CLIP_LIBRARY_GENERATE_SYNC_ON_ASSET_APPROVAL: toBool(process.env.CLIP_LIBRARY_GENERATE_SYNC_ON_ASSET_APPROVAL, false),
-  CLIP_LIBRARY_SHADOW_ENABLED: toBool(process.env.CLIP_LIBRARY_SHADOW_ENABLED, false),
-  CLIP_LIBRARY_SHADOW_VIDEO_PATH: process.env.CLIP_LIBRARY_SHADOW_VIDEO_PATH || "",
-  CLIP_LIBRARY_SHADOW_REPORT_DIR:
-    process.env.CLIP_LIBRARY_SHADOW_REPORT_DIR
-    || path.join(OUTPUT_ROOT, "editorial", "shadow-reports"),
-  AI_GENERATED_PLACEHOLDER_ENABLED: toBool(process.env.AI_GENERATED_PLACEHOLDER_ENABLED, false),
-  GEMINI_VIDEO_FALLBACK_ENABLED: toBool(process.env.GEMINI_VIDEO_FALLBACK_ENABLED, false),
-  EDITORIAL_LIBRARY_REUSE_COOLDOWN_HOURS: Number(process.env.EDITORIAL_LIBRARY_REUSE_COOLDOWN_HOURS || 12),
   MIN_SPECIFIC_ASSETS_PER_SCENE: Number(process.env.MIN_SPECIFIC_ASSETS_PER_SCENE || 2),
   ENABLE_BLOCK_OVERLAYS: toBool(process.env.ENABLE_BLOCK_OVERLAYS, true),
   OUTPUT_WIDTH: Number(process.env.OUTPUT_WIDTH || 1920),
@@ -215,16 +78,9 @@ const config = {
   YOUTUBE_CAPTION_NAME: process.env.YOUTUBE_CAPTION_NAME || "Português (Brasil)",
   N8N_WORKFLOW_2_WEBHOOK: process.env.N8N_WORKFLOW_2_WEBHOOK || "",
   N8N_WORKFLOW_3_WEBHOOK: process.env.N8N_WORKFLOW_3_WEBHOOK || "",
-  REPO_ROOT,
-  PIPELINE_ROOT,
 };
 
 fs.ensureDirSync(config.OUTPUT_ROOT);
 fs.ensureDirSync(path.join(config.OUTPUT_ROOT, "draft"));
-fs.ensureDirSync(config.TEST_REPORTS_ROOT);
-fs.ensureDirSync(path.dirname(config.CLIP_LIBRARY_DB_PATH));
-fs.ensureDirSync(path.dirname(config.SCENE_INDEX_DB_PATH));
-fs.ensureDirSync(config.CLIP_LIBRARY_ROOT_DIR);
-fs.ensureDirSync(config.CLIP_LIBRARY_SHADOW_REPORT_DIR);
 
 module.exports = { config };

@@ -1,9 +1,9 @@
 const { writeTextAtomic } = require("../utils/fileUtils");
 const { updateState, ensureVideoStructure, loadState } = require("./stateService");
+const { generateScriptPackageWithOpenAI } = require("./openaiService");
 const { generateScriptPackageWithGemini } = require("./geminiService");
 const { sendWorkflowStatus } = require("./telegramService");
 const { buildVisualPlan } = require("../utils/visualPlan");
-const { registerFallback, getExternalApiStats } = require("./externalApiControlService");
 
 const buildMockPackage = ({ topic, angle }) => {
   const sections = [
@@ -104,130 +104,6 @@ const buildMockPackage = ({ topic, angle }) => {
   };
 };
 
-const normalizeTopicLabel = (value = "") =>
-  String(value || "")
-    .replace(/\s+/g, " ")
-    .trim();
-
-const deriveTopicChapters = (topic = "", approvedIdea = {}) => {
-  const raw = `${topic} ${approvedIdea?.angle || ""}`;
-  const pieces = raw
-    .split(/[:;,]| e | and |\/|-/i)
-    .map((entry) => normalizeTopicLabel(entry))
-    .filter(Boolean);
-  const uniquePieces = [...new Set(pieces)];
-  if (uniquePieces.length >= 3) return uniquePieces.slice(0, 3);
-  if (uniquePieces.length === 2) return [...uniquePieces, "logística e custos"];
-  if (uniquePieces.length === 1) return [uniquePieces[0], "dicas práticas", "logística e custos"];
-  return ["contexto", "dicas práticas", "logística e custos"];
-};
-
-const buildDeterministicLocalPackage = ({
-  topic,
-  angle,
-  targetDurationSeconds = 0,
-  selectedIdea = null,
-}) => {
-  const durationSeconds = Math.max(480, Number(targetDurationSeconds || 0) || 720);
-  const targetWords = Math.max(450, Math.round(durationSeconds * 2.2));
-  const chapters = deriveTopicChapters(topic, selectedIdea || {});
-  const chapterDuration = Math.max(90, Math.round(durationSeconds / (chapters.length + 2)));
-  const sections = [
-    { title: "Abertura e promessa editorial", objective: "Definir benefício direto para retenção" },
-    ...chapters.map((chapter, index) => ({
-      title: `${index + 1}. ${chapter}`,
-      objective: `Cobrir evidências visuais e contexto prático de ${chapter}`,
-    })),
-    { title: "Fechamento e próximos passos", objective: "Consolidar utilidade e CTA sem exagero" },
-  ];
-
-  const baseParagraphs = [
-    `Hoje vamos analisar ${topic} com um recorte ${angle || "documental prático"}, focando em decisão real para quem quer viajar melhor.`,
-    `A ideia é sair do vídeo com critérios claros: o que priorizar, o que evitar e onde cada trecho visual realmente comprova a promessa editorial.`,
-    ...chapters.map((chapter) =>
-      `No bloco sobre ${chapter}, conectamos prova visual, contexto local e orientação prática, sempre evitando clipes genéricos que não sustentam o roteiro.`
-    ),
-    "No fechamento, organizamos os critérios usados, reforçamos limites de orçamento e deixamos checklist objetivo para aplicação imediata.",
-  ];
-
-  let scriptText = [
-    `# ${topic}`,
-    "",
-    "## Intro Hook",
-    `Se você quer um guia verificável sobre ${topic}, aqui está um roteiro completo com foco em decisão prática.`,
-    "",
-    ...sections.map((section) => `## ${section.title}\n\n${baseParagraphs.join(" ")}`),
-    "",
-    "## Encerramento",
-    "Com esse panorama, você consegue montar um plano sem improviso e com melhor aderência ao objetivo da viagem.",
-  ].join("\n");
-
-  const currentWordCount = scriptText.split(/\s+/).filter(Boolean).length;
-  if (currentWordCount < targetWords) {
-    const reinforcement =
-      " Critério adicional: validar consistência visual, densidade informativa e aderência semântica antes de confirmar cada corte da timeline.";
-    const missingWords = targetWords - currentWordCount;
-    const repeatCount = Math.ceil(missingWords / reinforcement.split(/\s+/).length);
-    scriptText += `\n\n${Array.from({ length: repeatCount }).map(() => reinforcement).join(" ")}`;
-  }
-
-  return {
-    video_objective: `Entregar roteiro verificável e prático sobre ${topic} com foco em retenção e utilidade.`,
-    intro_hook: `Vamos provar, com exemplos objetivos, por que ${topic} pode ser uma ótima escolha quando o planejamento é bem executado.`,
-    research_json: {
-      facts: [
-        `Mapear pontos de maior interesse sobre ${topic}`,
-        "Checar sazonalidade e variação de custo",
-        "Comparar logística entre regiões-chave",
-      ],
-      risks: ["Dados de preço desatualizados", "Trechos visuais genéricos sem relação com o texto"],
-      sources: ["dados oficiais de turismo", "índices de custo de vida", "fontes públicas locais"],
-    },
-    outline_json: { sections },
-    script_text: scriptText,
-    visual_suggestions: sections.map((section) => ({
-      section: section.title,
-      shots: [
-        `Plano contextual de ${topic}`,
-        "Plano de detalhe com elemento citado na fala",
-        "Plano de transição para continuidade narrativa",
-      ],
-    })),
-    factual_notes: [
-      "Evitar afirmações absolutas sem evidência visual.",
-      "Priorizar termos verificáveis por cena.",
-      "Registrar incerteza quando não houver prova micro.",
-    ],
-    seo_keywords: [topic, "guia completo", "planejamento de viagem", "dicas práticas", "roteiro real"],
-    youtube_title_options: [
-      `${topic}: guia prático e verificável`,
-      `${topic} sem enrolação: o que realmente importa`,
-      `${topic}: roteiro completo com foco em decisão`,
-    ],
-    youtube_description: `Roteiro completo sobre ${topic} com abordagem prática, critérios de decisão e foco em evidências visuais por cena.`,
-    tags: [topic, "viagem", "guia", "planejamento", "dicas"],
-    chapters: [
-      "00:00 Introdução",
-      ...chapters.map((chapter, index) => {
-        const sec = chapterDuration * (index + 1);
-        const mm = String(Math.floor(sec / 60)).padStart(2, "0");
-        const ss = String(sec % 60).padStart(2, "0");
-        return `${mm}:${ss} ${chapter}`;
-      }),
-      `${String(Math.floor((chapterDuration * (chapters.length + 1)) / 60)).padStart(2, "0")}:${String((chapterDuration * (chapters.length + 1)) % 60).padStart(2, "0")} Conclusão`,
-    ],
-    angle: angle || "documental prático",
-    structured_blocks: sections.map((section, index) => ({
-      block_id: `b${String(index + 1).padStart(2, "0")}`,
-      text: `${section.title}. ${section.objective}`,
-      duration_estimate: chapterDuration,
-      visual_type: "generic",
-      visual_description: `Plano visual de ${section.title} com foco em ${topic}`,
-      keywords: section.title.split(/\s+/).filter((w) => w.length > 3).slice(0, 5),
-    })),
-  };
-};
-
 const createScriptMarkdown = ({ topic, pkg }) => {
   const sectionLines = (pkg.outline_json?.sections || [])
     .map((section, idx) => `### ${idx + 1}. ${section.title}\nObjetivo: ${section.objective}`)
@@ -274,12 +150,7 @@ const createScriptMarkdown = ({ topic, pkg }) => {
   ].join("\n");
 };
 
-const generateScript = async ({
-  videoId,
-  mockMode = false,
-  topic: providedTopic = "",
-  targetDurationSeconds = 0,
-}) => {
+const generateScript = async ({ videoId, mockMode = false, topic: providedTopic = "" }) => {
   const state = await loadState(videoId);
   const topic = providedTopic || state.topic || state.selected_idea?.topic;
   const angle = state.angle || state.selected_idea?.angle || "documental";
@@ -288,33 +159,12 @@ const generateScript = async ({
     throw new Error("Nenhum tópico disponível. Gere e aprove uma ideia antes do roteiro.");
   }
 
-  let pkg = null;
-  let scriptProvider = "local_mock_script_template";
-  let scriptFallbackUsed = false;
-
-  if (!mockMode) {
-    pkg = await generateScriptPackageWithGemini({ topic, angle, targetDurationSeconds, videoId });
-    if (pkg) {
-      scriptProvider = "gemini_script";
-    } else {
-      pkg = buildDeterministicLocalPackage({
-        topic,
-        angle,
-        targetDurationSeconds,
-        selectedIdea: state.selected_idea || null,
-      });
-      scriptProvider = "local_custom_script_fallback";
-      scriptFallbackUsed = true;
-      registerFallback({
-        videoId,
-        provider: "gemini",
-        operation: "generate_script_package",
-        reason: "gemini_unavailable_or_blocked",
-      });
-    }
-  } else {
-    pkg = buildMockPackage({ topic, angle });
-  }
+  // Gemini primeiro, OpenAI como fallback, mock como último recurso
+  const pkg = !mockMode
+    ? (await generateScriptPackageWithGemini({ topic, angle })) ||
+      (await generateScriptPackageWithOpenAI({ topic, angle })) ||
+      buildMockPackage({ topic, angle })
+    : buildMockPackage({ topic, angle });
   const paths = await ensureVideoStructure(videoId);
   const markdown = createScriptMarkdown({ topic, pkg });
   const visualPlan = buildVisualPlan({
@@ -340,11 +190,6 @@ const generateScript = async ({
       youtube_description: pkg.youtube_description || "",
       youtube_tags: pkg.tags || [],
       youtube_chapters: pkg.chapters || [],
-      script_provider: scriptProvider,
-      script_fallback_used: scriptFallbackUsed,
-      external_api_stats: getExternalApiStats({ videoId }),
-      script_target_duration_seconds: Number(targetDurationSeconds || 0) || undefined,
-      structured_blocks: pkg.structured_blocks || [],
       error_message: "",
     },
     {
