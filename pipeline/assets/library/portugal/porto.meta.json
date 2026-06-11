@@ -1,0 +1,11 @@
+{
+  "description": "Porto cidade do norte de Portugal com ribeira, caves de vinho e ponte Dom Luís",
+  "tags": ["porto", "portugal", "ribeira", "vinho", "ponte", "dom luis", "norte", "historico", "cidade", "douro", "patrimonio"],
+  "location": {
+    "city": "Porto",
+    "country": "Portugal"
+  },
+  "type_hint": "urban",
+  "analyzed_at": "2026-06-10T00:00:00.000Z",
+  "analyzed_by": "manual"
+}

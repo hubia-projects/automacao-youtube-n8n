@@ -9,9 +9,11 @@ const { logger } = require("../utils/logger");
 const execFileAsync = promisify(execFile);
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
-const GEMINI_CHAT_MODEL = "gemini-1.5-pro";
-const GEMINI_FLASH_MODEL = "gemini-1.5-flash";
-const GEMINI_EMBED_MODEL = "text-embedding-004";
+const GEMINI_EMBED_MODEL = "gemini-embedding-001";
+
+const getChatModel = () => config.GEMINI_TEXT_MODEL || "gemini-2.5-flash-lite";
+const getFlashModel = () => config.GEMINI_VISION_MODEL_LITE || "gemini-2.5-flash-lite";
+const getFlashFullModel = () => config.GEMINI_VISION_MODEL_FULL || "gemini-2.5-flash";
 
 const hasGemini = () => Boolean(config.GEMINI_API_KEY);
 
@@ -29,7 +31,8 @@ const safeJsonParse = (raw, fallback) => {
   }
 };
 
-const generateContent = async ({ prompt, model = GEMINI_CHAT_MODEL, responseFormat = "text", timeoutMs = 90000 }) => {
+const generateContent = async ({ prompt, model, responseFormat = "text", timeoutMs = 90000 }) => {
+  model = model || getChatModel();
   if (!hasGemini()) return null;
 
   const url = `${GEMINI_BASE}/models/${model}:generateContent?key=${config.GEMINI_API_KEY}`;
@@ -122,9 +125,17 @@ Gere JSON estrito com:
 
 // ===== Media Analysis for Library Auto-Indexing =====
 
+const resolveFFmpegBin = () => {
+  const staticBin = require("ffmpeg-static");
+  if (staticBin && require("fs").existsSync(staticBin)) return staticBin;
+  // fallback: system ffmpeg
+  const { execSync } = require("child_process");
+  try { return execSync("which ffmpeg", { encoding: "utf8" }).trim(); } catch { return "ffmpeg"; }
+};
+
 const extractVideoFrames = async (videoPath, frameCount = 4) => {
   const ffprobeBin = require("ffprobe-static").path;
-  const ffmpegBin = require("ffmpeg-static");
+  const ffmpegBin = resolveFFmpegBin();
   const tmpDir = require("os").tmpdir();
   const baseName = path.basename(videoPath, path.extname(videoPath));
   const frameDir = path.join(tmpDir, `gemini_frames_${Date.now()}_${baseName}`);
@@ -195,7 +206,7 @@ const analyzeMediaFile = async (filePath) => {
 
   if (!isVideo && !isImage) return null;
 
-  const url = `${GEMINI_BASE}/models/${GEMINI_FLASH_MODEL}:generateContent?key=${config.GEMINI_API_KEY}`;
+  const url = `${GEMINI_BASE}/models/${getFlashModel()}:generateContent?key=${config.GEMINI_API_KEY}`;
   let frameDir = null;
 
   try {
@@ -260,7 +271,7 @@ const basicGeminiHealthcheck = async () => {
   try {
     const result = await generateContent({
       prompt: "Responda apenas: ok",
-      model: "gemini-1.5-flash",
+      model: getFlashModel(),
       timeoutMs: 15000,
     });
     const ok = typeof result === "string" && result.toLowerCase().includes("ok");

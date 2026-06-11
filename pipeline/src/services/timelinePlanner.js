@@ -1529,7 +1529,7 @@ const buildTimeline = async ({
   const rawAssets = Array.isArray(state.assets_json?.raw_items)
     ? state.assets_json.raw_items
     : (Array.isArray(state.assets_json?.items) ? state.assets_json.items : []);
-  const approvedAssets = Array.isArray(state.assets_json?.approved_items)
+  const approvedAssets = (Array.isArray(state.assets_json?.approved_items) && state.assets_json.approved_items.length > 0)
     ? state.assets_json.approved_items
     : (Array.isArray(state.assets_json?.items) ? state.assets_json.items : []);
   const approvedWindowsContracts = Array.isArray(state.assets_json?.approved_windows)

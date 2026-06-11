@@ -11,6 +11,37 @@ const EMBEDDING_MODEL = "text-embedding-3-small";
 const EMBEDDING_BATCH_SIZE = 20;
 const CACHE_VERSION = 1;
 
+// Circuit breaker: falhas consecutivas OU total de chamadas acima do cap → usa Jaccard
+let _geminiEmbedFailures = 0;
+let _geminiEmbedTotalCalls = 0;
+let _geminiEmbedCircuitOpen = false;
+const GEMINI_EMBED_FAIL_THRESHOLD = 3;
+const GEMINI_EMBED_CALL_CAP = Number(process.env.GEMINI_EMBED_CALL_CAP || 50);
+
+const callGeminiEmbedding = async (text) => {
+  if (_geminiEmbedCircuitOpen) return null;
+  if (_geminiEmbedTotalCalls >= GEMINI_EMBED_CALL_CAP) {
+    if (!_geminiEmbedCircuitOpen) {
+      _geminiEmbedCircuitOpen = true;
+      logger.warn(`semanticMatcher: cap de ${GEMINI_EMBED_CALL_CAP} chamadas atingido — usando Jaccard pelo resto da sessão`);
+    }
+    return null;
+  }
+  _geminiEmbedTotalCalls++;
+  try {
+    const result = await generateGeminiEmbedding(text);
+    if (result) { _geminiEmbedFailures = 0; return result; }
+    _geminiEmbedFailures++;
+  } catch {
+    _geminiEmbedFailures++;
+  }
+  if (_geminiEmbedFailures >= GEMINI_EMBED_FAIL_THRESHOLD) {
+    _geminiEmbedCircuitOpen = true;
+    logger.warn("semanticMatcher: circuit breaker aberto — usando Jaccard pelo resto da sessão");
+  }
+  return null;
+};
+
 const openaiClient = config.OPENAI_API_KEY
   ? new OpenAI({
       apiKey: config.OPENAI_API_KEY,
@@ -72,9 +103,9 @@ const generateEmbedding = async (text) => {
     }
   }
 
-  // Provider 2: Gemini text-embedding-004
+  // Provider 2: Gemini (com circuit breaker)
   if (hasGemini()) {
-    return generateGeminiEmbedding(text);
+    return callGeminiEmbedding(text);
   }
 
   return null;
@@ -117,16 +148,16 @@ const generateEmbeddingsBatch = async (texts) => {
       } catch (error) {
         logger.warn("semanticMatcher: falha batch OpenAI, usando Gemini individual", { message: error.message });
         for (const text of batch) {
-          results.push(text.length > 0 ? await generateGeminiEmbedding(text) : null);
+          results.push(text.length > 0 ? await callGeminiEmbedding(text) : null);
         }
       }
     }
     return results;
   }
 
-  // Gemini: sem suporte a batch nativo
+  // Gemini: sem suporte a batch nativo (com circuit breaker)
   for (const text of validTexts) {
-    results.push(text.length > 0 ? await generateGeminiEmbedding(text) : null);
+    results.push(text.length > 0 ? await callGeminiEmbedding(text) : null);
   }
 
   return results;
