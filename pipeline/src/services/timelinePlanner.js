@@ -696,7 +696,15 @@ const filterCandidatesByHardRules = ({
 }) => {
   const expectedLocation = block.expected_location || block.location?.city || (block.topic_type === "city" ? block.macro_topic : "");
   const foodIntent = FOOD_VISUAL_INTENTS.has(String(block.visual_intent || "").toLowerCase());
-  let strict = assetWindows.filter((candidate) => isCandidateAllowedByHardRules({ block, candidate, previousMacroTopic }));
+
+  // Priorizar assets da mesma cena (scene_index) — impede contaminação cruzada entre blocos
+  const sceneLocal = assetWindows.filter((c) => c.scene_index === block.scene_index);
+  const sceneStrict = sceneLocal.filter((candidate) => isCandidateAllowedByHardRules({ block, candidate, previousMacroTopic }));
+
+  // Se a cena local não tem candidatos suficientes, expandir para pool global filtrado
+  let strict = sceneStrict.length >= 2
+    ? sceneStrict
+    : assetWindows.filter((candidate) => isCandidateAllowedByHardRules({ block, candidate, previousMacroTopic }));
 
   if (isBoundaryFirstSlot && hardBoundaryPolicy.forbid_neutral_first_clip) {
     strict = strict.filter((candidate) => !candidate.neutral);
@@ -832,12 +840,23 @@ const filterCandidatesByHardRules = ({
   return allowPlaceholderFallback ? [buildFallbackCandidate(fallbackAsset)] : [];
 };
 
-const getNarrationTextBetween = ({ words = [], startSeconds = 0, endSeconds = 0, fallback = "" }) => {
+const getNarrationTextBetween = ({ words = [], startSeconds = 0, endSeconds = 0, fallback = "", block = null }) => {
+  // Janela expandida: ±2s para capturar landmarks mencionados perto do slot
+  const expandedStart = Math.max(0, startSeconds - 2);
+  const expandedEnd = endSeconds + 2;
   const matchedWords = words
-    .filter((word) => Number(word.start || 0) < endSeconds && Number(word.end || 0) > startSeconds)
+    .filter((word) => Number(word.start || 0) < expandedEnd && Number(word.end || 0) > expandedStart)
     .map((word) => word.word)
     .filter(Boolean);
-  return matchedWords.length ? matchedWords.join(" ") : fallback;
+  let text = matchedWords.length ? matchedWords.join(" ") : fallback;
+
+  // Sempre anexar landmarks do bloco para que o ranking saiba o que a cena exige
+  if (block) {
+    const landmarkNames = (block.landmarks || []).map((l) => l.name).filter(Boolean);
+    if (landmarkNames.length) text += " " + landmarkNames.join(" ");
+    if (block.location?.city) text += " " + block.location.city;
+  }
+  return text;
 };
 
 const inferNarrativeSlotRole = ({ block = {}, slotIndex = 0, totalSlots = 1 }) => {
@@ -1621,6 +1640,7 @@ const buildTimeline = async ({
     usedBlockVisualSignatures: new Map(),
     usedBlockProviders: new Map(),
     usedBlockLandmarks: new Map(),
+    usedLandmarks: new Map(),
     lastClipByAssetId: new Map(),
   };
   const clips = [];
@@ -1656,6 +1676,7 @@ const buildTimeline = async ({
         startSeconds: slot.start,
         endSeconds: slot.end,
         fallback: sceneFallbackNarration,
+        block,
       });
       const candidatePool = prioritizeClipLibraryPoolForSlot({
         block,

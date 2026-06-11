@@ -326,17 +326,17 @@ const computeNamedEntityBlockReason = ({ narrationText, candidate, entityMatchSc
     return candidateLandmarkNames.includes(name) || candidateText.includes(name);
   });
 
-  // Cidade certa já é meio caminho: aceitar se a cidade do candidato bate
-  // com a cidade do landmark citado.
+  if (candidateHasEntity) return "";
+
   const candidateCity = candidate.location?.city || "";
   const candidateCityMatchesEntity = narrationLandmarks.some(
     (landmark) => landmark.city && candidateCity && isSameLocation(candidateCity, landmark.city)
   );
 
-  if (!candidateHasEntity && !candidateCityMatchesEntity && entityMatchScore <= 0) {
-    return "named_entity_in_narration_not_in_candidate";
-  }
-  return "";
+  // Cidade certa + score razoável: aceitar como regional match
+  if (candidateCityMatchesEntity && entityMatchScore > 0.2) return "";
+
+  return "named_entity_in_narration_not_in_candidate";
 };
 
 const computeHardBoundaryBlockReason = ({
