@@ -25,9 +25,7 @@ const RESUMABLE_STEPS = new Set([
   "audio_generated",
   "captions_generated",
   "audio_analyzed",
-  "audio_intelligence_ready",
   "assets_generated",
-  "assets_searched",
   "render_complete",
   "render_validated",
 ]);
@@ -61,25 +59,20 @@ const runPipeline = async ({ topic, videoId: existingVideoId, mockMode = false }
     logger.info(`[PIPELINE] Retomando a partir de: ${currentStep} (videoId: ${videoId})`);
   }
 
-  const AFTER_AUDIO    = ["audio_generated", "captions_generated", "audio_analyzed", "audio_intelligence_ready", "assets_generated", "assets_searched", "render_complete", "render_validated"];
-  const AFTER_CAPTIONS = ["captions_generated", "audio_analyzed", "audio_intelligence_ready", "assets_generated", "assets_searched", "render_complete", "render_validated"];
-  const AFTER_ANALYSIS = ["audio_analyzed", "audio_intelligence_ready", "assets_generated", "assets_searched", "render_complete", "render_validated"];
-  const AFTER_ASSETS   = ["assets_generated", "assets_searched", "render_complete", "render_validated"];
-
   // 2. Áudio
-  if (!AFTER_AUDIO.includes(currentStep)) {
+  if (!["audio_generated", "captions_generated", "audio_analyzed", "assets_generated", "render_complete", "render_validated"].includes(currentStep)) {
     logger.info("[PIPELINE] 2/7 — Gerando áudio");
     await generateAudio({ videoId, mockMode });
   }
 
   // 3. Legendas
-  if (!AFTER_CAPTIONS.includes(currentStep)) {
+  if (!["captions_generated", "audio_analyzed", "assets_generated", "render_complete", "render_validated"].includes(currentStep)) {
     logger.info("[PIPELINE] 3/7 — Gerando legendas");
     await generateCaptions({ videoId, mockMode });
   }
 
   // 4. Análise de áudio
-  if (!AFTER_ANALYSIS.includes(currentStep)) {
+  if (!["audio_analyzed", "assets_generated", "render_complete", "render_validated"].includes(currentStep)) {
     logger.info("[PIPELINE] 4/7 — Analisando áudio");
     await analyzeAudio({ videoId }).catch((err) =>
       logger.warn("[PIPELINE] Análise de áudio falhou (não crítico)", { message: err.message })
@@ -87,7 +80,7 @@ const runPipeline = async ({ topic, videoId: existingVideoId, mockMode = false }
   }
 
   // 5. Assets (biblioteca local → Pexels/Pixabay)
-  if (!AFTER_ASSETS.includes(currentStep)) {
+  if (!["assets_generated", "render_complete", "render_validated"].includes(currentStep)) {
     logger.info("[PIPELINE] 5/7 — Buscando assets");
     await generateAssets({ videoId, mockMode });
   }

@@ -545,13 +545,160 @@ const applyBlockBudgetToQueries = ({ entries = [], budgetProfile = {} }) => {
   };
 };
 
-const buildBlockQueryPlan = ({
-  block = {},
-  slots = [],
-  topic = "",
-  repairHints = {},
-  budgetProfile = {},
-}) => {
+const buildTermEntries = ({ scene = {}, topic = "", intent = "generic_travel" }) => {
+  const relatedIntents = unique([intent, ...inferRelatedIntents({ scene, topic })]);
+  const exactEntries = [];
+  const equivalentEntries = [];
+  const seenExact = new Set();
+  const seenEquivalent = new Set();
+
+  buildSceneKeywordTerms({ scene }).forEach((term) => {
+    pushTermEntry({ entries: exactEntries, seen: seenExact, term, reasonToken: `scene_keyword_${buildReasonToken(term)}` });
+  });
+
+  relatedIntents.forEach((relatedIntent) => {
+    (INTENT_QUERY_LIBRARY[relatedIntent] || []).forEach((term) => {
+      pushTermEntry({
+        entries: exactEntries,
+        seen: seenExact,
+        term,
+        reasonToken: `required_${buildReasonToken(term)}${relatedIntent !== intent ? `_via_${buildReasonToken(relatedIntent)}` : ""}`,
+      });
+    });
+  });
+
+  relatedIntents.forEach((relatedIntent) => {
+    (INTENT_EQUIVALENT_QUERY_LIBRARY[relatedIntent] || []).forEach((term) => {
+      pushTermEntry({
+        entries: equivalentEntries,
+        seen: seenEquivalent,
+        term,
+        reasonToken: `equivalent_${buildReasonToken(term)}${relatedIntent !== intent ? `_via_${buildReasonToken(relatedIntent)}` : ""}`,
+      });
+    });
+  });
+
+  return { exactEntries, equivalentEntries };
+};
+
+const isValidQueryForScene = ({ query = "", scene = {} }) => {
+  const normalizedQuery = normalizeLabel(query);
+  if (!normalizedQuery || normalizedQuery.split(/\s+/).length < 2) return false;
+  if (isFoodIntent(scene.visual_intent) && !containsGastronomyTerm(normalizedQuery)) return false;
+  if (!scene.generic_asset_allowed && GENERIC_TRAVEL_PATTERN.test(normalizedQuery) && !containsGastronomyTerm(normalizedQuery)) return false;
+  return true;
+};
+
+const pushQuery = ({ entries, seen, query, reason, scene }) => {
+  const normalizedQuery = normalizeLabel(query);
+  if (!isValidQueryForScene({ query: normalizedQuery, scene })) return;
+  if (seen.has(normalizedQuery)) return;
+  seen.add(normalizedQuery);
+  entries.push({ query: normalizedQuery, reason });
+};
+
+const shouldUseCityPresets = ({ scene = {}, intent = "generic_travel" }) =>
+  !isFoodIntent(intent) || Boolean(scene.generic_asset_allowed) || ["intro", "outro"].includes(String(scene.role || "body").toLowerCase());
+
+const buildFoodQueries = ({ entries, seen, cityTerms, countryTerms, exactEntries, equivalentEntries, intent, scene }) => {
+  cityTerms.forEach((cityTerm) => {
+    exactEntries.forEach(({ term, reasonToken }) => {
+      pushQuery({
+        entries,
+        seen,
+        query: `${cityTerm} ${term}`,
+        reason: `exact_city_${buildReasonToken(cityTerm)}_${reasonToken}`,
+        scene,
+      });
+    });
+  });
+
+  countryTerms.forEach((countryTerm) => {
+    exactEntries.forEach(({ term, reasonToken }) => {
+      pushQuery({
+        entries,
+        seen,
+        query: `${countryTerm} ${term}`,
+        reason: `regional_country_${buildReasonToken(countryTerm)}_${reasonToken}`,
+        scene,
+      });
+    });
+  });
+
+  // Fallback genérico SEM âncora geográfica só é permitido quando a cena
+  // aceita assets genéricos ou quando não há cidade/país conhecidos —
+  // "food market" solto retorna mercados de Bangkok/Marrakech.
+  const allowUnanchoredFallback = Boolean(scene.generic_asset_allowed) || (!cityTerms.length && !countryTerms.length);
+
+  if (allowUnanchoredFallback) {
+    exactEntries.forEach(({ term, reasonToken }) => {
+      pushQuery({
+        entries,
+        seen,
+        query: term,
+        reason: `fallback_exact_${intent}_${reasonToken}`,
+        scene,
+      });
+    });
+  }
+
+  countryTerms.forEach((countryTerm) => {
+    equivalentEntries.forEach(({ term, reasonToken }) => {
+      pushQuery({
+        entries,
+        seen,
+        query: `${countryTerm} ${term}`,
+        reason: `regional_equivalent_${buildReasonToken(countryTerm)}_${reasonToken}`,
+        scene,
+      });
+    });
+  });
+
+  if (allowUnanchoredFallback) {
+    equivalentEntries.forEach(({ term, reasonToken }) => {
+      pushQuery({
+        entries,
+        seen,
+        query: term,
+        reason: `fallback_equivalent_${intent}_${reasonToken}`,
+        scene,
+      });
+    });
+  }
+};
+
+const buildGeneralQueries = ({ entries, seen, cityTerms, countryTerms, scene, intent }) => {
+  const generalTerms = unique([
+    scene.subtheme || "travel",
+    ...buildSceneKeywordTerms({ scene }).slice(0, 4),
+  ]);
+
+  cityTerms.forEach((cityTerm) => {
+    generalTerms.forEach((term) => {
+      pushQuery({
+        entries,
+        seen,
+        query: `${cityTerm} ${term}`,
+        reason: `visual_intent_${intent} + city_${buildReasonToken(cityTerm)} + subtheme_${buildReasonToken(term)}`,
+        scene,
+      });
+    });
+  });
+
+  countryTerms.forEach((countryTerm) => {
+    generalTerms.forEach((term) => {
+      pushQuery({
+        entries,
+        seen,
+        query: `${countryTerm} ${term}`,
+        reason: `visual_intent_${intent} + country_${buildReasonToken(countryTerm)} + subtheme_${buildReasonToken(term)}`,
+        scene,
+      });
+    });
+  });
+};
+
+const buildSceneQueryPlan = ({ scene = {}, topic = "" }) => {
   const entries = [];
   const seen = new Set();
   const boundaryExpectedLocation = normalizeLabel(repairHints.boundary_expected_location || "");

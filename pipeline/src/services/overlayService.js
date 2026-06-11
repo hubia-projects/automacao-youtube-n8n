@@ -2,6 +2,8 @@ const fs = require("fs-extra");
 const path = require("path");
 const { config } = require("../config/env");
 const { runFfmpeg } = require("../utils/mediaUtils");
+const { isSameLocation } = require("./narrativeBlockPlanner");
+const { logger } = require("../utils/logger");
 
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -26,6 +28,9 @@ const buildBlockOverlays = ({
 
   return safeBlocks
     .filter((block, index) => {
+      // Só blocos com overlay_title válido geram overlay — blocos genéricos
+      // ("Introducao" etc.) já chegam aqui com overlay_title vazio.
+      if (!String(block.overlay_title || "").trim()) return false;
       if (index === 0) return String(block.topic || "").trim();
       return requireChapterOverlay ? true : Boolean(block.hard_boundary);
     })
@@ -35,17 +40,33 @@ const buildBlockOverlays = ({
         if (clip.macro_block_id && block.id && clip.macro_block_id === block.id) return true;
         return Number(clip.timeline_start_sec || 0) >= Number(block.start_seconds ?? block.start_sec ?? 0) - 0.001;
       });
+
+      // Nunca mostrar um rótulo de cidade sobre um clip de OUTRA cidade
+      // (ex: "Faro" sobre Lisboa). Se o clip sob o overlay tem cidade
+      // conhecida e incompatível com o tópico, suprime o overlay.
+      const clipCity = firstBoundaryClip?.location?.city || firstBoundaryClip?.detected_location?.city || "";
+      const blockCity = block.expected_location || block.location?.city || "";
+      if (blockCity && clipCity && !isSameLocation(clipCity, blockCity)) {
+        logger.warn("overlayService: overlay suprimido — clip de cidade diferente do rótulo", {
+          overlay: block.overlay_title,
+          block_city: blockCity,
+          clip_city: clipCity,
+        });
+        return null;
+      }
+
       const startSeconds = round3(Number(firstBoundaryClip?.timeline_start_sec ?? block.start_seconds ?? block.start_sec ?? 0));
 
       return {
         start_seconds: startSeconds,
         end_seconds: round3(startSeconds + 2.6),
-        text: block.overlay_title || `${index + 1}. ${block.label || block.topic || "Bloco"}`,
+        text: block.overlay_title,
         type: isBoundary ? "chapter_card_clip" : "block_title",
         block_id: block.block_id || block.id,
         boundary_id: block.boundary_id || "",
       };
-    });
+    })
+    .filter(Boolean);
 };
 
 const buildOverlayLayout = ({ videoWidth = Number(config.OUTPUT_WIDTH || 1920), videoHeight = Number(config.OUTPUT_HEIGHT || 1080) } = {}) => {
@@ -82,56 +103,35 @@ const buildOverlayFilter = ({ overlays = [], videoWidth = Number(config.OUTPUT_W
     const start = Number(overlay.start_seconds || 0);
     const end = Number(overlay.end_seconds || start + 2.5);
     const enable = `between(t,${start.toFixed(3)},${end.toFixed(3)})`;
-    parts.push(`drawbox=x=${layout.boxX}:y=${layout.boxY}:w=${layout.boxW}:h=${layout.boxH}:color=black@0.45:t=fill:enable='${enable}'`);
-    parts.push(`drawtext=fontfile='${fontPath}':text='${escapeDrawtext(overlay.text || "")}':fontcolor=white:fontsize=${layout.fontSize}:x=${layout.textX}:y=${layout.textY}:enable='${enable}'`);
+    // Fade in/out de 0.3s no texto — overlays que aparecem/somem secos
+    // denunciam template.
+    const fadeAlpha = `if(lt(t,${(start + 0.3).toFixed(3)}),(t-${start.toFixed(3)})/0.3,if(gt(t,${(end - 0.3).toFixed(3)}),(${end.toFixed(3)}-t)/0.3,1))`;
+    parts.push(`drawbox=x=w*0.06:y=h*0.08:w=w*0.42:h=92:color=black@0.45:t=fill:enable='${enable}'`);
+    parts.push(`drawtext=fontfile='${fontPath}':text='${escapeDrawtext(overlay.text || "")}':fontcolor=white:fontsize=42:x=w*0.09:y=h*0.115:alpha='${fadeAlpha}':enable='${enable}'`);
   });
   return parts.join(",");
 };
 
-const preflightOverlayFilter = async ({ overlays = [], videoWidth = Number(config.OUTPUT_WIDTH || 1920), videoHeight = Number(config.OUTPUT_HEIGHT || 1080) }) => {
-  if (!overlays.length) return { ok: true, status: "skipped" };
-  const filter = buildOverlayFilter({ overlays, videoWidth, videoHeight });
-  await runFfmpeg([
-    "-v",
-    "error",
-    "-f",
-    "lavfi",
-    "-i",
-    `color=c=black:s=${Math.max(640, Number(videoWidth || 1920))}x${Math.max(360, Number(videoHeight || 1080))}:d=1`,
-    "-vf",
-    filter,
-    "-frames:v",
-    "1",
-    "-f",
-    "null",
-    "-",
-  ]);
-  return { ok: true, status: "ok" };
+const buildBurnedCaptionsFilter = (subtitlePath) => {
+  if (!subtitlePath) return "";
+  const escaped = String(subtitlePath).replace(/\\/g, "/").replace(/:/g, "\\:").replace(/,/g, "\\,").replace(/'/g, "\\'");
+  // Estilo discreto: 2 linhas máx (quebra do SRT), fonte semibold, outline
+  // suave, margem segura inferior.
+  const style = "FontName=DejaVu Sans,FontSize=20,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H66000000,BorderStyle=1,Outline=1.4,Shadow=0.6,MarginV=42";
+  return `subtitles='${escaped}':force_style='${style}'`;
 };
 
-const applyOverlaysToVideo = async ({
-  inputPath,
-  outputPath,
-  overlays = [],
-  fps = config.OUTPUT_FPS || 30,
-  videoBitrate = config.VIDEO_BITRATE || "6M",
-  maxVideoBitrate = config.MAX_VIDEO_BITRATE || "8M",
-  videoWidth = Number(config.OUTPUT_WIDTH || 1920),
-  videoHeight = Number(config.OUTPUT_HEIGHT || 1080),
-  runPreflight = true,
-}) => {
-  if (!overlays.length) {
+const applyOverlaysToVideo = async ({ inputPath, outputPath, overlays = [], subtitlePath = "", fps = config.OUTPUT_FPS || 30, videoBitrate = config.VIDEO_BITRATE || "6M", maxVideoBitrate = config.MAX_VIDEO_BITRATE || "8M" }) => {
+  const captionsFilter = config.BURN_CAPTIONS ? buildBurnedCaptionsFilter(subtitlePath) : "";
+
+  if (!overlays.length && !captionsFilter) {
     if (inputPath !== outputPath) {
       await fs.copy(inputPath, outputPath, { overwrite: true });
     }
     return outputPath;
   }
 
-  if (runPreflight) {
-    await preflightOverlayFilter({ overlays, videoWidth, videoHeight });
-  }
-
-  const filter = buildOverlayFilter({ overlays, videoWidth, videoHeight });
+  const filter = [buildOverlayFilter({ overlays }), captionsFilter].filter(Boolean).join(",");
   await runFfmpeg([
     "-y",
     "-i",

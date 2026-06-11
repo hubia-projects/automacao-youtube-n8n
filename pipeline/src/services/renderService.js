@@ -6,9 +6,7 @@ const { createPlaceholderImage, probeMedia, runFfmpeg } = require("../utils/medi
 const { isPlaceholderAsset, shouldAllowPlaceholderAssets } = require("./assetReadinessService");
 const { buildTimeline, chooseOutputResolution } = require("./timelinePlanner");
 const { analyzeAudio } = require("./audioIntelligence");
-const { applyOverlaysToVideo, buildBlockOverlays, preflightOverlayFilter } = require("./overlayService");
-const { summarizeClipLibrary } = require("./clipLibraryService");
-const { appendPipelineEvent } = require("./pipelineEventLogService");
+const { applyOverlaysToVideo, buildBlockOverlays } = require("./overlayService");
 const { config } = require("../config/env");
 const { logger } = require("../utils/logger");
 
@@ -20,23 +18,11 @@ const PREFERRED_OUTPUT = { width: Number(config.OUTPUT_WIDTH || 1920), height: N
 const VIDEO_BITRATE = String(config.VIDEO_BITRATE || "6M");
 const MAX_VIDEO_BITRATE = String(config.MAX_VIDEO_BITRATE || "8M");
 const AUDIO_BITRATE = "192k";
-const TRANSITION_DURATION = 0.3;  // [M5] reduzido de 0.45 para 0.3s
+const TRANSITION_DURATION = 0.45;
 const TARGET_AVERAGE_CLIP_DURATION = 6;
 const MIN_CLIP_DURATION = 3;
 const MAX_CLIP_DURATION = 10;
 const OUTPUT_FPS = Number(config.OUTPUT_FPS || 30);
-const PRE_RENDER_CRITICAL_BLOCKING_REASONS = new Set([
-  "missing_exact_for_required_proof",
-  "no_proof_for_promise",
-  "missing_theme_visual_proof",
-  "scene_missing_theme_visual_proof",
-  "block_coverage_insufficient",
-  "scene_block_coverage_insufficient",
-  "block_coverage_partial",
-  "scene_block_coverage_partial",
-  "critical_slot_only_generic",
-  "diversity_bypass_on_critical_slot",
-]);
 const SCRIPT_TERM_STOPWORDS = new Set([
   "a",
   "ao",
@@ -995,7 +981,6 @@ const pickSceneAsset = ({
   usageByWindowKey = new Map(),
   usageBySemanticKey = new Map(),
   recentLocations = [],
-  clipScoreHint = 0,  // M1: CLIP image-text bonus (0 = no hint)
 }) => {
   if (!sceneAssets.length) {
     return {
@@ -1065,8 +1050,7 @@ const pickSceneAsset = ({
         Math.min(1.25, window.confidence || 0) +
         (asset.analysis_windows?.length ? 1.1 : 0) +
         (assetIndex === baselineIndex ? 0.35 : 0) +
-        (isVideoAsset(asset) ? 0.2 : 0) +
-        clipScoreHint * 3.5 -  // M1: CLIP image-text similarity bonus
+        (isVideoAsset(asset) ? 0.2 : 0) -
         assetReuseIndex * 2.0 -
         windowReuseIndex * 2 -
         semanticReuseIndex * 1.35 -
@@ -1240,45 +1224,10 @@ const buildClipPlan = async ({ state, audioDuration, draftVersion, fallbackAsset
   const recentLocations = [];
   const MAX_RECENT_LOCATIONS = 3;
 
-  // M1: lazy-load CLIP matcher (fail-open if unavailable)
-  let matchBlockToClipCLIP = null;
-  try { ({ matchBlockToClipCLIP } = require("./semanticMatcher")); } catch { /* no CLIP */ }
-
-  // M3: build structured_blocks lookup for DALL-E 3 override
-  const structuredBlocksMap = {};
-  if (Array.isArray(state.structured_blocks)) {
-    for (const block of state.structured_blocks) {
-      if (block?.block_id) structuredBlocksMap[block.block_id] = block;
-    }
-  }
-
-  const clips = [];
-  for (const [index, ref] of sceneRefs.entries()) {
+  return sceneRefs.map((ref, index) => {
     const scene = ref.scene;
     const occurrenceIndex = ref.occurrenceIndex;
     const clipScriptExcerpt = clipNarrationExcerptsByScene.get(scene.scene_index)?.[occurrenceIndex] || scene.narration_excerpt || scene.title;
-
-    // M1: compute CLIP score for first candidate asset (best-effort, fail-open)
-    let clipScoreHint = 0;
-    try {
-      if (matchBlockToClipCLIP) {
-        const sceneAssets = getSceneAssets({ scene, state, sceneAssetMap });
-        const firstAsset = sceneAssets[0];
-        if (firstAsset?.local_path && isVideoAsset(firstAsset)) {
-          const clipResult = await matchBlockToClipCLIP({
-            text: clipScriptExcerpt,
-            videoPath: firstAsset.local_path,
-            videoId,
-            fallbackScore: 0,
-          });
-          clipScoreHint = clipResult.score || 0;
-          if (clipScoreHint > 0) {
-            logger.debug(`[M1] CLIP score: ${clipScoreHint} para cena ${scene.scene_index}`, { method: clipResult.method });
-          }
-        }
-      }
-    } catch { /* fail-open: clipScoreHint stays 0 */ }
-
     const pickedAsset = pickSceneAsset({
       sceneAssets: getSceneAssets({ scene, state, sceneAssetMap }),
       scene,
@@ -1291,9 +1240,8 @@ const buildClipPlan = async ({ state, audioDuration, draftVersion, fallbackAsset
       usageByWindowKey,
       usageBySemanticKey,
       recentLocations,
-      clipScoreHint,
     });
-    let asset = pickedAsset.asset;
+    const asset = pickedAsset.asset;
     const assetKey = asset?.local_path || `${scene.scene_index}:${occurrenceIndex}`;
     const assetReuseIndex = pickedAsset.assetReuseIndex;
     usageByAssetKey.set(assetKey, assetReuseIndex + 1);
@@ -1315,24 +1263,6 @@ const buildClipPlan = async ({ state, audioDuration, draftVersion, fallbackAsset
       recentLocations.shift();
     }
 
-    // M3 — Vertex AI image override for blocks with visual_type="specific"
-    try {
-      const blockEntry = structuredBlocksMap[String(scene.block_id || "")];
-      if (blockEntry?.visual_type === "specific" && blockEntry?.visual_description) {
-        const videoPaths = await ensureVideoStructure(String(state.video_id || ""));
-        const vertexImageOutputPath = path.join(videoPaths.base, "assets", "raw", `vertex_image_${blockEntry.block_id}.png`);
-        if (!(await fs.pathExists(vertexImageOutputPath))) {
-          await fs.ensureDir(path.dirname(vertexImageOutputPath));
-          const { generateImageWithGemini } = require("./geminiService");
-          await generateImageWithGemini({ prompt: blockEntry.visual_description, videoId: state.video_id, outputPath: vertexImageOutputPath });
-        }
-        if (await fs.pathExists(vertexImageOutputPath)) {
-          asset = { ...asset, local_path: vertexImageOutputPath, asset_type: "image", provider: "vertex_ai_generated", query: blockEntry.visual_description, source_tier: "generated" };
-          logger.debug(`[M3] Asset substituido por Vertex AI para bloco ${blockEntry.block_id}`, { videoId });
-        }
-      }
-    } catch { /* fail-open: usar asset original */ }
-
     const clipDurationSeconds = clipDurationsByScene.get(scene.scene_index)?.[occurrenceIndex] || MIN_CLIP_DURATION;
     const sourceWindow = isVideoAsset(asset)
       ? buildVideoSourceWindow({
@@ -1350,7 +1280,7 @@ const buildClipPlan = async ({ state, audioDuration, draftVersion, fallbackAsset
           asset_duration_seconds: round3(getAssetDuration(asset)),
         };
 
-    clips.push({
+    return {
       clip_index: index + 1,
       scene_index: scene.scene_index,
       scene_role: scene.role,
@@ -1369,9 +1299,8 @@ const buildClipPlan = async ({ state, audioDuration, draftVersion, fallbackAsset
       asset_window_start_seconds: Number(pickedAsset.selectedWindow?.start_seconds || 0),
       asset_window_end_seconds: Number(pickedAsset.selectedWindow?.end_seconds || 0),
       asset,
-    });
-  }
-  return clips;
+    };
+  });
 };
 
 const buildVideoFilter = ({ width, height }) =>
@@ -1654,152 +1583,11 @@ const ensureAudioIntelligenceReady = async ({ videoId, state }) => {
   return state;
 };
 
-const evaluateRenderPreflightGate = ({ state = {}, mockMode = false, allowRuntimeFallback = false } = {}) => {
-  const enabled = Boolean(config.PRE_RENDER_EDITORIAL_FAIL_FAST);
-  const runtimeProfile = String(config.QA_RUNTIME_PROFILE_PROD || "prod_strict").toLowerCase();
-  if (!enabled || mockMode || runtimeProfile !== "prod_strict") {
-    return {
-      enabled,
-      shouldAbort: false,
-      failure_codes: [],
-      approved_windows_count: Array.isArray(state.assets_json?.approved_windows) ? state.assets_json.approved_windows.length : 0,
-      blocked_scene_indexes: [],
-    };
-  }
-
-  const approvedWindows = Array.isArray(state.assets_json?.approved_windows) ? state.assets_json.approved_windows : [];
-  const sceneReadiness = Array.isArray(state.assets_json?.scene_editorial_readiness) ? state.assets_json.scene_editorial_readiness : [];
-  const blockCoverage = Array.isArray(state.assets_json?.block_coverage_by_block) ? state.assets_json.block_coverage_by_block : [];
-  const blockPackages = Array.isArray(state.assets_json?.block_packages) ? state.assets_json.block_packages : [];
-  const timelineClips = Array.isArray(state.render_timeline?.clips) ? state.render_timeline.clips : [];
-  const strictStrongOnly = Boolean(config.EDITORIAL_STRONG_ONLY_PRE_RENDER);
-  const allowPartialCoverage = Boolean(config.COVERAGE_GATE_ALLOW_PARTIAL);
-  const blockedCriticalScenes = sceneReadiness
-    .filter((scene) => (scene.blocking_reasons || []).some((reason) => PRE_RENDER_CRITICAL_BLOCKING_REASONS.has(String(reason || ""))))
-    .map((scene) => Number(scene.scene_index || 0))
-    .filter((sceneIndex) => sceneIndex > 0);
-  const insufficientCoverageScenes = sceneReadiness
-    .filter((scene) => String(scene.coverage_status || "").toLowerCase() === "insufficient")
-    .map((scene) => Number(scene.scene_index || 0))
-    .filter((sceneIndex) => sceneIndex > 0);
-  const partialReadinessScenes = sceneReadiness
-    .filter((scene) => String(scene.coverage_status || "").toLowerCase() === "partial")
-    .map((scene) => Number(scene.scene_index || 0))
-    .filter((sceneIndex) => sceneIndex > 0);
-  const sceneIndexesByBlockId = blockPackages.reduce((acc, blockPackage) => {
-    const blockId = String(blockPackage.block_id || "").trim();
-    if (!blockId) return acc;
-    acc[blockId] = (blockPackage.scene_indexes || [])
-      .map((sceneIndex) => Number(sceneIndex || 0))
-      .filter((sceneIndex) => sceneIndex > 0);
-    return acc;
-  }, {});
-  const partialBlockScenes = blockCoverage
-    .filter((block) => String(block.coverage_status || "").toLowerCase() === "partial")
-    .flatMap((block) => sceneIndexesByBlockId[String(block.block_id || "").trim()] || []);
-  const criticalSlotOnlyGenericScenes = sceneReadiness
-    .filter((scene) => (scene.blocking_reasons || []).includes("critical_slot_only_generic"))
-    .map((scene) => Number(scene.scene_index || 0))
-    .filter((sceneIndex) => sceneIndex > 0);
-  const diversityBypassCriticalClips = timelineClips.filter((clip) =>
-    clip.critical_slot === true
-    && (clip.editorial_slot_violation_codes || []).includes("diversity_bypass_on_critical_slot")
-  );
-  const criticalGenericClips = timelineClips.filter((clip) =>
-    clip.critical_slot === true
-    && String(clip.visual_truth_status || "").toLowerCase() === "generic"
-  );
-  const failureCodes = [];
-  if (!approvedWindows.length) failureCodes.push("NO_APPROVED_WINDOWS");
-  if (!allowRuntimeFallback && insufficientCoverageScenes.length) failureCodes.push("INSUFFICIENT_BLOCK_COVERAGE");
-  if (strictStrongOnly && !allowPartialCoverage && (partialReadinessScenes.length || partialBlockScenes.length)) {
-    failureCodes.push("PARTIAL_BLOCK_COVERAGE");
-  }
-  if (criticalSlotOnlyGenericScenes.length || criticalGenericClips.length) {
-    failureCodes.push("CRITICAL_SLOT_ONLY_GENERIC");
-  }
-  if (diversityBypassCriticalClips.length && criticalGenericClips.length) {
-    failureCodes.push("DIVERSITY_BYPASS_ON_CRITICAL_SLOT");
-  }
-  if (!allowRuntimeFallback && sceneReadiness.length && blockedCriticalScenes.length === sceneReadiness.length) {
-    failureCodes.push("ALL_SCENES_EDITORIALLY_BLOCKED");
-  }
-  if (!allowRuntimeFallback && blockedCriticalScenes.length) {
-    failureCodes.push("EDITORIAL_BLOCKING_SCENES_FOUND");
-  }
-
-  const progressiveMode = String(process.env.QA_MODE || 'strict').toLowerCase() === 'progressive';
-  const PROGRESSIVE_SOFT_PREFLIGHT_CODES = new Set([
-    'PARTIAL_BLOCK_COVERAGE', 'CRITICAL_SLOT_ONLY_GENERIC', 'DIVERSITY_BYPASS_ON_CRITICAL_SLOT',
-  ]);
-  const activeFailureCodes = progressiveMode
-    ? failureCodes.filter((c) => !PROGRESSIVE_SOFT_PREFLIGHT_CODES.has(c))
-    : failureCodes;
-  const preflightWarnings = progressiveMode
-    ? failureCodes.filter((c) => PROGRESSIVE_SOFT_PREFLIGHT_CODES.has(c))
-    : [];
-
-  return {
-    enabled,
-    shouldAbort: activeFailureCodes.length > 0,
-    failure_codes: unique(activeFailureCodes),
-    editorial_warnings: preflightWarnings,
-    approved_windows_count: approvedWindows.length,
-    blocked_scene_indexes: unique([
-      ...blockedCriticalScenes,
-      ...insufficientCoverageScenes,
-      ...partialReadinessScenes,
-      ...partialBlockScenes,
-      ...criticalSlotOnlyGenericScenes,
-      ...diversityBypassCriticalClips.map((clip) => Number(clip.scene_index || 0)).filter((sceneIndex) => sceneIndex > 0),
-      ...criticalGenericClips.map((clip) => Number(clip.scene_index || 0)).filter((sceneIndex) => sceneIndex > 0),
-    ]),
-    partial_scene_indexes: unique([...partialReadinessScenes, ...partialBlockScenes]),
-    strict_strong_only: strictStrongOnly,
-  };
-};
-
-const isStrictRenderRuntimeProfile = ({ mockMode = false } = {}) => {
-  if (mockMode) return false;
-  return String(config.QA_RUNTIME_PROFILE_PROD || "prod_strict").toLowerCase() === "prod_strict";
-};
-
-const resolveRenderRuntimeFallbackPolicy = ({ mockMode = false } = {}) => {
-  const progressiveTestMode = String(process.env.QA_MODE || 'strict').toLowerCase() === 'progressive';
-  const strictRenderMode = progressiveTestMode ? false : isStrictRenderRuntimeProfile({ mockMode });
-  const allowPlaceholderAssets = progressiveTestMode || (!strictRenderMode && shouldAllowPlaceholderAssets({ mockMode }));
-  const runtimeDegradationEnabled = progressiveTestMode || (!strictRenderMode && Boolean(config.RUNTIME_DEGRADE_ON_MISSING_ASSETS !== false));
-  const allowRuntimeFallback = progressiveTestMode || allowPlaceholderAssets || runtimeDegradationEnabled;
-
-  return {
-    strictRenderMode,
-    allowPlaceholderAssets,
-    runtimeDegradationEnabled,
-    allowRuntimeFallback,
-  };
-};
-
 const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = "" }) => {
-  const stageStartedAt = Date.now();
-  await appendPipelineEvent({
-    videoId,
-    stage: "render",
-    event: "start",
-    status: "running",
-    payload: {
-      mock_mode: Boolean(mockMode),
-    },
-  }).catch(() => null);
-
-  try {
   let state = await loadState(videoId);
   const paths = await ensureVideoStructure(videoId);
   const draftVersion = getDraftVersion(state);
-  const {
-    strictRenderMode,
-    runtimeDegradationEnabled,
-    allowRuntimeFallback,
-  } = resolveRenderRuntimeFallbackPolicy({ mockMode });
+  const allowPlaceholderAssets = shouldAllowPlaceholderAssets({ mockMode });
 
   if (!state.audio_path || !(await fs.pathExists(state.audio_path))) {
     throw new Error("Áudio não encontrado para renderização.");
@@ -1807,13 +1595,13 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
 
   const renderPath = paths.renderPath;
   const fallbackImagePath = path.join(paths.base, "assets", "raw", "render-fallback.png");
-  if (allowRuntimeFallback) {
+  if (allowPlaceholderAssets) {
     await createFallbackImage(fallbackImagePath, draftVersion);
   }
 
   const audioInfo = await probeMedia(state.audio_path).catch(() => ({ duration: 0 }));
   const audioDuration = Math.max(10, Number(audioInfo.duration || state.duration_seconds || 95));
-  const fallbackAsset = allowRuntimeFallback
+  const fallbackAsset = allowPlaceholderAssets
     ? {
         scene_index: 0,
         provider: "render_fallback",
@@ -1825,34 +1613,10 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
           label: "Full HD",
         },
         duration_estimate: 6,
-        is_fallback: true,
       }
     : null;
 
   state = await ensureAudioIntelligenceReady({ videoId, state });
-
-  const preflightGate = evaluateRenderPreflightGate({
-    state,
-    mockMode,
-    allowRuntimeFallback,
-  });
-  if (preflightGate.shouldAbort) {
-    await updateState(
-      videoId,
-      {
-        render_preflight: {
-          evaluated_at: new Date().toISOString(),
-          ...preflightGate,
-        },
-        error_message: `Render bloqueado no preflight editorial: ${preflightGate.failure_codes.join(", ")}`,
-      },
-      {
-        currentStep: "render_blocked_preflight",
-        status: "render_blocked_preflight",
-      }
-    );
-    throw new Error(`Render blocked by editorial preflight (${preflightGate.failure_codes.join(", ")}).`);
-  }
 
   // Use the new timeline planner (audio intelligence + semantic matching)
   logger.info("renderService: construindo timeline", {
@@ -1866,14 +1630,12 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     audioDuration,
     draftVersion,
     fallbackAsset,
-    allowPlaceholderFallback: allowRuntimeFallback,
-    allowApprovedPoolDegrade: !strictRenderMode,
+    allowPlaceholderFallback: allowPlaceholderAssets,
   });
 
   const clipPlan = timelineResult.clipPlan || timelineResult.clips || [];
-  const usesPlaceholderInPlan = clipPlan.some((clip) => isPlaceholderAsset(clip.asset));
 
-  if (!allowRuntimeFallback && usesPlaceholderInPlan) {
+  if (!allowPlaceholderAssets && clipPlan.some((clip) => isPlaceholderAsset(clip.asset))) {
     throw new Error("Render blocked: placeholder asset detected in clip plan.");
   }
 
@@ -1885,26 +1647,6 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
   });
 
   const outputResolution = chooseOutputResolution(clipPlan);
-  const overlays = buildBlockOverlays({
-    narrativeBlocks: timelineResult.narrativeBlocks || [],
-    clips: clipPlan,
-    enabled: config.ENABLE_BLOCK_OVERLAYS,
-    requireChapterOverlay: Boolean(config.HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY),
-  });
-  if (overlays.length) {
-    try {
-      await preflightOverlayFilter({
-        overlays,
-        videoWidth: outputResolution.width,
-        videoHeight: outputResolution.height,
-      });
-    } catch (error) {
-      const overlayFailFast = !mockMode && Boolean(config.HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY);
-      if (overlayFailFast) {
-        throw new Error(`Render blocked: overlay preflight failed (${String(error?.message || "overlay_preflight_failed")}).`);
-      }
-    }
-  }
   const segmentsDir = path.join(paths.base, "render", "segments");
   await fs.emptyDir(segmentsDir);
 
@@ -1931,7 +1673,7 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
         assetDurationSeconds: clip.asset_duration_seconds,
       });
     } catch {
-      if (!allowRuntimeFallback) {
+      if (!allowPlaceholderAssets) {
         throw new Error(`Render blocked: segment fallback disabled for scene ${clip.scene_index}.`);
       }
 
@@ -1954,7 +1696,7 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
   }
 
   const requiresExactSync = Boolean(timelineResult.requiresExactSync || timelineResult.renderStrategy === "concat");
-  let renderStrategy = "xfade";  // [M5] xfade padrão para todos os casos; concat é fallback
+  let renderStrategy = requiresExactSync ? "concat" : "xfade";
   let transition = requiresExactSync ? "none" : "fade";
   logger.info("renderService: segmentos prontos, iniciando composicao final", {
     videoId,
@@ -2001,7 +1743,7 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     } catch {
       renderStrategy = "single_fallback";
       transition = "none";
-      if (!allowRuntimeFallback) {
+      if (!allowPlaceholderAssets) {
         throw new Error("Render blocked: final composition fallback disabled in production.");
       }
       await renderUltimateFallback({
@@ -2013,74 +1755,59 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     }
   }
 
-  let finalRenderPath = renderPath;
-
-  // M4 — Background music mixing (fail-open)
-  const effectiveMusicPath = backgroundMusicPath || config.BACKGROUND_MUSIC_PATH || "";
-  if (effectiveMusicPath && !mockMode) {
-    const musicExists = await fs.pathExists(effectiveMusicPath).catch(() => false);
-    if (musicExists) {
-      try {
-        const videoDuration = round3(audioDuration);
-        const fadeoutStart = round3(Math.max(0, videoDuration - 2));
-        const musicOutputPath = path.join(paths.base, "render", "final-with-music.mp4");
-        await runFfmpeg([
-          "-y",
-          "-i", finalRenderPath,
-          "-stream_loop", "-1",
-          "-i", effectiveMusicPath,
-          "-filter_complex",
-          `[1:a]aloop=loop=-1:size=2e+09,atrim=0:${videoDuration},` +
-          `afade=t=in:st=0:d=1,afade=t=out:st=${fadeoutStart}:d=2,volume=0.1[music];` +
-          `[0:a][music]amix=inputs=2:duration=first:normalize=0[aout]`,
-          "-map", "0:v",
-          "-map", "[aout]",
-          "-c:v", "copy",
-          "-c:a", "aac",
-          "-b:a", AUDIO_BITRATE,
-          "-shortest",
-          "-movflags", "+faststart",
-          musicOutputPath,
-        ]);
-        finalRenderPath = musicOutputPath;
-        logger.info("[M4] Background music mixed", { videoId, musicPath: effectiveMusicPath, videoDuration });
-      } catch (error) {
-        logger.warn("[M4] Background music mixing failed — skipping", { videoId, message: error.message });
-        // fail-open: usar render sem música
-      }
-    } else if (effectiveMusicPath) {
-      logger.warn("[M4] BACKGROUND_MUSIC_PATH definido mas arquivo não encontrado — pulando mix", { musicPath: effectiveMusicPath });
+  const musicPath = backgroundMusicPath || config.BACKGROUND_MUSIC_PATH || "";
+  if (musicPath && !mockMode && (await fs.pathExists(musicPath))) {
+    // Mixa trilha em loop sob a narração (ducking fixo) + loudnorm para
+    // o alvo do YouTube (-14 LUFS).
+    const mixedPath = path.join(paths.base, "render", "final-with-music.mp4");
+    const musicVolume = Math.max(0.02, Math.min(0.5, Number(config.BACKGROUND_MUSIC_VOLUME || 0.12)));
+    try {
+      await runFfmpeg([
+        "-y",
+        "-i", renderPath,
+        "-stream_loop", "-1",
+        "-i", musicPath,
+        "-filter_complex",
+        `[1:a]volume=${musicVolume}[bg];[0:a][bg]amix=inputs=2:duration=first:dropout_transition=2,loudnorm=I=-14:TP=-1.5:LRA=11[aout]`,
+        "-map", "0:v:0",
+        "-map", "[aout]",
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-shortest",
+        mixedPath,
+      ]);
+      await fs.move(mixedPath, renderPath, { overwrite: true });
+    } catch (error) {
+      logger.warn("renderService: falha ao mixar música de fundo — seguindo sem", { message: error.message });
     }
   }
-  let overlayApplyStatus = overlays.length ? "pending" : "skipped";
-  let overlayApplyError = "";
-  let overlayOutputPath = "";
-  if (overlays.length) {
+
+  const overlays = buildBlockOverlays({
+    narrativeBlocks: timelineResult.narrativeBlocks || [],
+    clips: clipPlan,
+    enabled: config.ENABLE_BLOCK_OVERLAYS,
+    requireChapterOverlay: Boolean(config.HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY),
+  });
+  const subtitlePath = config.BURN_CAPTIONS && state.caption_path_srt && (await fs.pathExists(state.caption_path_srt))
+    ? state.caption_path_srt
+    : "";
+  let finalRenderPath = renderPath;
+  if (overlays.length || subtitlePath) {
     const overlayPath = path.join(paths.base, "render", "final-with-overlays.mp4");
     try {
       await applyOverlaysToVideo({
         inputPath: renderPath,
         outputPath: overlayPath,
         overlays,
+        subtitlePath,
         fps: OUTPUT_FPS,
         videoBitrate: VIDEO_BITRATE,
         maxVideoBitrate: MAX_VIDEO_BITRATE,
-        videoWidth: Number(outputResolution.width || config.OUTPUT_WIDTH || 1920),
-        videoHeight: Number(outputResolution.height || config.OUTPUT_HEIGHT || 1080),
-        runPreflight: false,
       });
       finalRenderPath = overlayPath;
-      overlayApplyStatus = "applied";
-      overlayOutputPath = overlayPath;
-    } catch (error) {
-      overlayApplyStatus = "failed";
-      overlayApplyError = String(error?.message || "overlay_apply_failed");
-      const overlayFailFast = !mockMode && Boolean(config.HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY);
-      if (overlayFailFast) {
-        throw new Error(`Render blocked: mandatory overlay failed (${overlayApplyError}).`);
-      }
+    } catch {
       finalRenderPath = renderPath;
-      overlayOutputPath = renderPath;
     }
   }
 
@@ -2094,23 +1821,6 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
   const outputInfo = await probeMedia(finalRenderPath).catch(() => ({ width: 0, height: 0, duration: audioDuration }));
   const uniqueAssetCount = new Set(clipPlan.map((clip) => clip.asset?.local_path).filter(Boolean)).size;
   const semanticScores = clipPlan.map((clip) => Number((clip.timeline_score ?? clip.composite_score ?? clip.semantic_match_score) || 0));
-  const clipLibrarySummary = config.USE_CLIP_LIBRARY
-    ? await summarizeClipLibrary({ videoId }).catch(() => ({
-      clips_generated: 0,
-      clips_approved: 0,
-      clip_reuse_ratio: 0,
-      generated_clip_ids: [],
-      approved_clip_ids: [],
-      last_updated_at: "",
-    }))
-    : {
-      clips_generated: 0,
-      clips_approved: 0,
-      clip_reuse_ratio: 0,
-      generated_clip_ids: [],
-      approved_clip_ids: [],
-      last_updated_at: "",
-    };
 
   const nextState = await updateState(
     videoId,
@@ -2120,9 +1830,6 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
       render_timeline: {
         strategy: renderStrategy,
         transition,
-        overlay_apply_status: overlayApplyStatus,
-        overlay_apply_error: overlayApplyError,
-        overlay_output_path: overlayOutputPath,
         output_resolution: `${outputInfo.width || outputResolution.width}x${outputInfo.height || outputResolution.height}`,
         output_duration_seconds: round3(outputInfo.duration || audioDuration),
         total_clips: clipPlan.length,
@@ -2131,18 +1838,8 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
         low_confidence_clip_count: semanticScores.filter((score) => score < 0).length,
         sync_policy: timelineResult.syncPolicy || {},
         hard_boundary_policy: timelineResult.hardBoundaryPolicy || {},
-        runtime_degraded: usesPlaceholderInPlan,
-        runtime_degradation_enabled: allowRuntimeFallback,
         narrative_blocks: timelineResult.narrativeBlocks || [],
         timeline_sync_metrics: timelineResult.timelineSyncMetrics || {},
-        micro_sync_metrics: {
-          micro_critical_total: Number(timelineResult.timelineSyncMetrics?.micro_critical_total || 0),
-          micro_critical_covered: Number(timelineResult.timelineSyncMetrics?.micro_critical_covered || 0),
-          micro_mismatch_rate: Number(timelineResult.timelineSyncMetrics?.micro_mismatch_rate || 0),
-          micro_timing_drift_avg: Number(timelineResult.timelineSyncMetrics?.micro_timing_drift_avg || 0),
-          micro_timing_drift_max: Number(timelineResult.timelineSyncMetrics?.micro_timing_drift_max || 0),
-          micro_coverage_gaps: timelineResult.timelineSyncMetrics?.micro_coverage_gaps || [],
-        },
         hard_boundary_status: timelineResult.timelineSyncMetrics?.hard_boundary_status || "unknown",
         max_visual_lag_sec: Number(timelineResult.timelineSyncMetrics?.max_visual_lag_sec || 0),
         asset_windows_count: Array.isArray(timelineResult.assetWindows) ? timelineResult.assetWindows.length : 0,
@@ -2159,14 +1856,6 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
           clip_end_narrated_at: clip.clip_end_narrated_at,
           clip_script_excerpt: clip.clip_script_excerpt,
           clip_script_source: clip.clip_script_source,
-          micro_id: clip.micro_id || "",
-          micro_visual_need: clip.micro_visual_need || "",
-          micro_timing_score: Number(clip.micro_timing_score || 0),
-          micro_timing_drift_sec: Number(clip.micro_timing_drift_sec || 0),
-          micro_match_score: Number(clip.micro_match_score || 0),
-          micro_action_match_score: Number(clip.micro_action_match_score || 0),
-          micro_composite_score: Number(clip.micro_composite_score || 0),
-          micro_slot_ok: clip.micro_slot_ok !== false,
           cut_reason: clip.cut_reason,
           source_start_seconds: clip.source_start_seconds,
           source_end_seconds: clip.source_end_seconds,
@@ -2190,8 +1879,6 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
           forbidden_visual_categories: clip.forbidden_visual_categories,
           asset_semantic_text: clip.asset_semantic_text,
           asset_window_id: clip.asset_window_id,
-          clip_library_id: clip.clip_library_id || "",
-          from_clip_library: clip.from_clip_library === true,
           asset_window_key: clip.asset_window_key,
           asset_window_summary: clip.asset_window_summary,
           asset_window_start_seconds: clip.asset_window_start_seconds,
@@ -2200,37 +1887,6 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
           detected_visual_categories: clip.detected_visual_categories,
           detected_objects: clip.detected_objects,
           visual_intent_match: clip.visual_intent_match,
-          semantic_relevance_score: Number(clip.semantic_relevance_score || 0),
-          editorial_evidence_score: Number(clip.editorial_evidence_score || 0),
-          semantic_risk_score: Number(clip.semantic_risk_score || 0),
-          identity_class: clip.identity_class || "",
-          editorial_utility: clip.editorial_utility || "",
-          visual_type: clip.visual_type || "",
-          risk_flags: clip.risk_flags || [],
-          visual_truth_status: clip.visual_truth_status || "regional",
-          visual_observation_origin: clip.visual_observation_origin || "real_vision",
-          visual_family: clip.visual_family || "",
-          landmark_id: clip.landmark_id || "",
-          shot_scale: clip.shot_scale || "",
-          human_presence: clip.human_presence === true,
-          provider_signature: clip.provider_signature || "",
-          source_url: clip.source_url || clip.asset?.source_url || "",
-          scene_function: clip.scene_function || "",
-          narrative_role_selected: clip.narrative_role_selected || "",
-          critical_slot: Boolean(clip.critical_slot),
-          editorial_slot_ok: clip.editorial_slot_ok !== false,
-          editorial_slot_violation_codes: clip.editorial_slot_violation_codes || [],
-          theme_evidence_present: clip.theme_evidence_present !== false,
-          source_tier: clip.source_tier || "free",
-          approved_window_id: clip.approved_window_id || clip.asset_window_id,
-          approval_provenance: clip.approval_provenance || {
-            approved_window_id: String(clip.approved_window_id || clip.asset_window_id || ""),
-            clip_library_id: String(clip.clip_library_id || ""),
-            origin_approved_window_id: String(clip.origin_approved_window_id || ""),
-          },
-          content_slot_type: clip.content_slot_type || "",
-          content_slot_id: clip.content_slot_id || "",
-          slot_coverage_ok: clip.slot_coverage_ok !== false,
           query_used: clip.query_used,
           macro_block_id: clip.macro_block_id,
           micro_block_id: clip.micro_block_id,
@@ -2239,8 +1895,6 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
           micro_topic: clip.micro_topic,
           subtheme: clip.subtheme,
           topic_type: clip.topic_type,
-          block_coverage_status: clip.block_coverage_status || "",
-          block_coverage_advance_mode: clip.block_coverage_advance_mode || "",
           hard_boundary: clip.hard_boundary,
           detected_location: clip.detected_location,
           detected_landmarks: clip.detected_landmarks,
@@ -2258,14 +1912,6 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
           },
         })),
       },
-      clip_library_summary: {
-        clips_generated: Number(clipLibrarySummary.clips_generated || 0),
-        clips_approved: Number(clipLibrarySummary.clips_approved || 0),
-        clip_reuse_ratio: Number(clipLibrarySummary.clip_reuse_ratio || 0),
-        generated_clip_ids: clipLibrarySummary.generated_clip_ids || [],
-        approved_clip_ids: clipLibrarySummary.approved_clip_ids || [],
-        last_updated_at: clipLibrarySummary.last_updated_at || new Date().toISOString(),
-      },
       error_message: "",
     },
     { currentStep: "render_generated", status: "render_generated" }
@@ -2278,38 +1924,11 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     lines: ["Preparando metadata e publicação do link de revisão online."],
   }).catch(() => null);
 
-  await appendPipelineEvent({
-    videoId,
-    stage: "render",
-    event: "end",
-    status: "ok",
-    payload: {
-      duration_ms: Date.now() - stageStartedAt,
-      render_path: nextState.render_path || "",
-      total_clips: Number(nextState.render_timeline?.total_clips || 0),
-      hard_boundary_status: String(nextState.render_timeline?.hard_boundary_status || "unknown"),
-      overlay_apply_status: String(nextState.render_timeline?.overlay_apply_status || "unknown"),
-    },
-  }).catch(() => null);
-
   return {
     video_id: videoId,
       render_path: nextState.render_path,
     state_path: nextState.state_path,
   };
-  } catch (error) {
-    await appendPipelineEvent({
-      videoId,
-      stage: "render",
-      event: "end",
-      status: "error",
-      payload: {
-        duration_ms: Date.now() - stageStartedAt,
-        error_message: String(error?.message || "render_failed"),
-      },
-    }).catch(() => null);
-    throw error;
-  }
 };
 
 module.exports = {
@@ -2318,9 +1937,5 @@ module.exports = {
     buildClipPlan,
     buildSceneScriptTimingHints,
     buildVideoSourceWindow,
-    evaluateRenderPreflightGate,
-    isStrictRenderRuntimeProfile,
-    resolveRenderRuntimeFallbackPolicy,
-    TRANSITION_DURATION,  // M5: exported for test assertions
   },
 };

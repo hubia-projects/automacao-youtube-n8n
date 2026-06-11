@@ -472,6 +472,53 @@ const buildNarrativeBlocks = ({ state = {}, audioIntelligence = null, audioDurat
     current.keywords = unique([...current.keywords, ...micro.keywords]).slice(0, 16);
   });
 
+  // ===== País esperado: cada bloco herda o país da sua cidade; blocos sem
+  // cidade herdam o país dominante do vídeo (para "Portugal", o vídeo
+  // inteiro). Usado pelo gate geográfico fail-closed. =====
+  const countryVotes = new Map();
+  microBlocks.forEach((micro) => {
+    const country = micro.location?.country || "";
+    if (country) countryVotes.set(country, (countryVotes.get(country) || 0) + 1);
+  });
+  const dominantCountry = [...countryVotes.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] || "";
+
+  microBlocks.forEach((micro) => {
+    micro.expected_country = micro.location?.country || dominantCountry;
+  });
+  macroBlocks.forEach((macro) => {
+    macro.expected_country = macro.children[0]?.expected_country || dominantCountry;
+  });
+
+  // ===== Capítulos/overlays: numerar APÓS consolidação, apenas blocos de
+  // cidade, com cap por duração. Tópicos genéricos ("Introducao",
+  // "Fechamento", tema geral) não geram capítulo — elimina "5. Introducao"/
+  // "8. Introducao" e numeração 17+ em vídeos curtos. =====
+  const GENERIC_CHAPTER_TOPICS = new Set(["introducao", "fechamento", "tema geral", "geral", ""]);
+  let chapterNumber = 0;
+
+  macroBlocks.forEach((macro) => {
+    const isGenericTopic = macro.topic_type !== "city" || GENERIC_CHAPTER_TOPICS.has(normalizeLabel(macro.topic));
+
+    if (isGenericTopic) {
+      // Suprime apenas o texto do overlay; mantém a estrutura de boundary
+      // (chapter_card_required) para o pipeline continuar tratando como
+      // mudança de tópico — só não desenhamos o card "X. Introducao".
+      macro.overlay_title = "";
+      macro.children.forEach((child) => {
+        child.overlay_title = "";
+      });
+      return;
+    }
+
+    chapterNumber += 1;
+    macro.overlay_title = `${chapterNumber}. ${macro.topic}`;
+    macro.chapter_number = chapterNumber;
+    macro.children.forEach((child) => {
+      child.overlay_title = macro.overlay_title;
+      child.chapter_number = chapterNumber;
+    });
+  });
+
   const cityTopics = macroBlocks.filter((item) => item.topic_type === "city").map((item) => item.topic);
   macroBlocks.forEach((macro) => {
     const otherTopics = cityTopics.filter((topic) => !isSameLocation(topic, macro.topic));
@@ -533,6 +580,7 @@ const enrichVisualPlan = ({ topic = "", visualPlan = [], audioIntelligence = nul
         boundary_id: block.boundary_id,
         transition_type: block.transition_type,
         expected_location: block.expected_location,
+        expected_country: block.expected_country || "",
         expected_visual_start_sec: block.expected_visual_start_sec,
         chapter_trigger: block.chapter_trigger,
         chapter_card_required: block.chapter_card_required,

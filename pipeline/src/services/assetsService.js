@@ -10,6 +10,7 @@ const { hasOpenAi, describeImagesWithOpenAI } = require("./openaiService");
 const { getCachedAudioIntelligence } = require("./audioIntelligence");
 const { enrichVisualPlan } = require("./narrativeBlockPlanner");
 const { analyzeLocalVideo } = require("./localVideoUnderstandingService");
+const { analyzeMediaCached } = require("./mediaVisionService");
 const { buildSceneQueryPlan } = require("./assetQueryPlanner");
 const { scorePreDownloadCandidate } = require("./assetRejectionService");
 const { summarizeAssetReadiness, shouldAllowPlaceholderAssets } = require("./assetReadinessService");
@@ -257,8 +258,10 @@ const buildAnalysisWindowBlueprints = ({ assetDuration = 0 }) => {
 };
 
 const buildFallbackAnalysisPayload = ({ asset, scene }) => {
-  const baseSummary = asset.semantic_text || asset.query || scene.narration_excerpt || scene.title || "travel footage";
-  const baseTags = unique([...(asset.provider_tags || []), ...(scene.keywords || []), ...extractKeywords(baseSummary)]).slice(0, 10);
+  // NUNCA herdar texto da cena (narração/título/keywords) no summary do asset:
+  // isso infla artificialmente o score semântico de clips errados.
+  const baseSummary = asset.semantic_text || asset.query || "stock footage";
+  const baseTags = unique([...(asset.provider_tags || []), ...extractKeywords(baseSummary)]).slice(0, 10);
   const windows = buildAnalysisWindowBlueprints({ assetDuration: asset.source_duration_seconds || asset.duration_estimate || 0 }).map((window) => {
     const baseWindow = {
       window_index: window.window_index,
@@ -471,6 +474,52 @@ const normalizeAssetAnalysisResponse = ({ response, asset, scene, windowBlueprin
   };
 };
 
+const buildVisionAnalysisPayload = ({ visionResult, asset, scene, windowBlueprints }) => {
+  const fallback = buildFallbackAnalysisPayload({ asset, scene });
+
+  const analysisWindows = windowBlueprints.map((windowBlueprint, index) => {
+    const visionWindow = (visionResult.windows || []).find(
+      (item) => Number(item.window_index) === windowBlueprint.window_index
+    ) || (visionResult.windows || [])[index] || {};
+    const fallbackWindow = fallback.analysis_windows[index] || {};
+    const summary = visionWindow.summary || fallbackWindow.summary || fallback.analysis_summary;
+
+    return {
+      window_index: windowBlueprint.window_index,
+      start_seconds: windowBlueprint.start_seconds,
+      end_seconds: windowBlueprint.end_seconds,
+      sample_time_seconds: windowBlueprint.sample_time_seconds,
+      description: summary,
+      summary,
+      tags: unique([...(visionWindow.tags || []), ...(fallbackWindow.tags || [])]).slice(0, 12),
+      location: visionWindow.location || fallbackWindow.location || { city: "", country: "", confidence: 0 },
+      landmarks: visionWindow.landmarks || [],
+      location_type: visionWindow.location_type || "",
+      generic_visual: visionWindow.generic_visual,
+      visual_features: visionWindow.visual_features || fallbackWindow.visual_features,
+      quality: visionWindow.quality || fallbackWindow.quality,
+      confidence: Number(visionWindow.confidence || 0.6),
+      detected_visual_categories: [],
+      detected_objects: [],
+      visual_evidence_source: visionResult.provider,
+      method: visionResult.provider,
+    };
+  });
+
+  const overallSummary = visionResult.overall_summary ||
+    analysisWindows.map((window) => window.summary).filter(Boolean).join("; ") ||
+    fallback.analysis_summary;
+
+  return {
+    semantic_text: overallSummary,
+    analysis_summary: overallSummary,
+    analysis_tags: unique([...(visionResult.overall_tags || []), ...analysisWindows.flatMap((window) => window.tags || [])]).slice(0, 16),
+    analysis_windows: analysisWindows,
+    analysis_provider: visionResult.provider,
+    analysis_window_seconds: ANALYSIS_WINDOW_SECONDS,
+  };
+};
+
 const analyzeDownloadedAssetSemantics = async ({ asset, scene, paths }) => {
   const fallbackPayload = buildFallbackAnalysisPayload({ asset, scene });
 
@@ -481,6 +530,31 @@ const analyzeDownloadedAssetSemantics = async ({ asset, scene, paths }) => {
     };
   }
 
+  const windowBlueprints = buildAnalysisWindowBlueprints({ assetDuration: asset.source_duration_seconds || asset.duration_estimate || 0 });
+
+  // Caminho principal: visão LLM com prompt neutro, cacheada por hash de arquivo
+  // (regenerações e reuso entre cenas/vídeos custam zero).
+  const visionResult = await analyzeMediaCached({
+    filePath: asset.local_path,
+    windowBlueprints,
+  }).catch((error) => {
+    logger.warn("assetsService: falha na visão cacheada", { local_path: asset.local_path, message: error.message });
+    return null;
+  });
+
+  if (visionResult) {
+    return {
+      ...asset,
+      vision_failed: false,
+      ...mergeAnalysisPayload({
+        asset,
+        scene,
+        payload: buildVisionAnalysisPayload({ visionResult, asset, scene, windowBlueprints }),
+      }),
+    };
+  }
+
+  // Caminho legado opcional: script Python local
   const localPayload = await analyzeLocalVideo({
     inputPath: asset.local_path,
     windowSeconds: config.LOCAL_VIDEO_UNDERSTANDING_WINDOW_SECONDS || ANALYSIS_WINDOW_SECONDS,
@@ -490,9 +564,10 @@ const analyzeDownloadedAssetSemantics = async ({ asset, scene, paths }) => {
     sceneContext: scene,
   }).catch(() => null);
 
-  if (localPayload?.provider && !["disabled", "script_missing"].includes(localPayload.provider)) {
+  if (localPayload?.provider && !["disabled", "script_missing", "local_video_understanding_fallback"].includes(localPayload.provider)) {
     return {
       ...asset,
+      vision_failed: false,
       ...mergeAnalysisPayload({
         asset,
         scene,
@@ -508,59 +583,16 @@ const analyzeDownloadedAssetSemantics = async ({ asset, scene, paths }) => {
     };
   }
 
-  if (!hasOpenAi()) {
-    return {
-      ...asset,
-      ...mergeAnalysisPayload({ asset, scene, payload: localPayload || fallbackPayload }),
-    };
-  }
+  logger.warn("assetsService: asset sem análise visual — usando metadata_fallback", {
+    local_path: asset.local_path,
+    query: asset.query || "",
+  });
 
-  const windowBlueprints = buildAnalysisWindowBlueprints({ assetDuration: asset.source_duration_seconds || asset.duration_estimate || 0 });
-  const analysisDir = path.join(paths.base, "assets", "analysis", path.basename(asset.local_path, path.extname(asset.local_path)));
-
-  try {
-    await fs.ensureDir(analysisDir);
-    const framePaths = [];
-
-    for (const windowBlueprint of windowBlueprints) {
-      const framePath = path.join(analysisDir, `window-${String(windowBlueprint.window_index).padStart(2, "0")}.jpg`);
-      await extractVideoFrame({
-        inputPath: asset.local_path,
-        outputPath: framePath,
-        timeSeconds: windowBlueprint.sample_time_seconds,
-      });
-      framePaths.push(framePath);
-    }
-
-    const response = await describeImagesWithOpenAI({
-      prompt: buildAssetAnalysisPrompt({ scene, asset, windowBlueprints }),
-      imagePaths: framePaths,
-      detail: "low",
-    });
-
-    await fs.remove(analysisDir).catch(() => null);
-
-    return {
-      ...asset,
-      ...mergeAnalysisPayload({
-        asset,
-        scene,
-        payload: response
-          ? {
-              ...normalizeAssetAnalysisResponse({ response, asset, scene, windowBlueprints }),
-              analysis_provider: "openai_vision",
-              analysis_window_seconds: ANALYSIS_WINDOW_SECONDS,
-            }
-          : (localPayload || fallbackPayload),
-      }),
-    };
-  } catch {
-    await fs.remove(analysisDir).catch(() => null);
-    return {
-      ...asset,
-      ...mergeAnalysisPayload({ asset, scene, payload: localPayload || fallbackPayload }),
-    };
-  }
+  return {
+    ...asset,
+    vision_failed: true,
+    ...mergeAnalysisPayload({ asset, scene, payload: fallbackPayload }),
+  };
 };
 
 const downloadFile = async (url, outputPath) => {

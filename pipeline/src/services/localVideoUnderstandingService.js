@@ -62,12 +62,16 @@ const buildFallbackWindows = ({ duration = 0, windowSeconds = 8, maxWindows = 20
       window_index: windows.length + 1,
       start_seconds: round3(start),
       end_seconds: round3(Math.max(start + 1, end)),
-      summary: "visual evidence unavailable - weak fallback",
-      tags: [],
-      confidence: 0.22,
-      method: "weak_fallback",
-      visual_evidence_source: "weak_fallback",
-      visual_observation_origin: "weak_fallback",
+      // Não herdar texto da cena (narração/título/keywords): inflaria o score
+      // semântico de clips errados — o asset "pareceria" falar da cena.
+      summary: assetMetadata.semantic_text || assetMetadata.query || "stock footage",
+      tags: unique([
+        ...(assetMetadata.provider_tags || []),
+        ...(assetMetadata.analysis_tags || []),
+      ]).slice(0, 10),
+      confidence: 0.35,
+      method: "local_video_understanding_fallback",
+      visual_evidence_source: "local_video_understanding_fallback",
       location: { city: "", country: "", confidence: 0 },
       landmarks: [],
       location_type: sceneContext.subtheme || "general",
@@ -102,7 +106,7 @@ const analyzeLocalVideo = async ({
       provider: "weak_fallback_disabled",
       analysis_window_seconds: Number(windowSeconds || 8),
       analysis_windows: fallbackWindows,
-      analysis_summary: "visual evidence unavailable - weak fallback",
+      analysis_summary: assetMetadata.semantic_text || assetMetadata.query || "stock footage",
       analysis_tags: unique(fallbackWindows.flatMap((window) => window.tags || [])).slice(0, 12),
     };
   }

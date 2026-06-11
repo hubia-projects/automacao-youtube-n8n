@@ -1,19 +1,13 @@
 const fs = require("fs-extra");
 const path = require("path");
-const { execFile } = require("child_process");
-const { promisify } = require("util");
 const axios = require("axios");
 const { config } = require("../config/env");
 const { logger } = require("../utils/logger");
 
-const execFileAsync = promisify(execFile);
-
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
-const GEMINI_EMBED_MODEL = "gemini-embedding-001";
-
-const getChatModel = () => config.GEMINI_TEXT_MODEL || "gemini-2.5-flash-lite";
-const getFlashModel = () => config.GEMINI_VISION_MODEL_LITE || "gemini-2.5-flash-lite";
-const getFlashFullModel = () => config.GEMINI_VISION_MODEL_FULL || "gemini-2.5-flash";
+const GEMINI_CHAT_MODEL = "gemini-1.5-pro";
+const GEMINI_FLASH_MODEL = "gemini-1.5-flash";
+const GEMINI_EMBED_MODEL = "text-embedding-004";
 
 const hasGemini = () => Boolean(config.GEMINI_API_KEY);
 
@@ -31,16 +25,15 @@ const safeJsonParse = (raw, fallback) => {
   }
 };
 
-const generateContent = async ({ prompt, model, responseFormat = "text", timeoutMs = 90000 }) => {
-  model = model || getChatModel();
+const generateContent = async ({ prompt, imageParts = [], model = GEMINI_CHAT_MODEL, responseFormat = "text", timeoutMs = 90000, temperature = 0.5 }) => {
   if (!hasGemini()) return null;
 
   const url = `${GEMINI_BASE}/models/${model}:generateContent?key=${config.GEMINI_API_KEY}`;
 
   const body = {
-    contents: [{ parts: [{ text: prompt }] }],
+    contents: [{ parts: [...imageParts, { text: prompt }] }],
     generationConfig: {
-      temperature: 0.5,
+      temperature,
       maxOutputTokens: 8192,
     },
   };
@@ -90,10 +83,38 @@ const generateEmbedding = async (text) => {
     logger.warn("geminiService: falha ao gerar embedding", {
       message: error.message,
       status: error.response?.status,
-      textLength: text.length,
     });
     return null;
   }
+};
+
+const fileToInlinePart = async (filePath, mimeType = "image/jpeg") => {
+  const data = await fs.readFile(filePath);
+  return { inlineData: { mimeType, data: data.toString("base64") } };
+};
+
+/**
+ * Descreve imagens com Gemini Flash. Mesma interface lógica de
+ * describeImagesWithOpenAI: recebe prompt + caminhos de imagem, retorna JSON.
+ */
+const describeImagesWithGemini = async ({ prompt, imagePaths = [] }) => {
+  if (!hasGemini() || !imagePaths.length) return null;
+
+  const mimeMap = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
+  const imageParts = await Promise.all(
+    imagePaths.map((imagePath) =>
+      fileToInlinePart(imagePath, mimeMap[path.extname(imagePath).toLowerCase()] || "image/jpeg")
+    )
+  );
+
+  return generateContent({
+    prompt,
+    imageParts,
+    model: GEMINI_FLASH_MODEL,
+    responseFormat: "json",
+    timeoutMs: 45000,
+    temperature: 0.1,
+  });
 };
 
 const generateScriptPackageWithGemini = async ({ topic, angle }) => {
@@ -123,155 +144,13 @@ Gere JSON estrito com:
   return generateContent({ prompt, responseFormat: "json", timeoutMs: 120000 });
 };
 
-// ===== Media Analysis for Library Auto-Indexing =====
-
-const resolveFFmpegBin = () => {
-  const staticBin = require("ffmpeg-static");
-  if (staticBin && require("fs").existsSync(staticBin)) return staticBin;
-  // fallback: system ffmpeg
-  const { execSync } = require("child_process");
-  try { return execSync("which ffmpeg", { encoding: "utf8" }).trim(); } catch { return "ffmpeg"; }
-};
-
-const extractVideoFrames = async (videoPath, frameCount = 4) => {
-  const ffprobeBin = require("ffprobe-static").path;
-  const ffmpegBin = resolveFFmpegBin();
-  const tmpDir = require("os").tmpdir();
-  const baseName = path.basename(videoPath, path.extname(videoPath));
-  const frameDir = path.join(tmpDir, `gemini_frames_${Date.now()}_${baseName}`);
-  await fs.ensureDir(frameDir);
-
-  try {
-    // Get video duration
-    const probeResult = await execFileAsync(ffprobeBin, [
-      "-v", "quiet", "-print_format", "json", "-show_format", videoPath,
-    ]);
-    const probeData = JSON.parse(probeResult.stdout);
-    const duration = parseFloat(probeData.format?.duration || "10");
-
-    // Extract evenly-spaced frames
-    const interval = Math.max(1, Math.floor(duration / (frameCount + 1)));
-    const framePromises = [];
-    for (let i = 1; i <= frameCount; i++) {
-      const timestamp = Math.min(i * interval, duration - 1);
-      const framePath = path.join(frameDir, `frame_${i}.jpg`);
-      framePromises.push(
-        execFileAsync(ffmpegBin, [
-          "-ss", String(timestamp), "-i", videoPath,
-          "-vframes", "1", "-q:v", "5", "-vf", "scale=640:-1",
-          "-y", framePath,
-        ]).then(() => framePath).catch(() => null)
-      );
-    }
-
-    const framePaths = (await Promise.all(framePromises)).filter(Boolean);
-    return { framePaths, frameDir };
-  } catch (error) {
-    logger.warn("geminiService: falha ao extrair frames", { message: error.message, videoPath });
-    return { framePaths: [], frameDir };
-  }
-};
-
-const fileToBase64Part = async (filePath, mimeType = "image/jpeg") => {
-  const data = await fs.readFile(filePath);
-  return { inlineData: { mimeType, data: data.toString("base64") } };
-};
-
-const ANALYZE_PROMPT = `Analise este(s) quadro(s) de mídia e responda em JSON estrito sem comentários:
-{
-  "description": "Descrição objetiva em português do conteúdo visual (máx 150 caracteres)",
-  "tags": ["lista", "de", "tags", "descritivas", "em", "português", "minúsculas"],
-  "location": {
-    "city": "nome da cidade em português se identificável, senão vazio",
-    "country": "nome do país em português se identificável, senão vazio"
-  },
-  "type_hint": "landscape|people|urban|nature|interior|abstract|food|transport|other"
-}
-
-Regras:
-- tags: 5 a 12 palavras-chave descritivas sobre o conteúdo visual
-- location: identifique apenas se houver sinais claros (arquitetura, placa, paisagem característica)
-- description: objetivo, sem adjetivos subjetivos como "bonito" ou "incrível"`;
-
-/**
- * Analisa uma imagem ou vídeo com Gemini Flash e retorna metadados estruturados.
- * Para vídeos, extrai frames representativos; para imagens, envia direto.
- */
-const analyzeMediaFile = async (filePath) => {
-  if (!hasGemini()) return null;
-
-  const ext = path.extname(filePath).toLowerCase();
-  const isVideo = [".mp4", ".mov", ".mkv", ".webm", ".avi"].includes(ext);
-  const isImage = [".jpg", ".jpeg", ".png", ".webp"].includes(ext);
-
-  if (!isVideo && !isImage) return null;
-
-  const url = `${GEMINI_BASE}/models/${getFlashModel()}:generateContent?key=${config.GEMINI_API_KEY}`;
-  let frameDir = null;
-
-  try {
-    let imageParts = [];
-
-    if (isImage) {
-      const mimeMap = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
-      imageParts.push(await fileToBase64Part(filePath, mimeMap[ext] || "image/jpeg"));
-    } else {
-      const { framePaths, frameDir: fd } = await extractVideoFrames(filePath, 4);
-      frameDir = fd;
-      if (!framePaths.length) return null;
-      imageParts = await Promise.all(framePaths.map((fp) => fileToBase64Part(fp)));
-    }
-
-    const body = {
-      contents: [{
-        parts: [
-          ...imageParts,
-          { text: ANALYZE_PROMPT },
-        ],
-      }],
-      generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 512,
-        responseMimeType: "application/json",
-      },
-    };
-
-    const response = await axios.post(url, body, {
-      timeout: 30000,
-      headers: { "Content-Type": "application/json" },
-    });
-
-    const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    const result = safeJsonParse(text, null);
-
-    if (!result || typeof result.description !== "string") return null;
-
-    return {
-      description: result.description || "",
-      tags: Array.isArray(result.tags) ? result.tags.map((t) => String(t).toLowerCase().trim()) : [],
-      location: {
-        city: String(result.location?.city || "").trim(),
-        country: String(result.location?.country || "").trim(),
-      },
-      type_hint: result.type_hint || "other",
-      analyzed_at: new Date().toISOString(),
-      analyzed_by: "gemini-flash",
-    };
-  } catch (error) {
-    logger.warn("geminiService: falha ao analisar mídia", { message: error.message, filePath });
-    return null;
-  } finally {
-    if (frameDir) await fs.remove(frameDir).catch(() => null);
-  }
-};
-
 const basicGeminiHealthcheck = async () => {
   if (!hasGemini()) return { configured: false, ok: false, message: "GEMINI_API_KEY ausente" };
 
   try {
     const result = await generateContent({
       prompt: "Responda apenas: ok",
-      model: getFlashModel(),
+      model: GEMINI_FLASH_MODEL,
       timeoutMs: 15000,
     });
     const ok = typeof result === "string" && result.toLowerCase().includes("ok");
@@ -285,7 +164,7 @@ module.exports = {
   hasGemini,
   generateContent,
   generateEmbedding,
+  describeImagesWithGemini,
   generateScriptPackageWithGemini,
-  analyzeMediaFile,
   basicGeminiHealthcheck,
 };
