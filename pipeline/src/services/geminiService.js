@@ -5,9 +5,9 @@ const { config } = require("../config/env");
 const { logger } = require("../utils/logger");
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
-const GEMINI_CHAT_MODEL = "gemini-1.5-pro";
-const GEMINI_FLASH_MODEL = "gemini-1.5-flash";
-const GEMINI_EMBED_MODEL = "text-embedding-004";
+const GEMINI_CHAT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-2.5-flash-lite";
+const GEMINI_FLASH_MODEL = process.env.GEMINI_VISION_MODEL_LITE || "gemini-2.5-flash-lite";
+const GEMINI_EMBED_MODEL = "gemini-embedding-001";
 
 const hasGemini = () => Boolean(config.GEMINI_API_KEY);
 

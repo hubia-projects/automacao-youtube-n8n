@@ -16,10 +16,12 @@ const NEGATIVE_GASTRONOMY_TERMS = [
 const FOOD_INTENTS = new Set(["gastronomy", "market", "wine", "pastry", "restaurant", "cafe", "street_food"]);
 
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
-const buildSearchHypothesisText = (candidate = {}) =>
+
+const buildMetadataText = (candidate = {}) =>
   [
     candidate.query_used,
     candidate.query,
+    candidate.semantic_text,
     candidate.provider_title,
     ...(candidate.provider_tags || []),
   ].filter(Boolean).join(" ");
@@ -34,7 +36,7 @@ const computeResolutionScore = (candidate = {}) => {
   return 0.2;
 };
 
-const computeCityHintScore = ({ scene, text }) => {
+const computeCityMatch = ({ scene, text }) => {
   if (!scene.location?.city) return 0;
   const detected = detectLocation(text);
   if (detected.city && isSameLocation(detected.city, scene.location.city)) return 1;
@@ -42,48 +44,46 @@ const computeCityHintScore = ({ scene, text }) => {
   return 0;
 };
 
-const containsAny = (text = "", values = []) =>
-  (values || []).some((value) => {
-    const normalizedValue = normalizeLabel(value);
-    return normalizedValue && normalizeLabel(text).includes(normalizedValue);
+const scorePreDownloadCandidate = ({ candidate, scene }) => {
+  const metadataText = buildMetadataText(candidate);
+  const metadataCategories = detectVisualCategories({ text: metadataText, tags: candidate.provider_tags || [] });
+  const evidence = evaluateVisualEvidence({
+    scene,
+    window: {
+      summary: metadataText,
+      tags: candidate.provider_tags || [],
+      detected_visual_categories: metadataCategories,
+    },
+    asset: candidate,
   });
 
-const isLowResolutionCandidate = (candidate = {}) => {
-  const width = Number(candidate.width || candidate.resolution?.width || 0);
-  const height = Number(candidate.height || candidate.resolution?.height || 0);
-  return width < 1280 || height < 720;
-};
-
-const isShortVideo = (candidate = {}) =>
-  (candidate.asset_type === "video" || candidate.type === "video")
-  && Number(candidate.duration_estimate || 0) > 0
-  && Number(candidate.duration_estimate || 0) < 2.5;
-
-const scorePreDownloadCandidate = ({ candidate, scene }) => {
-  const hypothesisText = buildSearchHypothesisText(candidate);
-  const hintCategories = detectVisualCategories({ text: hypothesisText, tags: candidate.provider_tags || [] });
-  const positiveMatches = countMatches(hypothesisText, POSITIVE_GASTRONOMY_TERMS);
-  const negativeMatches = countMatches(hypothesisText, NEGATIVE_GASTRONOMY_TERMS);
-  const cityHintScore = computeCityHintScore({ scene, text: hypothesisText });
+  const positiveMatches = countMatches(metadataText, POSITIVE_GASTRONOMY_TERMS);
+  const negativeMatches = countMatches(metadataText, NEGATIVE_GASTRONOMY_TERMS);
+  const queryIntentMatch = evidence.visual_intent_match ? 1 : evidence.required_evidence_score;
+  const providerTagIntentMatch = candidate.provider_tags?.length
+    ? evaluateVisualEvidence({
+        scene,
+        window: {
+          summary: (candidate.provider_tags || []).join(" "),
+          tags: candidate.provider_tags || [],
+          detected_visual_categories: detectVisualCategories({ tags: candidate.provider_tags || [] }),
+        },
+        asset: candidate,
+      }).required_evidence_score
+    : 0;
+  const cityMatch = computeCityMatch({ scene, text: metadataText });
   const videoBonus = candidate.asset_type === "video" || candidate.type === "video" ? 1 : 0;
   const resolutionScore = computeResolutionScore(candidate);
-  const genericTravelPenalty = (negativeMatches > positiveMatches && FOOD_INTENTS.has(scene.visual_intent)) ? 1 : 0;
-  const lowResolutionPenalty = isLowResolutionCandidate(candidate) ? 1 : 0;
-  const shortVideoPenalty = isShortVideo(candidate) ? 1 : 0;
-  const negativeKeywordPenalty = containsAny(hypothesisText, scene.negative_keywords || scene.forbidden_locations || []) ? 1 : 0;
-  const intentHintScore = FOOD_INTENTS.has(scene.visual_intent)
-    ? Math.max(0, (positiveMatches - negativeMatches) / Math.max(1, POSITIVE_GASTRONOMY_TERMS.length / 4))
-    : 0.45;
-
+  const forbiddenCategoryPenalty = evidence.forbidden_category_penalty;
+  const genericTravelPenalty = evidence.generic_visual || (negativeMatches > positiveMatches && FOOD_INTENTS.has(scene.visual_intent)) ? 1 : 0;
   const preDownloadScore =
-    intentHintScore * 4 +
-    cityHintScore * 3 +
+    queryIntentMatch * 5 +
+    providerTagIntentMatch * 4 +
+    cityMatch * 3 +
     videoBonus * 2 +
     resolutionScore -
-    genericTravelPenalty * 3 -
-    lowResolutionPenalty * 4 -
-    shortVideoPenalty * 2 -
-    negativeKeywordPenalty * 6;
+    forbiddenCategoryPenalty * 8 -
+    genericTravelPenalty * 5;
 
   const minPreDownloadScore = Number(config.PRE_DOWNLOAD_MIN_SCORE || 4);
   const sceneRequiresLocation = Boolean(scene.location?.city || scene.expected_location) && !scene.generic_asset_allowed;
@@ -102,12 +102,11 @@ const scorePreDownloadCandidate = ({ candidate, scene }) => {
 
   return {
     pre_download_score: Number(preDownloadScore.toFixed(3)),
-    intent_match: intentHintScore >= 0.45,
+    intent_match: evidence.visual_intent_match,
     generic_asset: Boolean(genericTravelPenalty),
-    detected_visual_categories: hintCategories,
+    detected_visual_categories: evidence.detected_visual_categories,
     rejection_reason: rejectionReason,
     pre_download_rejected: Boolean(rejectionReason),
-    evidence_mode: "retrieval_hypothesis_only",
   };
 };
 
@@ -140,7 +139,7 @@ const visionAnalyzedWindow = (window = {}) => {
 
 const shouldRejectAssetForScene = ({ asset = {}, scene = {}, window = {} }) => {
   const evidence = evaluateVisualEvidence({ scene, window, asset });
-  const text = [window.summary, window.description, ...(window.tags || []), ...(window.detected_objects || [])].filter(Boolean).join(" ");
+  const text = [window.summary, window.description, asset.semantic_text, asset.query].filter(Boolean).join(" ");
   const detectedLocation = detectLocation(text, window.location);
   const windowDuration = Number(window.duration_seconds || Math.max(0, Number(window.end_seconds || 0) - Number(window.start_seconds || 0)));
   const expectedLocation = scene.expected_location || scene.location?.city || (scene.topic_type === "city" ? scene.macro_topic : "");
