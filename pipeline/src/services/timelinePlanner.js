@@ -10,6 +10,7 @@ const {
   buildSemanticTerms,
 } = require("./narrativeBlockPlanner");
 const { isPublishableAsset } = require("./assetReadinessService");
+const { isSameCountry } = require("./assetRejectionService");
 const { rankCandidates, registerClipUsage, buildVisualSignature } = require("./timelineScoringService");
 
 const OUTPUT_WIDTH = Number(config.OUTPUT_WIDTH || 1920);
@@ -211,8 +212,16 @@ const isCandidateAllowedByHardRules = ({ block, candidate, previousMacroTopic })
   if (candidate.quality?.usable === false) return false;
 
   const candidateCity = candidate.location?.city || "";
+  const candidateCountry = candidate.location?.country || "";
   const candidateLandmarks = candidate.landmarks || [];
   const expectedCity = block.location?.city || (block.topic_type === "city" ? block.macro_topic : "");
+  const expectedCountry = block.expected_country || block.location?.country || "";
+
+  // País errado = bloqueio absoluto (pega clips de Roma/Glasgow mesmo sem
+  // alias de cidade conhecida).
+  if (expectedCountry && candidateCountry && !isSameCountry(candidateCountry, expectedCountry)) {
+    return false;
+  }
 
   if (previousMacroTopic && block.hard_boundary) {
     if (candidateCity && belongsToTopic(candidateCity, previousMacroTopic)) return false;
@@ -225,6 +234,18 @@ const isCandidateAllowedByHardRules = ({ block, candidate, previousMacroTopic })
     if (candidateCity && !isSameLocation(candidateCity, expectedCity)) return false;
     const wrongLandmark = candidateLandmarks.some((landmark) => landmark.city && !isSameLocation(landmark.city, expectedCity));
     if (wrongLandmark) return false;
+
+    // Modo strict: cena exige local e o candidato analisado por visão não
+    // confirmou cidade nem é neutral verificado → bloqueia (fail-closed).
+    if (
+      (config.LOCATION_GATE_MODE || "strict") === "strict" &&
+      !block.generic_asset_allowed &&
+      !candidateCity &&
+      !candidate.neutral &&
+      ["openai_vision", "gemini_vision"].includes(candidate.visual_evidence_source || candidate.analysis_provider || "")
+    ) {
+      return false;
+    }
   }
 
   return true;

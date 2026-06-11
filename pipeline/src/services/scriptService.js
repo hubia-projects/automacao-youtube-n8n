@@ -1,6 +1,7 @@
 const { writeTextAtomic } = require("../utils/fileUtils");
 const { updateState, ensureVideoStructure, loadState } = require("./stateService");
 const { generateScriptPackageWithOpenAI } = require("./openaiService");
+const { generateScriptPackageWithGemini } = require("./geminiService");
 const { sendWorkflowStatus } = require("./telegramService");
 const { buildVisualPlan } = require("../utils/visualPlan");
 
@@ -158,7 +159,12 @@ const generateScript = async ({ videoId, mockMode = false, topic: providedTopic 
     throw new Error("Nenhum tópico disponível. Gere e aprove uma ideia antes do roteiro.");
   }
 
-  const pkg = !mockMode ? (await generateScriptPackageWithOpenAI({ topic, angle })) || buildMockPackage({ topic, angle }) : buildMockPackage({ topic, angle });
+  // Gemini primeiro, OpenAI como fallback, mock como último recurso
+  const pkg = !mockMode
+    ? (await generateScriptPackageWithGemini({ topic, angle })) ||
+      (await generateScriptPackageWithOpenAI({ topic, angle })) ||
+      buildMockPackage({ topic, angle })
+    : buildMockPackage({ topic, angle });
   const paths = await ensureVideoStructure(videoId);
   const markdown = createScriptMarkdown({ topic, pkg });
   const visualPlan = buildVisualPlan({

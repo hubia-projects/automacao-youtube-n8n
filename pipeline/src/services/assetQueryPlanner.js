@@ -292,15 +292,22 @@ const buildFoodQueries = ({ entries, seen, cityTerms, countryTerms, exactEntries
     });
   });
 
-  exactEntries.forEach(({ term, reasonToken }) => {
-    pushQuery({
-      entries,
-      seen,
-      query: term,
-      reason: `fallback_exact_${intent}_${reasonToken}`,
-      scene,
+  // Fallback genérico SEM âncora geográfica só é permitido quando a cena
+  // aceita assets genéricos ou quando não há cidade/país conhecidos —
+  // "food market" solto retorna mercados de Bangkok/Marrakech.
+  const allowUnanchoredFallback = Boolean(scene.generic_asset_allowed) || (!cityTerms.length && !countryTerms.length);
+
+  if (allowUnanchoredFallback) {
+    exactEntries.forEach(({ term, reasonToken }) => {
+      pushQuery({
+        entries,
+        seen,
+        query: term,
+        reason: `fallback_exact_${intent}_${reasonToken}`,
+        scene,
+      });
     });
-  });
+  }
 
   countryTerms.forEach((countryTerm) => {
     equivalentEntries.forEach(({ term, reasonToken }) => {
@@ -314,15 +321,17 @@ const buildFoodQueries = ({ entries, seen, cityTerms, countryTerms, exactEntries
     });
   });
 
-  equivalentEntries.forEach(({ term, reasonToken }) => {
-    pushQuery({
-      entries,
-      seen,
-      query: term,
-      reason: `fallback_equivalent_${intent}_${reasonToken}`,
-      scene,
+  if (allowUnanchoredFallback) {
+    equivalentEntries.forEach(({ term, reasonToken }) => {
+      pushQuery({
+        entries,
+        seen,
+        query: term,
+        reason: `fallback_equivalent_${intent}_${reasonToken}`,
+        scene,
+      });
     });
-  });
+  }
 };
 
 const buildGeneralQueries = ({ entries, seen, cityTerms, countryTerms, scene, intent }) => {

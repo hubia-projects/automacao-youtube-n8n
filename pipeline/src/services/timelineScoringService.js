@@ -1,7 +1,9 @@
+const { config } = require("../config/env");
 const { matchNarrationToAssetWindows, keywordOverlapScore } = require("./semanticMatcher");
 const { shouldRejectAssetForScene } = require("./assetRejectionService");
 const {
   buildSemanticTerms,
+  detectLandmarks,
   isSameLocation,
   belongsToTopic,
   normalizeLabel,
@@ -283,6 +285,60 @@ const computeSceneBinding = ({ block, candidate }) => {
   };
 };
 
+// ===== Dedup hard: asset/source/landmark usados não voltam (FASE 4) =====
+
+const computeHardReuseBlockReason = ({ candidate, usage }) => {
+  const maxUses = Math.max(1, Number(config.MAX_ASSET_USES_PER_VIDEO || 1));
+  const assetUseCount = usage.usedAssetIds?.get(candidate.asset_id) || 0;
+  if (assetUseCount >= maxUses) return "asset_reuse_blocked";
+
+  const sourceUrl = candidate.asset?.source_url || "";
+  if (sourceUrl && (usage.usedSourceUrls?.get(sourceUrl) || 0) >= maxUses) return "source_url_reuse_blocked";
+
+  const localPath = candidate.asset?.local_path || "";
+  if (localPath && (usage.usedLocalPaths?.get(localPath) || 0) >= maxUses) return "local_path_reuse_blocked";
+
+  // Mesmo landmark nomeado (ex: Mosteiro dos Jerónimos) não repete em outro
+  // clip, mesmo vindo de assets/janelas diferentes.
+  const candidateLandmarks = (candidate.landmarks || []).map((item) => normalizeLabel(item.name)).filter(Boolean);
+  if (candidateLandmarks.length && usage.usedLandmarks) {
+    const reusedLandmark = candidateLandmarks.find((name) => (usage.usedLandmarks.get(name) || 0) >= maxUses);
+    if (reusedLandmark) return "landmark_reuse_blocked";
+  }
+
+  return "";
+};
+
+// ===== Constraint de entidade nomeada (FASE 7) =====
+// Quando a narração do slot cita um landmark específico ("Rio Douro"),
+// candidatos genéricos são bloqueados NAQUELE slot: ou o candidato
+// evidencia a entidade, ou não entra.
+
+const computeNamedEntityBlockReason = ({ narrationText, candidate, entityMatchScore }) => {
+  const narrationLandmarks = detectLandmarks(narrationText || "");
+  if (!narrationLandmarks.length) return "";
+
+  const candidateLandmarkNames = (candidate.landmarks || []).map((item) => normalizeLabel(item.name)).filter(Boolean);
+  const candidateText = normalizeLabel(`${candidate.description || ""} ${candidate.semantic_text || ""} ${(candidate.tags || []).join(" ")}`);
+
+  const candidateHasEntity = narrationLandmarks.some((landmark) => {
+    const name = normalizeLabel(landmark.name);
+    return candidateLandmarkNames.includes(name) || candidateText.includes(name);
+  });
+
+  // Cidade certa já é meio caminho: aceitar se a cidade do candidato bate
+  // com a cidade do landmark citado.
+  const candidateCity = candidate.location?.city || "";
+  const candidateCityMatchesEntity = narrationLandmarks.some(
+    (landmark) => landmark.city && candidateCity && isSameLocation(candidateCity, landmark.city)
+  );
+
+  if (!candidateHasEntity && !candidateCityMatchesEntity && entityMatchScore <= 0) {
+    return "named_entity_in_narration_not_in_candidate";
+  }
+  return "";
+};
+
 const computeHardBoundaryBlockReason = ({
   block,
   candidate,
@@ -472,12 +528,19 @@ const rankCandidates = async ({
       forbiddenCategoryPenalty,
       darkFramePenalty,
     });
+    const hardReuseBlockReason = computeHardReuseBlockReason({ candidate, usage });
+    const namedEntityBlockReason = computeNamedEntityBlockReason({ narrationText, candidate, entityMatchScore });
+
     if (hardBoundaryBlockReason) reasons.unshift(hardBoundaryBlockReason);
+    if (hardReuseBlockReason) reasons.unshift(hardReuseBlockReason);
+    if (namedEntityBlockReason) reasons.unshift(namedEntityBlockReason);
     if (sceneBinding.hardBlocked && sceneBinding.reason) reasons.unshift(sceneBinding.reason);
     if (hardRejection.reject && hardRejection.reason) reasons.unshift(hardRejection.reason);
 
     const hardBlocked = Boolean(
       hardBoundaryBlockReason ||
+      hardReuseBlockReason ||
+      namedEntityBlockReason ||
       sceneBinding.hardBlocked ||
       editorialAssessment.editorial_fit === "wrong" ||
       (isCriticalScene(block) && !editorialAssessment.allowed_for_critical_slot)
@@ -489,7 +552,7 @@ const rankCandidates = async ({
       score: round3(finalScore),
       method: semantic.method,
       hard_blocked: hardBlocked,
-      hard_blocked_reason: hardBoundaryBlockReason || (sceneBinding.hardBlocked ? sceneBinding.reason : editorialAssessment.editorial_fit === "wrong" ? "wrong_editorial_fit" : ""),
+      hard_blocked_reason: hardBoundaryBlockReason || hardReuseBlockReason || namedEntityBlockReason || (sceneBinding.hardBlocked ? sceneBinding.reason : editorialAssessment.editorial_fit === "wrong" ? "wrong_editorial_fit" : ""),
       features: {
         semanticScore: round3(semantic.score),
         visualIntentMatchScore: round3(visualIntentMatchScore),
@@ -550,6 +613,7 @@ const registerClipUsage = ({ usage, block, candidate, clipIndex }) => {
   usage.usedBlockAssetIds = usage.usedBlockAssetIds || new Map();
   usage.usedVisualSignatures = usage.usedVisualSignatures || new Map();
   usage.lastClipByAssetId = usage.lastClipByAssetId || new Map();
+  usage.usedLandmarks = usage.usedLandmarks || new Map();
 
   if (sourceUrl) usage.usedSourceUrls.set(sourceUrl, (usage.usedSourceUrls.get(sourceUrl) || 0) + 1);
   if (localPath) usage.usedLocalPaths.set(localPath, (usage.usedLocalPaths.get(localPath) || 0) + 1);
@@ -562,6 +626,10 @@ const registerClipUsage = ({ usage, block, candidate, clipIndex }) => {
     usage.usedBlockAssetIds.set(blockKey, (usage.usedBlockAssetIds.get(blockKey) || 0) + 1);
   }
   usage.lastClipByAssetId.set(candidate.asset_id, clipIndex);
+  (candidate.landmarks || []).forEach((item) => {
+    const name = normalizeLabel(item?.name || "");
+    if (name) usage.usedLandmarks.set(name, (usage.usedLandmarks.get(name) || 0) + 1);
+  });
 };
 
 module.exports = {
@@ -572,6 +640,8 @@ module.exports = {
   __test__: {
     SCORE_WEIGHTS,
     buildVisualSignature,
+    computeHardReuseBlockReason,
+    computeNamedEntityBlockReason,
     computeBlockMatchScore,
     computeEvidenceSourceScore,
     computeEntityMatchScore,

@@ -1755,8 +1755,32 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     }
   }
 
-  if (backgroundMusicPath && !mockMode) {
-    // Optional stage reserved for future mix implementation
+  const musicPath = backgroundMusicPath || config.BACKGROUND_MUSIC_PATH || "";
+  if (musicPath && !mockMode && (await fs.pathExists(musicPath))) {
+    // Mixa trilha em loop sob a narração (ducking fixo) + loudnorm para
+    // o alvo do YouTube (-14 LUFS).
+    const mixedPath = path.join(paths.base, "render", "final-with-music.mp4");
+    const musicVolume = Math.max(0.02, Math.min(0.5, Number(config.BACKGROUND_MUSIC_VOLUME || 0.12)));
+    try {
+      await runFfmpeg([
+        "-y",
+        "-i", renderPath,
+        "-stream_loop", "-1",
+        "-i", musicPath,
+        "-filter_complex",
+        `[1:a]volume=${musicVolume}[bg];[0:a][bg]amix=inputs=2:duration=first:dropout_transition=2,loudnorm=I=-14:TP=-1.5:LRA=11[aout]`,
+        "-map", "0:v:0",
+        "-map", "[aout]",
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-shortest",
+        mixedPath,
+      ]);
+      await fs.move(mixedPath, renderPath, { overwrite: true });
+    } catch (error) {
+      logger.warn("renderService: falha ao mixar música de fundo — seguindo sem", { message: error.message });
+    }
   }
 
   const overlays = buildBlockOverlays({
@@ -1765,14 +1789,18 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     enabled: config.ENABLE_BLOCK_OVERLAYS,
     requireChapterOverlay: Boolean(config.HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY),
   });
+  const subtitlePath = config.BURN_CAPTIONS && state.caption_path_srt && (await fs.pathExists(state.caption_path_srt))
+    ? state.caption_path_srt
+    : "";
   let finalRenderPath = renderPath;
-  if (overlays.length) {
+  if (overlays.length || subtitlePath) {
     const overlayPath = path.join(paths.base, "render", "final-with-overlays.mp4");
     try {
       await applyOverlaysToVideo({
         inputPath: renderPath,
         outputPath: overlayPath,
         overlays,
+        subtitlePath,
         fps: OUTPUT_FPS,
         videoBitrate: VIDEO_BITRATE,
         maxVideoBitrate: MAX_VIDEO_BITRATE,

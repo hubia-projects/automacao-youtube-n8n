@@ -47,7 +47,11 @@
     "test:sync-validator": "node tests/sync-validator-general-topic-test.js",
     "test:youtube-upload-blocked-by-qa": "node tests/youtube-upload-blocked-by-qa-test.js",
     "test:metadata-fallback-not-evidence": "node tests/metadata-fallback-not-evidence-test.js",
-    "test:manual-review": "node tests/manual-review-service-test.js"
+    "test:manual-review": "node tests/manual-review-service-test.js",
+    "test:geo-gating": "node tests/geo-gating-dedup-test.js",
+    "library:index": "node src/tools/index-library.js",
+    "library:index:force": "node src/tools/index-library.js --force",
+    "library:index:dry": "node src/tools/index-library.js --dry-run"
   },
   "dependencies": {
     "axios": "^1.15.2",

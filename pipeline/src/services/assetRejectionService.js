@@ -85,6 +85,8 @@ const scorePreDownloadCandidate = ({ candidate, scene }) => {
     forbiddenCategoryPenalty * 8 -
     genericTravelPenalty * 5;
 
+  const minPreDownloadScore = Number(config.PRE_DOWNLOAD_MIN_SCORE || 4);
+  const sceneRequiresLocation = Boolean(scene.location?.city || scene.expected_location) && !scene.generic_asset_allowed;
   const missingRequired = !scene.generic_asset_allowed && !evidence.visual_intent_match;
   const rejectionReason = missingRequired
     ? "missing_required_visual_evidence"
@@ -92,7 +94,11 @@ const scorePreDownloadCandidate = ({ candidate, scene }) => {
       ? "forbidden_visual_category"
       : genericTravelPenalty >= 1 && !scene.generic_asset_allowed
         ? "generic_travel_metadata"
-        : "";
+        : sceneRequiresLocation && cityMatch === 0
+          ? "no_city_anchor_in_metadata"
+          : preDownloadScore < minPreDownloadScore && !scene.generic_asset_allowed
+            ? "below_min_pre_download_score"
+            : "";
 
   return {
     pre_download_score: Number(preDownloadScore.toFixed(3)),
@@ -104,13 +110,71 @@ const scorePreDownloadCandidate = ({ candidate, scene }) => {
   };
 };
 
+const normalizeCountry = (value = "") => {
+  const normalized = normalizeLabel(value);
+  const aliases = {
+    pt: "portugal", prt: "portugal",
+    es: "spain", espanha: "spain", "españa": "spain",
+    fr: "france", franca: "france",
+    it: "italy", italia: "italy",
+    uk: "united kingdom", "reino unido": "united kingdom", inglaterra: "united kingdom", england: "united kingdom", scotland: "united kingdom", escocia: "united kingdom",
+    nl: "netherlands", holanda: "netherlands",
+    br: "brazil", brasil: "brazil",
+    us: "united states", usa: "united states", "estados unidos": "united states",
+  };
+  return aliases[normalized] || normalized;
+};
+
+const isSameCountry = (left = "", right = "") => {
+  const normalizedLeft = normalizeCountry(left);
+  const normalizedRight = normalizeCountry(right);
+  if (!normalizedLeft || !normalizedRight) return false;
+  return normalizedLeft === normalizedRight;
+};
+
+const visionAnalyzedWindow = (window = {}) => {
+  const source = window.visual_evidence_source || window.method || "";
+  return ["openai_vision", "gemini_vision", "local_video_understanding"].includes(source);
+};
+
 const shouldRejectAssetForScene = ({ asset = {}, scene = {}, window = {} }) => {
   const evidence = evaluateVisualEvidence({ scene, window, asset });
   const text = [window.summary, window.description, asset.semantic_text, asset.query].filter(Boolean).join(" ");
   const detectedLocation = detectLocation(text, window.location);
   const windowDuration = Number(window.duration_seconds || Math.max(0, Number(window.end_seconds || 0) - Number(window.start_seconds || 0)));
   const expectedLocation = scene.expected_location || scene.location?.city || (scene.topic_type === "city" ? scene.macro_topic : "");
+  const expectedCountry = scene.expected_country || scene.location?.country || "";
   const isHardBoundaryFirstSlot = Boolean(scene.hard_boundary && scene.is_boundary_first_slot);
+  const strictLocationGate = (config.LOCATION_GATE_MODE || "strict") === "strict";
+  const locationMinConfidence = Number(config.LOCATION_MIN_CONFIDENCE || 0.4);
+
+  // País errado = reject SEMPRE (pega Coliseu/Glasgow/stupa mesmo sem alias de cidade).
+  if (expectedCountry && window.location?.country && !isSameCountry(window.location.country, expectedCountry)) {
+    return {
+      reject: true,
+      reason: "wrong_country",
+      warnings: [`asset_country_${normalizeCountry(window.location.country)}_expected_${normalizeCountry(expectedCountry)}`],
+      evidence,
+    };
+  }
+
+  // Modo strict: cena exige localização + visão analisou o clip + visão NÃO
+  // confirmou cidade com confiança suficiente → reject (fail-closed).
+  if (
+    strictLocationGate &&
+    expectedLocation &&
+    !scene.generic_asset_allowed &&
+    visionAnalyzedWindow(window) &&
+    !detectedLocation.city &&
+    Number(window.location?.confidence || 0) < locationMinConfidence
+  ) {
+    return {
+      reject: true,
+      reason: "unverified_location_for_location_scene",
+      warnings: ["vision_could_not_verify_location"],
+      evidence,
+    };
+  }
 
   if (isHardBoundaryFirstSlot && config.HARD_BOUNDARY_FORBID_NEUTRAL_FIRST_CLIP && (asset.neutral || window.neutral || evidence.generic_visual)) {
     return {
@@ -179,8 +243,12 @@ module.exports = {
   POSITIVE_GASTRONOMY_TERMS,
   scorePreDownloadCandidate,
   shouldRejectAssetForScene,
+  isSameCountry,
+  normalizeCountry,
   __test__: {
     scorePreDownloadCandidate,
     shouldRejectAssetForScene,
+    isSameCountry,
+    normalizeCountry,
   },
 };

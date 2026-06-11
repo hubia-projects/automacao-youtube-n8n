@@ -1,14 +1,16 @@
 const path = require("path");
+const crypto = require("crypto");
 const fs = require("fs-extra");
 const OpenAI = require("openai");
 const { config } = require("../config/env");
 const { logger } = require("../utils/logger");
 const { writeJsonAtomic, readJsonSafe } = require("../utils/fileUtils");
-const { ensureVideoStructure } = require("./stateService");
+const { generateEmbedding: generateGeminiEmbedding, hasGemini } = require("./geminiService");
 
 const EMBEDDING_MODEL = "text-embedding-3-small";
 const EMBEDDING_BATCH_SIZE = 20;
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
+const CACHE_SAVE_DEBOUNCE_MS = 1500;
 
 const openaiClient = config.OPENAI_API_KEY
   ? new OpenAI({
@@ -18,7 +20,8 @@ const openaiClient = config.OPENAI_API_KEY
     })
   : null;
 
-const hasEmbeddings = () => Boolean(openaiClient && config.OPENAI_API_KEY);
+const hasOpenAiEmbeddings = () => Boolean(openaiClient && config.OPENAI_API_KEY);
+const hasEmbeddings = () => hasOpenAiEmbeddings() || hasGemini();
 
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
 
@@ -29,27 +32,54 @@ const normalizeLabel = (value = "") =>
     .toLowerCase()
     .trim();
 
-// ===== Embeddings Cache =====
+// ===== Global Embeddings Cache (compartilhado entre v\u00eddeos) =====
 
-const getEmbeddingsCachePath = async (videoId) => {
-  const paths = await ensureVideoStructure(videoId);
-  return path.join(paths.base, "assets", "embeddings_cache.json");
+const getEmbeddingsCachePath = () =>
+  path.join(config.OUTPUT_ROOT, "cache", "embeddings", "embeddings_cache.json");
+
+let memoryCache = null;
+let saveTimer = null;
+let cacheDirty = false;
+
+const loadMemoryCache = async () => {
+  if (memoryCache) return memoryCache;
+  const cachePath = getEmbeddingsCachePath();
+  const disk = await readJsonSafe(cachePath, { version: CACHE_VERSION, entries: {} });
+  memoryCache = new Map(Object.entries(disk.version === CACHE_VERSION ? disk.entries || {} : {}));
+  return memoryCache;
 };
 
-const loadEmbeddingsCache = async (videoId) => {
-  const cachePath = await getEmbeddingsCachePath(videoId);
-  const cache = await readJsonSafe(cachePath, { version: CACHE_VERSION, entries: {} });
-  return cache;
+const scheduleCacheSave = () => {
+  cacheDirty = true;
+  if (saveTimer) return;
+  saveTimer = setTimeout(async () => {
+    saveTimer = null;
+    if (!cacheDirty || !memoryCache) return;
+    cacheDirty = false;
+    const cachePath = getEmbeddingsCachePath();
+    await fs.ensureDir(path.dirname(cachePath));
+    await writeJsonAtomic(cachePath, {
+      version: CACHE_VERSION,
+      entries: Object.fromEntries(memoryCache),
+    }).catch((error) => logger.warn("semanticMatcher: falha ao persistir cache", { message: error.message }));
+  }, CACHE_SAVE_DEBOUNCE_MS);
+  if (saveTimer.unref) saveTimer.unref();
 };
 
-const saveEmbeddingsCache = async (videoId, cache) => {
-  const cachePath = await getEmbeddingsCachePath(videoId);
-  await writeJsonAtomic(cachePath, cache);
+const flushEmbeddingsCache = async () => {
+  if (!memoryCache || !cacheDirty) return;
+  cacheDirty = false;
+  const cachePath = getEmbeddingsCachePath();
+  await fs.ensureDir(path.dirname(cachePath));
+  await writeJsonAtomic(cachePath, {
+    version: CACHE_VERSION,
+    entries: Object.fromEntries(memoryCache),
+  }).catch(() => null);
 };
 
 const getCacheKey = (text) => {
-  const cleaned = normalizeLabel(text).replace(/\s+/g, " ").slice(0, 1000);
-  return `${Buffer.from(cleaned).length}:${cleaned.length}:${cleaned.slice(0, 100)}`;
+  const cleaned = normalizeLabel(text).replace(/\s+/g, " ").slice(0, 4000);
+  return crypto.createHash("sha1").update(cleaned).digest("hex");
 };
 
 // ===== Embedding Generation =====
@@ -57,54 +87,112 @@ const getCacheKey = (text) => {
 const generateEmbedding = async (text) => {
   if (!hasEmbeddings() || !text || !text.trim()) return null;
 
-  try {
-    const response = await openaiClient.embeddings.create({
-      model: EMBEDDING_MODEL,
-      input: text.trim().slice(0, 8000),
-    });
-    return response?.data?.[0]?.embedding || null;
-  } catch (error) {
-    logger.warn("semanticMatcher: falha ao gerar embedding", { message: error.message, textLength: text.length });
-    return null;
+  if (hasOpenAiEmbeddings()) {
+    try {
+      const response = await openaiClient.embeddings.create({
+        model: EMBEDDING_MODEL,
+        input: text.trim().slice(0, 8000),
+      });
+      const embedding = response?.data?.[0]?.embedding || null;
+      if (embedding) return embedding;
+    } catch (error) {
+      logger.warn("semanticMatcher: falha OpenAI embedding, tentando Gemini", { message: error.message });
+    }
   }
+
+  if (hasGemini()) return generateGeminiEmbedding(text);
+  return null;
 };
 
-const generateEmbeddingsBatch = async (texts) => {
+const generateEmbeddingsBatchRaw = async (texts) => {
   if (!hasEmbeddings() || !texts.length) return texts.map(() => null);
 
   const validTexts = texts.map((t) => String(t || "").trim().slice(0, 8000));
   const results = [];
 
-  for (let i = 0; i < validTexts.length; i += EMBEDDING_BATCH_SIZE) {
-    const batch = validTexts.slice(i, i + EMBEDDING_BATCH_SIZE);
-    const validBatch = batch.filter((t) => t.length > 0);
+  if (hasOpenAiEmbeddings()) {
+    for (let i = 0; i < validTexts.length; i += EMBEDDING_BATCH_SIZE) {
+      const batch = validTexts.slice(i, i + EMBEDDING_BATCH_SIZE);
+      const validBatch = batch.filter((t) => t.length > 0);
 
-    if (!validBatch.length) {
-      batch.forEach(() => results.push(null));
-      continue;
-    }
+      if (!validBatch.length) {
+        batch.forEach(() => results.push(null));
+        continue;
+      }
 
-    try {
-      const response = await openaiClient.embeddings.create({
-        model: EMBEDDING_MODEL,
-        input: validBatch,
-      });
+      try {
+        const response = await openaiClient.embeddings.create({
+          model: EMBEDDING_MODEL,
+          input: validBatch,
+        });
 
-      const embeddings = response?.data || [];
-      let embedIndex = 0;
+        const embeddings = response?.data || [];
+        let embedIndex = 0;
 
-      batch.forEach((text) => {
-        if (text.length > 0) {
-          results.push(embeddings[embedIndex]?.embedding || null);
-          embedIndex += 1;
-        } else {
-          results.push(null);
+        batch.forEach((text) => {
+          if (text.length > 0) {
+            results.push(embeddings[embedIndex]?.embedding || null);
+            embedIndex += 1;
+          } else {
+            results.push(null);
+          }
+        });
+      } catch (error) {
+        logger.warn("semanticMatcher: falha no batch OpenAI, tentando Gemini individual", { message: error.message });
+        for (const text of batch) {
+          results.push(text.length > 0 ? await generateGeminiEmbedding(text) : null);
         }
-      });
-    } catch (error) {
-      logger.warn("semanticMatcher: falha no batch de embeddings", { message: error.message, batchSize: validBatch.length });
-      batch.forEach(() => results.push(null));
+      }
     }
+    return results;
+  }
+
+  // Gemini n\u00e3o tem batch nativo
+  for (const text of validTexts) {
+    results.push(text.length > 0 ? await generateGeminiEmbedding(text) : null);
+  }
+  return results;
+};
+
+/**
+ * Batch com cache: consulta o cache global primeiro e s\u00f3 embedda os misses.
+ * Esta \u00e9 a fun\u00e7\u00e3o que elimina o custo repetido por slot da timeline.
+ */
+const generateEmbeddingsBatch = async (texts) => {
+  if (!texts.length) return [];
+  if (!hasEmbeddings()) return texts.map(() => null);
+
+  const cache = await loadMemoryCache();
+  const results = new Array(texts.length).fill(null);
+  const missIndexes = [];
+  const missTexts = [];
+
+  texts.forEach((text, index) => {
+    const trimmed = String(text || "").trim();
+    if (!trimmed) return;
+    const key = getCacheKey(trimmed);
+    const cached = cache.get(key);
+    if (cached && Array.isArray(cached.embedding) && cached.embedding.length > 0) {
+      results[index] = cached.embedding;
+    } else {
+      missIndexes.push(index);
+      missTexts.push(trimmed);
+    }
+  });
+
+  if (missTexts.length) {
+    const fresh = await generateEmbeddingsBatchRaw(missTexts);
+    fresh.forEach((embedding, i) => {
+      const index = missIndexes[i];
+      results[index] = embedding;
+      if (embedding) {
+        cache.set(getCacheKey(missTexts[i]), {
+          embedding,
+          created_at: new Date().toISOString(),
+        });
+      }
+    });
+    scheduleCacheSave();
   }
 
   return results;
@@ -112,12 +200,13 @@ const generateEmbeddingsBatch = async (texts) => {
 
 // ===== Embedding with Cache =====
 
+// videoId \u00e9 aceito por compatibilidade mas o cache agora \u00e9 global
 const getOrCreateEmbedding = async ({ text, videoId, label = "" }) => {
   if (!text || !text.trim()) return null;
 
+  const cache = await loadMemoryCache();
   const cacheKey = getCacheKey(text);
-  const cache = await loadEmbeddingsCache(videoId);
-  const cached = cache.entries[cacheKey];
+  const cached = cache.get(cacheKey);
 
   if (cached && Array.isArray(cached.embedding) && cached.embedding.length > 0) {
     return cached.embedding;
@@ -125,12 +214,12 @@ const getOrCreateEmbedding = async ({ text, videoId, label = "" }) => {
 
   const embedding = await generateEmbedding(text);
   if (embedding) {
-    cache.entries[cacheKey] = {
+    cache.set(cacheKey, {
       embedding,
-      label: label.slice(0, 100),
+      label: String(label || "").slice(0, 100),
       created_at: new Date().toISOString(),
-    };
-    await saveEmbeddingsCache(videoId, cache);
+    });
+    scheduleCacheSave();
   }
 
   return embedding;
@@ -438,6 +527,8 @@ module.exports = {
   matchPauseToAsset,
   extractKeyConcepts,
   generateEmbedding,
+  generateEmbeddingsBatch,
+  flushEmbeddingsCache,
   cosineSimilarity,
   keywordOverlapScore,
   __test__: {
@@ -445,5 +536,6 @@ module.exports = {
     keywordOverlapScore,
     tokenizeForMatch,
     getCacheKey,
+    loadMemoryCache,
   },
 };
