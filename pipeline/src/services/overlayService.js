@@ -6,7 +6,6 @@ const { isSameLocation } = require("./narrativeBlockPlanner");
 const { logger } = require("../utils/logger");
 
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 const escapeDrawtext = (value = "") =>
   String(value || "")
@@ -69,34 +68,10 @@ const buildBlockOverlays = ({
     .filter(Boolean);
 };
 
-const buildOverlayLayout = ({ videoWidth = Number(config.OUTPUT_WIDTH || 1920), videoHeight = Number(config.OUTPUT_HEIGHT || 1080) } = {}) => {
-  const width = Math.max(640, Number(videoWidth || config.OUTPUT_WIDTH || 1920));
-  const height = Math.max(360, Number(videoHeight || config.OUTPUT_HEIGHT || 1080));
-  const boxX = Math.round(width * 0.06);
-  const boxY = Math.round(height * 0.08);
-  const boxW = Math.round(width * 0.42);
-  const boxH = Math.round(clamp(height * 0.085, 72, 132));
-  const textX = Math.round(width * 0.09);
-  const textY = Math.round(boxY + (boxH * 0.58));
-  const fontSize = Math.round(clamp(height * 0.039, 30, 54));
-  return {
-    width,
-    height,
-    boxX,
-    boxY,
-    boxW,
-    boxH,
-    textX,
-    textY,
-    fontSize,
-  };
-};
-
-const buildOverlayFilter = ({ overlays = [], videoWidth = Number(config.OUTPUT_WIDTH || 1920), videoHeight = Number(config.OUTPUT_HEIGHT || 1080) }) => {
+const buildOverlayFilter = ({ overlays = [] }) => {
   const fontPath = process.platform === "win32"
     ? "C\\:/Windows/Fonts/arial.ttf"
     : "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
-  const layout = buildOverlayLayout({ videoWidth, videoHeight });
 
   const parts = [];
   overlays.forEach((overlay) => {
@@ -171,6 +146,4 @@ module.exports = {
   applyOverlaysToVideo,
   buildBlockOverlays,
   buildOverlayFilter,
-  buildOverlayLayout,
-  preflightOverlayFilter,
 };

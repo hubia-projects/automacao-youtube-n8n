@@ -15,8 +15,6 @@ const config = {
   APP_PORT: Number(process.env.APP_PORT || 8080),
   MOCK_MODE: toBool(process.env.MOCK_MODE, false),
   ALLOW_PLACEHOLDER_ASSETS: toBool(process.env.ALLOW_PLACEHOLDER_ASSETS, false),
-  AUTO_APPROVE_FOR_TESTING: toBool(process.env.AUTO_APPROVE_FOR_TESTING, false),
-  MIN_VIDEO_DURATION_SECONDS: Number(process.env.MIN_VIDEO_DURATION_SECONDS || 480),
   OUTPUT_ROOT,
   N8N_BASE_URL: process.env.N8N_BASE_URL || "http://n8n:5678",
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",

@@ -12,37 +12,6 @@ const EMBEDDING_BATCH_SIZE = 20;
 const CACHE_VERSION = 2;
 const CACHE_SAVE_DEBOUNCE_MS = 1500;
 
-// Circuit breaker: falhas consecutivas OU total de chamadas acima do cap → usa Jaccard
-let _geminiEmbedFailures = 0;
-let _geminiEmbedTotalCalls = 0;
-let _geminiEmbedCircuitOpen = false;
-const GEMINI_EMBED_FAIL_THRESHOLD = 3;
-const GEMINI_EMBED_CALL_CAP = Number(process.env.GEMINI_EMBED_CALL_CAP || 50);
-
-const callGeminiEmbedding = async (text) => {
-  if (_geminiEmbedCircuitOpen) return null;
-  if (_geminiEmbedTotalCalls >= GEMINI_EMBED_CALL_CAP) {
-    if (!_geminiEmbedCircuitOpen) {
-      _geminiEmbedCircuitOpen = true;
-      logger.warn(`semanticMatcher: cap de ${GEMINI_EMBED_CALL_CAP} chamadas atingido — usando Jaccard pelo resto da sessão`);
-    }
-    return null;
-  }
-  _geminiEmbedTotalCalls++;
-  try {
-    const result = await generateGeminiEmbedding(text);
-    if (result) { _geminiEmbedFailures = 0; return result; }
-    _geminiEmbedFailures++;
-  } catch {
-    _geminiEmbedFailures++;
-  }
-  if (_geminiEmbedFailures >= GEMINI_EMBED_FAIL_THRESHOLD) {
-    _geminiEmbedCircuitOpen = true;
-    logger.warn("semanticMatcher: circuit breaker aberto — usando Jaccard pelo resto da sessão");
-  }
-  return null;
-};
-
 const openaiClient = config.OPENAI_API_KEY
   ? new OpenAI({
       apiKey: config.OPENAI_API_KEY,
