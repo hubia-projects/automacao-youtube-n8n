@@ -263,7 +263,15 @@ const filterCandidatesByHardRules = ({
   hardBoundaryPolicy = getHardBoundaryPolicy(),
 }) => {
   const expectedLocation = block.expected_location || block.location?.city || (block.topic_type === "city" ? block.macro_topic : "");
-  let strict = assetWindows.filter((candidate) => isCandidateAllowedByHardRules({ block, candidate, previousMacroTopic }));
+
+  // FASE 1: Priorizar assets da mesma cena (scene_index) — impede contaminação cruzada
+  const sceneLocal = assetWindows.filter((c) => c.scene_index === block.scene_index);
+  const sceneStrict = sceneLocal.filter((candidate) => isCandidateAllowedByHardRules({ block, candidate, previousMacroTopic }));
+
+  // FASE 2: Se a cena local não é suficiente, expandir para pool global filtrado
+  let strict = sceneStrict.length >= 2
+    ? sceneStrict
+    : assetWindows.filter((candidate) => isCandidateAllowedByHardRules({ block, candidate, previousMacroTopic }));
 
   if (isBoundaryFirstSlot && hardBoundaryPolicy.forbid_neutral_first_clip) {
     strict = strict.filter((candidate) => !candidate.neutral);
@@ -298,12 +306,23 @@ const filterCandidatesByHardRules = ({
   return allowPlaceholderFallback ? [buildFallbackCandidate(fallbackAsset)] : [];
 };
 
-const getNarrationTextBetween = ({ words = [], startSeconds = 0, endSeconds = 0, fallback = "" }) => {
+const getNarrationTextBetween = ({ words = [], startSeconds = 0, endSeconds = 0, fallback = "", block = null }) => {
+  // Janela expandida: ±2s para capturar landmarks mencionados perto do slot
+  const expandedStart = Math.max(0, startSeconds - 2);
+  const expandedEnd = endSeconds + 2;
   const matchedWords = words
-    .filter((word) => Number(word.start || 0) < endSeconds && Number(word.end || 0) > startSeconds)
+    .filter((word) => Number(word.start || 0) < expandedEnd && Number(word.end || 0) > expandedStart)
     .map((word) => word.word)
     .filter(Boolean);
-  return matchedWords.length ? matchedWords.join(" ") : fallback;
+  let text = matchedWords.length ? matchedWords.join(" ") : fallback;
+
+  // Sempre anexar landmarks do bloco para que o ranking saiba o que a cena exige
+  if (block) {
+    const landmarkNames = (block.landmarks || []).map((l) => l.name).filter(Boolean);
+    if (landmarkNames.length) text += " " + landmarkNames.join(" ");
+    if (block.location?.city) text += " " + block.location.city;
+  }
+  return text;
 };
 
 const splitBlockIntoTimelineSlots = ({ block, policy, pauseMarkers = [] }) => {
@@ -598,6 +617,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
     usedProviders: new Map(),
     usedBlockAssetIds: new Map(),
     usedVisualSignatures: new Map(),
+    usedLandmarks: new Map(),
     lastClipByAssetId: new Map(),
   };
   const clips = [];
@@ -618,6 +638,7 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         startSeconds: slot.start,
         endSeconds: slot.end,
         fallback: sceneFallbackNarration,
+        block,
       });
       const candidates = filterCandidatesByHardRules({
         block,
