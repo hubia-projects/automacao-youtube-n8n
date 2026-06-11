@@ -32,6 +32,7 @@ const {
   searchApprovedClips,
   markClipUsed,
 } = require("./clipLibraryService");
+const { generateFallbackAsset, isImagenEnabled } = require("./geminiGenerationService");
 
 const OUTPUT_WIDTH = Number(config.OUTPUT_WIDTH || 1920);
 const OUTPUT_HEIGHT = Number(config.OUTPUT_HEIGHT || 1080);
@@ -1806,6 +1807,14 @@ const buildTimeline = async ({
           features: {},
           selection_reason: "emergency_cross_scene_fallback",
         };
+      }
+
+      // Gemini Imagen fallback: pool completamente esgotado → gerar imagem com Ken Burns
+      if (!selected?.candidate && isImagenEnabled() && !config.DISABLE_GEMINI_GENERATION) {
+        const generatedAsset = await generateFallbackAsset(block, videoId).catch(() => null);
+        if (generatedAsset) {
+          selected = { candidate: generatedAsset, score: -5, features: {}, selection_reason: "gemini_generated_fallback" };
+        }
       }
 
       let candidate = selected.candidate || fallbackCandidate;
