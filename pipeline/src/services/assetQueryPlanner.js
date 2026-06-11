@@ -1,7 +1,30 @@
-const { CITY_ALIASES } = require("./narrativeBlockPlanner");
+const { CITY_ALIASES, detectLandmarks } = require("./narrativeBlockPlanner");
 const { normalizeLabel } = require("./visualIntentService");
 
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
+
+// Mapa: nome_normalizado_do_landmark → queries para stock video (mais específico primeiro)
+const LANDMARK_SEARCH_TERMS = {
+  "alfama": ["alfama lisbon historic district", "alfama lisbon old town streets"],
+  "bairro alto": ["bairro alto lisbon nightlife", "bairro alto lisbon streets"],
+  "torre de belem": ["belem tower lisbon portugal", "torre belem lisbon riverside"],
+  "rio tejo": ["tagus river lisbon portugal", "tejo river lisbon aerial"],
+  "praca do comercio": ["praca comercio lisbon portugal", "commerce square lisbon aerial"],
+  "ribeira": ["porto ribeira waterfront", "porto ribeira river douro"],
+  "rio douro": ["douro river porto ribeira", "porto douro river boats"],
+  "ponte dom luis": ["ponte dom luis porto bridge", "dom luis bridge porto portugal aerial"],
+  "vila nova de gaia": ["vila nova gaia porto wine cellars", "gaia porto wine lodge"],
+  "palacio da pena": ["pena palace sintra portugal", "palacio pena sintra colorful"],
+  "quinta da regaleira": ["quinta regaleira sintra portugal", "regaleira sintra gardens"],
+  "castelo dos mouros": ["moorish castle sintra portugal", "castelo mouros sintra"],
+  "algarve": ["algarve portugal cliffs beach", "algarve coast aerial portugal"],
+  "ria formosa": ["ria formosa faro lagoon", "ria formosa portugal wetlands"],
+  "mosteiro dos jeronimos": ["mosteiro jeronimos lisbon belem", "jeronimos monastery lisbon"],
+  "castelo de sao jorge": ["castelo sao jorge lisbon", "saint george castle lisbon aerial"],
+  "se de lisboa": ["lisbon cathedral se portugal", "se cathedral lisbon"],
+  "se do porto": ["porto cathedral se portugal", "se porto historic"],
+  "mercado do bolhao": ["bolhao market porto", "mercado bolhao porto interior"],
+};
 
 const GASTRONOMY_TERMS = [
   "food",
@@ -417,6 +440,27 @@ const buildSceneQueryPlan = ({ scene = {}, topic = "" }) => {
     }
   } else {
     buildGeneralQueries({ entries, seen, cityTerms, countryTerms, scene, intent });
+  }
+
+  // Queries específicas de landmark quando narração cita um ponto conhecido.
+  // Essas queries entram ANTES dos presets para garantir que o pool contenha
+  // candidatos com evidência do landmark antes de qualquer outro clip.
+  const narrationLandmarks = detectLandmarks(scene.narration_excerpt || "");
+  if (narrationLandmarks.length) {
+    const landmarkEntries = [];
+    const landmarkSeen = new Set();
+    narrationLandmarks.forEach((landmark) => {
+      const key = normalizeLabel(landmark.name);
+      const queries = LANDMARK_SEARCH_TERMS[key] || [];
+      queries.forEach((query) => {
+        if (!landmarkSeen.has(query)) {
+          landmarkSeen.add(query);
+          landmarkEntries.push({ query, reason: `landmark_narration_${key.replace(/\s+/g, "_")}` });
+        }
+      });
+    });
+    // Inserir no início para dar prioridade de busca
+    entries.unshift(...landmarkEntries);
   }
 
   if (shouldUseCityPresets({ scene, intent })) {

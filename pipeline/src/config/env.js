@@ -30,6 +30,7 @@ const config = {
   BURN_CAPTIONS: toBool(process.env.BURN_CAPTIONS, true),
   BACKGROUND_MUSIC_PATH: process.env.BACKGROUND_MUSIC_PATH || "",
   BACKGROUND_MUSIC_VOLUME: Number(process.env.BACKGROUND_MUSIC_VOLUME || 0.12),
+  DISABLE_GEMINI_GENERATION: toBool(process.env.DISABLE_GEMINI_GENERATION, false),
   MULTIVOZES_BR_ENGINE:
     process.env.MULTIVOZES_BR_ENGINE || process.env.MULTIVOZEZ_BR_ENGINE || "",
   MULTIVOZES_BR_BASE_URL: process.env.MULTIVOZES_BR_BASE_URL || "http://host.docker.internal:5050/v1",

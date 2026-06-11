@@ -12,6 +12,8 @@ const {
 const { isPublishableAsset } = require("./assetReadinessService");
 const { isSameCountry } = require("./assetRejectionService");
 const { rankCandidates, registerClipUsage, buildVisualSignature } = require("./timelineScoringService");
+const { generateFallbackAsset, isImagenEnabled } = require("./geminiGenerationService");
+const { logger } = require("../utils/logger");
 
 const OUTPUT_WIDTH = Number(config.OUTPUT_WIDTH || 1920);
 const OUTPUT_HEIGHT = Number(config.OUTPUT_HEIGHT || 1080);
@@ -640,9 +642,22 @@ const buildTimeline = async ({ state, audioDuration, draftVersion, fallbackAsset
         hardBoundaryPolicy,
         isBoundaryFirstSlot,
       });
-      const selected = ranked.find((item) => !item.hard_blocked) || ranked[0] || (fallbackCandidate
+      let selected = ranked.find((item) => !item.hard_blocked) || (fallbackCandidate
         ? { candidate: fallbackCandidate, score: -10, features: {}, selection_reason: "fallback" }
         : null);
+
+      // Gemini Imagen fallback: pool esgotado → gerar imagem com Ken Burns
+      if (!selected && isImagenEnabled() && !config.DISABLE_GEMINI_GENERATION) {
+        const generatedAsset = await generateFallbackAsset(block, videoId).catch(() => null);
+        if (generatedAsset) {
+          selected = { candidate: generatedAsset, score: -5, features: {}, selection_reason: "gemini_generated_fallback" };
+          logger.info("timelinePlanner: usando asset gerado pelo Gemini", {
+            scene: block.scene_index,
+            topic: block.topic,
+            city: block.location?.city,
+          });
+        }
+      }
 
       if (!selected?.candidate || (isBoundaryFirstSlot && selected.hard_blocked && hardBoundaryPolicy.fail_on_missing_boundary_candidate)) {
         throw new Error(`Timeline blocked: no publishable candidate available for scene ${block.scene_index}.`);

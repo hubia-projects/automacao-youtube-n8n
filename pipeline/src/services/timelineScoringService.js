@@ -541,6 +541,7 @@ const rankCandidates = async ({
       hardBoundaryBlockReason ||
       hardReuseBlockReason ||
       namedEntityBlockReason ||
+      hardRejection.reject ||
       sceneBinding.hardBlocked ||
       editorialAssessment.editorial_fit === "wrong" ||
       (isCriticalScene(block) && !editorialAssessment.allowed_for_critical_slot)
@@ -552,7 +553,7 @@ const rankCandidates = async ({
       score: round3(finalScore),
       method: semantic.method,
       hard_blocked: hardBlocked,
-      hard_blocked_reason: hardBoundaryBlockReason || hardReuseBlockReason || namedEntityBlockReason || (sceneBinding.hardBlocked ? sceneBinding.reason : editorialAssessment.editorial_fit === "wrong" ? "wrong_editorial_fit" : ""),
+      hard_blocked_reason: hardBoundaryBlockReason || hardReuseBlockReason || namedEntityBlockReason || (hardRejection.reject ? hardRejection.reason : "") || (sceneBinding.hardBlocked ? sceneBinding.reason : editorialAssessment.editorial_fit === "wrong" ? "wrong_editorial_fit" : ""),
       features: {
         semanticScore: round3(semantic.score),
         visualIntentMatchScore: round3(visualIntentMatchScore),
