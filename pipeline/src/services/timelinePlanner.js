@@ -1793,10 +1793,24 @@ const buildTimeline = async ({
             return ["exact", "regional"].includes(status) && score >= minMicroScore;
           })
         : null;
+      const getLeastUsedRanked = (entries) => {
+        if (!entries.length) return null;
+        return [...entries].sort((a, b) => {
+          const usageA = Math.max(
+            (usage.usedLocalPaths?.get(a.candidate?.asset?.local_path || "") || 0),
+            (usage.usedAssetIds?.get(a.candidate?.asset_id || "") || 0)
+          );
+          const usageB = Math.max(
+            (usage.usedLocalPaths?.get(b.candidate?.asset?.local_path || "") || 0),
+            (usage.usedAssetIds?.get(b.candidate?.asset_id || "") || 0)
+          );
+          return usageA - usageB;
+        })[0] || null;
+      };
       const policySelected = selectedFromPolicy
         || microProofPreferred
         || ranked.find((item) => !item.hard_blocked)
-        || ranked[0]
+        || getLeastUsedRanked(ranked)
         || approvedDegradeCandidate
         || (fallbackCandidate
           ? { candidate: fallbackCandidate, score: -10, features: {}, selection_reason: "fallback" }
