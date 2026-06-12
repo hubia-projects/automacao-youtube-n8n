@@ -160,11 +160,42 @@ const basicGeminiHealthcheck = async () => {
   }
 };
 
+const generateIdeasWithGemini = async ({ count = 5, videoId = "" }) => {
+  if (!hasGemini()) return null;
+  const prompt = `Gere ${count} ideias criativas para vídeos do YouTube sobre viagens e turismo em Portugal.
+Responda em JSON com o seguinte formato exato (sem campos extras):
+[
+  {
+    "topic": "título atraente do vídeo em português brasileiro",
+    "angle": "ângulo narrativo único (ex: 'guia prático para famílias', 'roteiro em 5 dias')",
+    "notes": "gancho de abertura para prender o espectador nos primeiros 10 segundos",
+    "scores": {
+      "search_demand": 75,
+      "evergreen": 80,
+      "retention": 78,
+      "monetization": 72,
+      "visual_assets": 85,
+      "factual_risk": 10
+    }
+  }
+]
+Gere exatamente ${count} ideias diferentes. Tópicos devem ser específicos e acionáveis, não genéricos.`;
+  try {
+    const result = await generateContent({ prompt, responseFormat: "json", temperature: 0.8 });
+    const parsed = safeJsonParse(result, []);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (error) {
+    logger.warn("geminiService: generateIdeasWithGemini falhou", { message: error.message, videoId });
+    return null;
+  }
+};
+
 module.exports = {
   hasGemini,
   generateContent,
   generateEmbedding,
   describeImagesWithGemini,
   generateScriptPackageWithGemini,
+  generateIdeasWithGemini,
   basicGeminiHealthcheck,
 };

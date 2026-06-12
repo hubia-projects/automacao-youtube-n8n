@@ -1808,16 +1808,30 @@ const buildTimeline = async ({
         if (!allowApprovedPoolDegrade) {
           throw new Error(`Timeline blocked: no strict publishable candidate available for scene ${block.scene_index}.`);
         }
-        const emergencyByScene = assetWindows.find((item) =>
-          item.editorial_approved === true
-          && Number(item.scene_index || 0) === Number(block.scene_index || 0)
-        );
-        const emergencyByBlock = assetWindows.find((item) =>
-          item.editorial_approved === true
-          && String(item.block_id || "").trim()
-          && String(item.block_id || "").trim() === String(block.block_id || "").trim()
-        );
-        const emergencyGlobal = assetWindows.find((item) => item.editorial_approved === true);
+        const getEmergencyUsageCount = (item) => {
+          const localPath = item.asset?.local_path || "";
+          const assetId = item.asset_id || "";
+          return Math.max(
+            localPath ? (usage.usedLocalPaths?.get(localPath) || 0) : 0,
+            assetId ? (usage.usedAssetIds?.get(assetId) || 0) : 0
+          );
+        };
+        const emergencyByScene = [...assetWindows]
+          .filter((item) =>
+            item.editorial_approved === true
+            && Number(item.scene_index || 0) === Number(block.scene_index || 0)
+          )
+          .sort((a, b) => getEmergencyUsageCount(a) - getEmergencyUsageCount(b))[0];
+        const emergencyByBlock = [...assetWindows]
+          .filter((item) =>
+            item.editorial_approved === true
+            && String(item.block_id || "").trim()
+            && String(item.block_id || "").trim() === String(block.block_id || "").trim()
+          )
+          .sort((a, b) => getEmergencyUsageCount(a) - getEmergencyUsageCount(b))[0];
+        const emergencyGlobal = [...assetWindows]
+          .filter((item) => item.editorial_approved === true)
+          .sort((a, b) => getEmergencyUsageCount(a) - getEmergencyUsageCount(b))[0];
         const emergencyCandidate = emergencyByScene || emergencyByBlock || emergencyGlobal;
         if (!emergencyCandidate) {
           throw new Error(`Timeline blocked: no publishable candidate available for scene ${block.scene_index}.`);
