@@ -1739,6 +1739,14 @@ const buildTimeline = async ({
         slotStartSec: slot.start,
         slotEndSec: slot.end,
       });
+      const getDegradeUsageCount = (item) => {
+        const localPath = item.asset?.local_path || "";
+        const assetId = item.asset_id || "";
+        return Math.max(
+          localPath ? (usage.usedLocalPaths?.get(localPath) || 0) : 0,
+          assetId ? (usage.usedAssetIds?.get(assetId) || 0) : 0
+        );
+      };
       const approvedDegradePool = (assetWindows || [])
         .filter((item) => item.editorial_approved === true)
         .filter((item) => {
@@ -1750,7 +1758,11 @@ const buildTimeline = async ({
           if (!FOOD_VISUAL_INTENTS.has(String(block.visual_intent || "").toLowerCase())) return true;
           return candidateHasThemeEvidence({ block, candidate: item });
         })
-        .sort((left, right) => Number(right.editorial_confidence || right.confidence || 0) - Number(left.editorial_confidence || left.confidence || 0));
+        .sort((left, right) => {
+          const usageDiff = getDegradeUsageCount(left) - getDegradeUsageCount(right);
+          if (usageDiff !== 0) return usageDiff;
+          return Number(right.editorial_confidence || right.confidence || 0) - Number(left.editorial_confidence || left.confidence || 0);
+        });
       const approvedDegradeCandidate = allowApprovedPoolDegrade && approvedDegradePool[0]
         ? {
             candidate: approvedDegradePool[0],
