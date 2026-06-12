@@ -117,13 +117,16 @@ const describeImagesWithGemini = async ({ prompt, imagePaths = [] }) => {
   });
 };
 
-const generateScriptPackageWithGemini = async ({ topic, angle }) => {
+const generateScriptPackageWithGemini = async ({ topic, angle, targetWords = 1400 }) => {
   if (!hasGemini()) return null;
 
+  const targetMinutes = Math.round(targetWords / 130);
   const prompt = `Você é roteirista especialista em vídeos faceless para YouTube. Escreva em português do Brasil com alta retenção.
 
 Tema: ${topic}
 Ângulo: ${angle || "educativo/documental"}
+
+IMPORTANTE: O campo "script_text" deve ter EXATAMENTE no mínimo ${targetWords} palavras (roteiro para ${targetMinutes}-${targetMinutes + 3} minutos). Escreva narração completa, detalhada e extensa — não resuma.
 
 Gere JSON estrito com:
 {
@@ -131,7 +134,7 @@ Gere JSON estrito com:
   "intro_hook": "",
   "research_json": {"facts": [""], "risks": [""], "sources": [""]},
   "outline_json": {"sections": [{"title": "", "objective": ""}]},
-  "script_text": "roteiro completo para 10-15 minutos",
+  "script_text": "narração completa com no mínimo ${targetWords} palavras",
   "visual_suggestions": [{"section": "", "shots": [""]}],
   "factual_notes": [""],
   "seo_keywords": [""],
@@ -141,7 +144,7 @@ Gere JSON estrito com:
   "chapters": ["00:00 Introdução"]
 }`;
 
-  return generateContent({ prompt, responseFormat: "json", timeoutMs: 120000 });
+  return generateContent({ prompt, responseFormat: "json", timeoutMs: 180000 });
 };
 
 const basicGeminiHealthcheck = async () => {
