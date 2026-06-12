@@ -893,10 +893,24 @@ const selectBySourceTierPolicy = ({
   criticalSlot = false,
   block = {},
   freeCriticalUsageByBlock = new Map(),
+  usage = {},
 }) => {
   if (!Array.isArray(ranked) || !ranked.length) return null;
   const available = ranked.filter((item) => !item.hard_blocked);
-  if (!available.length) return ranked[0] || null;
+  if (!available.length) {
+    // All hard-blocked: pick least-used to distribute forced selections evenly
+    return [...ranked].sort((a, b) => {
+      const uA = Math.max(
+        usage.usedLocalPaths?.get(a.candidate?.asset?.local_path || "") || 0,
+        usage.usedAssetIds?.get(a.candidate?.asset_id || "") || 0
+      );
+      const uB = Math.max(
+        usage.usedLocalPaths?.get(b.candidate?.asset?.local_path || "") || 0,
+        usage.usedAssetIds?.get(b.candidate?.asset_id || "") || 0
+      );
+      return uA - uB;
+    })[0] || null;
+  }
 
   const requiresStrictSourcePolicy = criticalSlot || ["hook_exact", "opening_establishing", "proof_exact", "closing_payoff"].includes(slotRole);
   if (!requiresStrictSourcePolicy) return available[0];
@@ -1777,6 +1791,7 @@ const buildTimeline = async ({
         criticalSlot,
         block,
         freeCriticalUsageByBlock,
+        usage,
       });
       const microMoment = slot.micro_moment || null;
       const microNeed = String(microMoment?.visual_need || "").toLowerCase();
