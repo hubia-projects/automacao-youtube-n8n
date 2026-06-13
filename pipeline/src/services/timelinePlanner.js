@@ -237,14 +237,14 @@ const isCandidateAllowedByHardRules = ({ block, candidate, previousMacroTopic })
     const wrongLandmark = candidateLandmarks.some((landmark) => landmark.city && !isSameLocation(landmark.city, expectedCity));
     if (wrongLandmark) return false;
 
-    // Modo strict: cena exige local e o candidato analisado por visão não
-    // confirmou cidade nem é neutral verificado → bloqueia (fail-closed).
+    // Modo strict: cena exige local e o candidato não confirmou cidade
+    // nem é neutral verificado → bloqueia (fail-closed). Cobre tanto
+    // assets analisados por visão quanto metadata_fallback sem cidade.
     if (
       (config.LOCATION_GATE_MODE || "strict") === "strict" &&
       !block.generic_asset_allowed &&
       !candidateCity &&
-      !candidate.neutral &&
-      ["openai_vision", "gemini_vision"].includes(candidate.visual_evidence_source || candidate.analysis_provider || "")
+      !candidate.neutral
     ) {
       return false;
     }

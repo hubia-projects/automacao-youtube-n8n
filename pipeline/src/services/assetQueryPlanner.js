@@ -324,10 +324,10 @@ const buildFoodQueries = ({ entries, seen, cityTerms, countryTerms, exactEntries
     });
   });
 
-  // Fallback genérico SEM âncora geográfica só é permitido quando a cena
-  // aceita assets genéricos ou quando não há cidade/país conhecidos —
-  // "food market" solto retorna mercados de Bangkok/Marrakech.
-  const allowUnanchoredFallback = Boolean(scene.generic_asset_allowed) || (!cityTerms.length && !countryTerms.length);
+  // Queries de comida/vinho SEM âncora geográfica NUNCA são enviadas quando
+  // há cidade ou país conhecidos — "wine tasting" solto retorna clips da
+  // Itália/Chile/Nova Zelândia. Só aceitar genérico se não tem GEO nenhum.
+  const allowUnanchoredFallback = !cityTerms.length && !countryTerms.length;
 
   if (allowUnanchoredFallback) {
     exactEntries.forEach(({ term, reasonToken }) => {

@@ -125,6 +125,14 @@ const generateScriptPackageWithGemini = async ({ topic, angle }) => {
 Tema: ${topic}
 Ângulo: ${angle || "educativo/documental"}
 
+REGRAS OBRIGATÓRIAS DE DISTRIBUIÇÃO DE CENAS:
+- Máximo 25% das cenas podem ser sobre gastronomia/comida/vinho/mercados.
+- Mínimo 50% das cenas devem mostrar PONTOS TURÍSTICOS ESPECÍFICOS e NOMEADOS (monumentos, pontes, igrejas, praças, bairros históricos). Cite o nome exato do local (ex: "Ponte Dom Luís", "Torre dos Clérigos", "Estação de São Bento").
+- As cenas restantes podem ser paisagens, ruas, transporte, vida noturna.
+- NUNCA faça mais de 2 cenas consecutivas do mesmo subtema (ex: 3 cenas de vinho seguidas é PROIBIDO).
+- Cada cena DEVE especificar no campo "visual_keywords" exatamente O QUE deve aparecer visualmente, com o nome do local + cidade + país.
+- Inclua pelo menos 6-8 landmarks/pontos turísticos específicos diferentes no roteiro.
+
 Gere JSON estrito com:
 {
   "video_objective": "",
