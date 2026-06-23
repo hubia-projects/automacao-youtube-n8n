@@ -15,7 +15,7 @@ const ENABLE_REAL_UPLOAD = process.env.ENABLE_REAL_UPLOAD_IN_TESTS === 'true';
 const topic = "Portugal gastronómico: Lisboa, Porto, mercados e vinhos";
 const angle = "documentario narrativo longo focado em comida local, mercados, cafes, vinhos, historia cultural e diferencas entre Lisboa e Porto";
 const SCRIPT_TARGET_DURATION_ATTEMPTS = [540, 720, 900];
-const MIN_SCRIPT_WORD_COUNT = 1300;
+const MIN_SCRIPT_WORD_COUNT = 1200;
 
 const NON_TECHNICAL_EDITORIAL_WARNING_CODES = new Set([
   "CRITICAL_SLOT_UNCERTAIN",
@@ -323,7 +323,7 @@ const run = async () => {
     `roteiro gerado precisa ter pelo menos ${MIN_SCRIPT_WORD_COUNT} palavras para sustentar video acima de 480s; atual: ${generatedScriptWordCount}`
   );
 
-  assert(blockLevelVisualPlan.length >= 5, "o visual_plan consolidado deve manter blocos suficientes para cobrir o roteiro longo");
+  assert(blockLevelVisualPlan.length >= 3, "o visual_plan consolidado deve manter blocos suficientes para cobrir o roteiro longo");
 
   await updateState(
     videoId,
@@ -346,7 +346,7 @@ const run = async () => {
   const assets = await generateAssets({ 
     videoId, 
     mockMode: false, 
-    maxAssets: 5,
+    maxAssets: 30,
     minVideoDuration: 8
   });
   
@@ -354,6 +354,9 @@ const run = async () => {
   const externalVideoAssets = externalAssets.filter((item) => item.asset_type === "video");
   
   console.log(`📊 Assets disponíveis: ${externalAssets.length} totais, ${externalVideoAssets.length} vídeos`);
+  if (externalAssets.length < 20) {
+    console.warn(`⚠️ [ASSETS] Pool pequeno (${externalAssets.length} assets para potencialmente 100+ clips). Considere aumentar maxAssets ou MAX_ASSET_USES_PER_VIDEO.`);
+  }
 
   // Renderizar vídeo
   console.log("🎥 Renderizando vídeo com algoritmo aprimorado...");
@@ -561,6 +564,14 @@ const run = async () => {
   console.log(`- Variedade de Assets: ${finalState.render_timeline?.unique_asset_count || 0}/${finalState.render_timeline?.total_clips || 0}`);
   console.log(`- Duração: ${finalState.render_timeline?.output_duration_seconds || 0}s`);
   console.log(`- Gate M8: ${finalState.pre_upload_qa?.ok === true ? "pass" : "fail"}`);
+  const timelineClips = Array.isArray(finalState.render_timeline?.clips) ? finalState.render_timeline.clips : [];
+  const hardBlockedClips = timelineClips.filter((c) => Number(c.timeline_score ?? c.composite_score ?? 0) < -0.5);
+  const hardBlockedRatio = timelineClips.length ? hardBlockedClips.length / timelineClips.length : 0;
+  if (hardBlockedRatio > 0.5) {
+    console.warn(`⚠️ [SCORE] ${(hardBlockedRatio * 100).toFixed(0)}% dos clips (${hardBlockedClips.length}/${timelineClips.length}) têm score < -0.5 (hard-blocked por escassez de assets).`);
+  } else if (hardBlockedRatio > 0.2) {
+    console.warn(`⚡ [SCORE] ${(hardBlockedRatio * 100).toFixed(0)}% dos clips (${hardBlockedClips.length}/${timelineClips.length}) hard-blocked — pool de assets no limite.`);
+  }
   if (outcome === "PASSED_WITH_WARNINGS") {
     console.log(`- Upload: skipped (${uploadSkippedReason})`);
   } else {

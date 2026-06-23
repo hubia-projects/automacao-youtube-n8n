@@ -24,7 +24,7 @@ const config = {
   AUTO_APPROVE_FOR_TESTING: toBool(process.env.AUTO_APPROVE_FOR_TESTING, false),
   LOCATION_GATE_MODE: process.env.LOCATION_GATE_MODE || "strict",
   LOCATION_MIN_CONFIDENCE: Number(process.env.LOCATION_MIN_CONFIDENCE || 0.4),
-  MAX_ASSET_USES_PER_VIDEO: Number(process.env.MAX_ASSET_USES_PER_VIDEO || 1),
+  MAX_ASSET_USES_PER_VIDEO: Number(process.env.MAX_ASSET_USES_PER_VIDEO || 3),
   PRE_DOWNLOAD_MIN_SCORE: Number(process.env.PRE_DOWNLOAD_MIN_SCORE || 4),
   MEDIA_VISION_ENABLED: toBool(process.env.MEDIA_VISION_ENABLED, true),
   BURN_CAPTIONS: toBool(process.env.BURN_CAPTIONS, true),

@@ -307,11 +307,25 @@ const getProductionPreflightStatus = async ({ videoId = "", mockMode = false } =
   if (strictRuntimeProfile && checks.editorial_blocked) missing.push("EDITORIAL_BLOCKED");
   if (strictRuntimeProfile && !checks.hard_boundary_pass) missing.push("HARD_BOUNDARY_NOT_PASS");
 
+  // Alinha o preflight com runPreUploadQA: executa o M8 real e inclui o
+  // resultado para que ready_for_real_publish reflita o gate completo.
+  let m8Result = { ok: false, error: "m8_not_run" };
+  if (checks.has_render_file && state?.render_path) {
+    try {
+      await runPreUploadQA({ renderPath: state.render_path, state });
+      m8Result = { ok: true };
+    } catch (m8Error) {
+      m8Result = { ok: false, error: String(m8Error?.message || m8Error || "m8_unknown_error") };
+      if (strictRuntimeProfile) missing.push("M8_PRE_UPLOAD_QA_FAILED");
+    }
+  }
+
   return {
     video_id: videoId || "",
     qa_runtime_profile: runtimeProfile,
     strict_runtime_profile: strictRuntimeProfile,
     checks,
+    m8_pre_upload_qa: m8Result,
     ready_for_real_publish: missing.length === 0,
     blocking_codes: unique(missing),
     publish_blocked_codes: unique([

@@ -2,16 +2,40 @@ import edge_tts
 import os
 import traceback
 import tempfile
-import json # NOVO: Para carregar o ficheiro JSON
+import json
 import asyncio
+import atexit
 from pathlib import Path
-from pydub import AudioSegment # NOVO: Para conversão de áudio
+from pydub import AudioSegment
 from dotenv import load_dotenv
 
 from config import DEFAULT_CONFIGS
 from utils import LOG_ERROS_DETALHADO
 
 load_dotenv()
+
+# --- Limpeza de ficheiros temporários ---
+# Guarda os caminhos de ficheiros temp criados para limpeza de segurança
+# caso os background_tasks do FastAPI não executem (ex: crash do processo).
+_temp_files_created = set()
+
+
+def _register_temp_file(filepath: str) -> None:
+    """Regista um ficheiro temporário para limpeza no encerramento do processo."""
+    _temp_files_created.add(filepath)
+
+
+def _cleanup_temp_files() -> None:
+    """Remove todos os ficheiros temporários registados."""
+    for path in list(_temp_files_created):
+        try:
+            Path(path).unlink(missing_ok=True)
+        except Exception:
+            pass
+    _temp_files_created.clear()
+
+
+atexit.register(_cleanup_temp_files)
 
 # --- Carregamento de Configurações ---
 PROXY = os.getenv("PROXY", None)
@@ -99,6 +123,7 @@ async def gerar_audio(texto: str, voz: str, formato_resposta: str, velocidade: f
     ficheiro_temp_mp3 = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
     caminho_temp_mp3 = ficheiro_temp_mp3.name
     ficheiro_temp_mp3.close()
+    _register_temp_file(caminho_temp_mp3)
 
     caminho_final_audio = None # Variável para guardar o caminho do ficheiro final
 
@@ -112,6 +137,7 @@ async def gerar_audio(texto: str, voz: str, formato_resposta: str, velocidade: f
             ficheiro_temp_final = tempfile.NamedTemporaryFile(delete=False, suffix=f".{formato_resposta}")
             caminho_final_audio = ficheiro_temp_final.name
             ficheiro_temp_final.close()
+            _register_temp_file(caminho_final_audio)
 
             # Usa pydub para carregar o MP3 e exportar no formato desejado
             audio = AudioSegment.from_mp3(caminho_temp_mp3)
@@ -127,8 +153,10 @@ async def gerar_audio(texto: str, voz: str, formato_resposta: str, velocidade: f
         # Se ocorrer um erro, remove os ficheiros temporários para não deixar lixo
         if caminho_temp_mp3 and Path(caminho_temp_mp3).exists():
             Path(caminho_temp_mp3).unlink(missing_ok=True)
+            _temp_files_created.discard(caminho_temp_mp3)
         if caminho_final_audio and Path(caminho_final_audio).exists():
             Path(caminho_final_audio).unlink(missing_ok=True)
+            _temp_files_created.discard(caminho_final_audio)
             
         if LOG_ERROS_DETALHADO:
             print(f"Erro detalhado em gerar_audio: {traceback.format_exc()}")

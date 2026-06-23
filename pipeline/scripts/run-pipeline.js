@@ -92,7 +92,7 @@ const run = async () => {
   if (clips.length) {
     const counts = {};
     clips.forEach(c => {
-      const key = (c.asset_window_key || '').split('/')[-1]?.split(':')[0] || c.asset_id || 'unknown';
+      const key = (c.asset_window_key || '').split('/').pop()?.split(':')[0] || c.asset_id || 'unknown';
       counts[key] = (counts[key] || 0) + 1;
     });
     const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);

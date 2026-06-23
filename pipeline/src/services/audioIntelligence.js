@@ -1,9 +1,10 @@
 const path = require("path");
+const { execSync } = require("child_process");
 const { config } = require("../config/env");
 const { logger } = require("../utils/logger");
 const { writeJsonAtomic, readJsonSafe } = require("../utils/fileUtils");
 const { loadState, ensureVideoStructure, updateState } = require("./stateService");
-const { transcribeWithGemini } = require("./geminiService");
+const { transcribeWithWordTimestamps } = require("./openaiService");
 const { buildMicroSegmentsFromAudio } = require("./microMomentPlannerService");
 
 const FALLBACK_WPM = 144;
@@ -85,7 +86,66 @@ const buildFallbackWordTiming = ({ scriptText = "", audioDuration = 0 }) => {
   };
 };
 
-const buildSemanticSceneBoundaries = async ({ scenes = [], audioIntelligence }) => {
+// Constrói scene boundaries a partir dos silêncios FFmpeg reais.
+// Quando n_silences ≈ n_scenes, cada intervalo de fala entre silêncios corresponde a uma cena.
+const buildSceneBoundariesFromSilences = ({ scenes, ffmpegMarkers, audioDuration }) => {
+  if (!ffmpegMarkers.length || !scenes.length) return null;
+
+  const sorted = [...ffmpegMarkers].sort((a, b) => a.start - b.start);
+  const nScenes = scenes.length;
+  const nSilences = sorted.length;
+
+  // Só usa este método quando n_silences está próximo de n_scenes (±20%)
+  if (nSilences < nScenes * 0.7 || nSilences > nScenes * 1.5) return null;
+
+  // Constrói segmentos de fala: [0, sil[0].start], [sil[0].end, sil[1].start], ...
+  const segments = [];
+  let prevEnd = 0;
+  for (const sil of sorted) {
+    if (sil.start > prevEnd + 0.05) {
+      segments.push({ start: prevEnd, end: sil.start });
+    }
+    prevEnd = sil.end;
+  }
+  if (prevEnd < audioDuration - 0.1) {
+    segments.push({ start: prevEnd, end: audioDuration });
+  }
+
+  // Se há mais segmentos que cenas, mescla os menores com o anterior
+  while (segments.length > nScenes && segments.length > 1) {
+    let minIdx = 0;
+    for (let i = 1; i < segments.length; i++) {
+      if ((segments[i].end - segments[i].start) < (segments[minIdx].end - segments[minIdx].start)) minIdx = i;
+    }
+    const mergeWith = minIdx === 0 ? 1 : minIdx - 1;
+    const lo = Math.min(minIdx, mergeWith);
+    const hi = Math.max(minIdx, mergeWith);
+    segments.splice(lo, 2, { start: segments[lo].start, end: segments[hi].end });
+  }
+
+  // Mapeia scenes para segmentos
+  return scenes.map((scene, i) => {
+    const seg = segments[i] || segments[segments.length - 1];
+    return {
+      ...scene,
+      audio_start_seconds: Number(seg.start.toFixed(3)),
+      audio_end_seconds: Number(seg.end.toFixed(3)),
+      audio_span_seconds: Number((seg.end - seg.start).toFixed(3)),
+      boundary_confidence: 0.92,
+      boundary_source: "ffmpeg_silence",
+    };
+  });
+};
+
+const buildSemanticSceneBoundaries = async ({ scenes = [], audioIntelligence, ffmpegMarkers = [] }) => {
+  // Prioridade 1: boundaries baseados em silêncios reais do FFmpeg
+  const audioDuration = audioIntelligence?.speaking_rate?.total_duration_seconds || 0;
+  if (ffmpegMarkers.length > 0 && audioDuration > 0) {
+    const ffmpegBoundaries = buildSceneBoundariesFromSilences({ scenes, ffmpegMarkers, audioDuration });
+    if (ffmpegBoundaries) {
+      return ffmpegBoundaries;
+    }
+  }
   if (!audioIntelligence || !audioIntelligence.words || !audioIntelligence.words.length) {
     return scenes.map((scene, index) => {
       const totalScenes = scenes.length;
@@ -213,6 +273,43 @@ const buildChapterTriggers = ({ scenes = [], sceneBoundaries = [], words = [] })
     });
 };
 
+// Detecta pausas reais no áudio usando FFmpeg (>= 0.35s = entre frases; >= 1.5s = transição de tópico)
+const detectSilenceWithFFmpeg = ({ audioPath }) => {
+  try {
+    const output = execSync(
+      `ffmpeg -i "${audioPath}" -af silencedetect=noise=-30dB:d=0.35 -f null - 2>&1`,
+      { timeout: 60000, encoding: "utf8" }
+    );
+    const markers = [];
+    const startRe = /silence_start:\s*([\d.]+)/g;
+    const endRe = /silence_end:\s*([\d.]+)\s*\|\s*silence_duration:\s*([\d.]+)/g;
+    const starts = [...output.matchAll(startRe)].map((m) => Number(m[1]));
+    const ends = [...output.matchAll(endRe)].map((m) => ({ end: Number(m[1]), duration: Number(m[2]) }));
+    for (let i = 0; i < Math.min(starts.length, ends.length); i++) {
+      markers.push({
+        start: starts[i],
+        end: ends[i].end,
+        duration: ends[i].duration,
+        type: ends[i].duration >= 1.5 ? "topic_transition" : "sentence_break",
+        source: "ffmpeg_silencedetect",
+      });
+    }
+    return markers;
+  } catch {
+    return [];
+  }
+};
+
+const mergeWithFFmpegPauses = ({ pauseMarkers, ffmpegMarkers }) => {
+  if (!ffmpegMarkers.length) return pauseMarkers;
+  const merged = [...ffmpegMarkers];
+  for (const pm of pauseMarkers) {
+    const overlaps = ffmpegMarkers.some((fm) => Math.abs(fm.start - pm.start) < 0.5);
+    if (!overlaps) merged.push(pm);
+  }
+  return merged.sort((a, b) => a.start - b.start);
+};
+
 const analyzeAudio = async ({ videoId }) => {
   const state = await loadState(videoId);
   const paths = await ensureVideoStructure(videoId);
@@ -222,26 +319,46 @@ const analyzeAudio = async ({ videoId }) => {
   let audioIntelligence = null;
   let provider = "none";
 
+  // Primary: OpenAI Whisper com word-level timestamps reais
   try {
-    const transcriptText = await transcribeWithGemini({ audioPath: state.audio_path, format: "text", videoId });
-    if (transcriptText) {
-      const audioDuration = Math.max(10, Number(state.duration_seconds || 0));
-      audioIntelligence = buildFallbackWordTiming({ scriptText: transcriptText, audioDuration });
-      provider = "gemini_transcription_proportional_timing";
-      logger.info(`audioIntelligence: transcrição Gemini concluída com ${audioIntelligence.words.length} palavras`);
+    const whisperResult = await transcribeWithWordTimestamps({ audioPath: state.audio_path, videoId });
+    if (whisperResult && whisperResult.words && whisperResult.words.length > 0) {
+      audioIntelligence = whisperResult;
+      provider = "whisper_word_timestamps";
+      logger.info(`audioIntelligence: Whisper concluído — ${audioIntelligence.words.length} palavras, ${audioIntelligence.pause_markers.length} pausas reais`);
     }
   } catch (error) {
-    logger.warn("audioIntelligence: falha na transcrição Gemini, usando fallback", { message: error.message });
+    logger.warn("audioIntelligence: Whisper falhou, tentando fallback", { message: error.message });
   }
 
+  // Fallback: timing proporcional baseado no script
   if (!audioIntelligence) {
     const audioDuration = Math.max(10, Number(state.duration_seconds || 0));
     audioIntelligence = buildFallbackWordTiming({ scriptText: state.script_text || state.topic || "roteiro", audioDuration });
     provider = "fallback_proportional";
+    logger.info(`audioIntelligence: usando timing proporcional com ${audioIntelligence.words.length} palavras`);
+  }
+
+  // Garantir que total_duration_seconds reflita duração real do áudio
+  const realAudioDuration = Math.max(10, Number(state.duration_seconds || 0));
+  if (audioIntelligence.speaking_rate && realAudioDuration > audioIntelligence.speaking_rate.total_duration_seconds) {
+    audioIntelligence.speaking_rate.total_duration_seconds = realAudioDuration;
+  }
+
+  // Suplemento: pausas reais via FFmpeg silencedetect (independente do provider)
+  const ffmpegMarkers = detectSilenceWithFFmpeg({ audioPath: state.audio_path });
+  if (ffmpegMarkers.length > 0) {
+    audioIntelligence.pause_markers = mergeWithFFmpegPauses({
+      pauseMarkers: audioIntelligence.pause_markers || [],
+      ffmpegMarkers,
+    });
+    logger.info(`audioIntelligence: FFmpeg detectou ${ffmpegMarkers.length} silêncios reais — total pausas: ${audioIntelligence.pause_markers.length}`);
   }
 
   const scenes = Array.isArray(state.visual_plan) && state.visual_plan.length ? state.visual_plan : [];
-  const sceneBoundaries = scenes.length ? await buildSemanticSceneBoundaries({ scenes, audioIntelligence }) : [];
+  const sceneBoundaries = scenes.length
+    ? await buildSemanticSceneBoundaries({ scenes, audioIntelligence, ffmpegMarkers })
+    : [];
   const chapterTriggers = buildChapterTriggers({
     scenes,
     sceneBoundaries,

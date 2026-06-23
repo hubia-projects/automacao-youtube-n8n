@@ -546,7 +546,9 @@ const rankCandidates = async ({
       editorialAssessment.editorial_fit === "wrong" ||
       (isCriticalScene(block) && !editorialAssessment.allowed_for_critical_slot)
     );
-    const finalScore = hardBlocked ? -9999 : rawScore;
+    // Score normalizado: -1 para hard-blocked em vez de -9999 para não distorcer
+    // a média semântica quando há escassez de assets (ex: 12 assets para 132 clips).
+    const finalScore = hardBlocked ? -1 : rawScore;
 
     ranked.push({
       candidate,

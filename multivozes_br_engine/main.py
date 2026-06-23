@@ -34,16 +34,20 @@ async def verificar_chave_api(request: Request):
     """
     if not EXIGIR_CHAVE_API:
         return
+
     if not CHAVE_API:
-        raise HTTPException(status_code=500, detail="Servidor não configurado para autenticação. A variável API_KEY não foi definida.")
-    
-    auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith('Bearer '):
-        raise HTTPException(status_code=401, detail="Chave de API ausente ou em formato inválido. Use o cabeçalho 'Authorization: Bearer SUA_CHAVE'.")
-    
-    token_fornecido = auth_header.split('Bearer ')[1]
-    if token_fornecido != CHAVE_API:
-        raise HTTPException(status_code=401, detail="Chave de API inválida.")
+        raise HTTPException(
+            status_code=500,
+            detail="Servidor não configurado para autenticação. A variável API_KEY não foi definida.",
+        )
+
+    auth_header = request.headers.get("Authorization", "")
+    parts = auth_header.split(" ", 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer" or parts[1] != CHAVE_API:
+        raise HTTPException(
+            status_code=401,
+            detail="Chave de API inválida. Use o cabeçalho 'Authorization: Bearer SUA_CHAVE'.",
+        )
 
 
 # --- Rota Principal de Geração de Áudio ---

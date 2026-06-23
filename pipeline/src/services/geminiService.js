@@ -5,8 +5,8 @@ const { config } = require("../config/env");
 const { logger } = require("../utils/logger");
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
-const GEMINI_CHAT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-2.5-flash-lite";
-const GEMINI_FLASH_MODEL = process.env.GEMINI_VISION_MODEL_LITE || "gemini-2.5-flash-lite";
+const GEMINI_CHAT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-2.5-flash";
+const GEMINI_FLASH_MODEL = process.env.GEMINI_VISION_MODEL_LITE || "gemini-2.5-flash";
 const GEMINI_EMBED_MODEL = "gemini-embedding-001";
 
 const hasGemini = () => Boolean(config.GEMINI_API_KEY);
@@ -193,6 +193,36 @@ Gere exatamente ${count} ideias diferentes. Tópicos devem ser específicos e ac
   }
 };
 
+const transcribeWithGemini = async ({ audioPath, videoId = "" }) => {
+  if (!hasGemini()) return null;
+  try {
+    if (!fs.existsSync(audioPath)) return null;
+    const audioBuffer = await fs.readFile(audioPath);
+    const audioBase64 = audioBuffer.toString("base64");
+    const ext = path.extname(audioPath).toLowerCase();
+    const mimeType = ext === ".mp3" ? "audio/mpeg" : ext === ".wav" ? "audio/wav" : "audio/mpeg";
+    const url = `${GEMINI_BASE}/models/${GEMINI_FLASH_MODEL}:generateContent?key=${config.GEMINI_API_KEY}`;
+    const body = {
+      contents: [{
+        parts: [
+          { inline_data: { mime_type: mimeType, data: audioBase64 } },
+          { text: "Transcreva este áudio em português do Brasil. Retorne apenas o texto transcrito, sem comentários." },
+        ],
+      }],
+      generationConfig: { temperature: 0, maxOutputTokens: 8192 },
+    };
+    const response = await axios.post(url, body, {
+      timeout: 180000,
+      headers: { "Content-Type": "application/json" },
+    });
+    const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    return text.trim() || null;
+  } catch (error) {
+    logger.warn("geminiService: transcribeWithGemini falhou", { message: error.message, videoId });
+    return null;
+  }
+};
+
 module.exports = {
   hasGemini,
   generateContent,
@@ -201,4 +231,5 @@ module.exports = {
   generateScriptPackageWithGemini,
   generateIdeasWithGemini,
   basicGeminiHealthcheck,
+  transcribeWithGemini,
 };
