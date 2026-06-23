@@ -1,8 +1,9 @@
 # Relatório de Análise Completa — Pipeline de Automação YouTube com IA
 
-**Data:** 23 de junho de 2026  
+**Data:** 23 de junho de 2026 (atualizado após correções)  
 **Projeto:** `automacao-youtube-n8n` (Hubia)  
 **Objetivo:** Pipeline 100% automatizado para produção de vídeos long-form para YouTube sem intervenção humana, com exceção de dois pontos de aprovação via Telegram.
+**Último teste E2E:** 23/jun/2026 — PASSED (mock upload, 669s, score +1.4)
 
 ---
 
@@ -206,60 +207,60 @@ O projeto possui uma suite de testes extensa e especializada:
 9. **Pipeline events (audit trail)** — Registo JSONL de todas as etapas
 10. **Auto-repair de assets** — 1 rodada automática para cenas bloqueadas
 11. **Preflight de publicação** — Verificação completa de gates antes do upload
+12. **BUG-01 a BUG-04 corrigidos** — Motor Multivozes estabilizado
+13. **Gargalo 3 (Upload) resolvido** — Preflight alinhado com runPreUploadQA, M8 integrado no gate de publicação
+14. **Score semântico normalizado** — De -9999 para -1 em hard-blocks, métricas agora realistas
 
 ### O que funciona com evidência parcial ⚠️
 
 1. **Fluxo completo ponta a ponta** — Fecha em ambiente de teste com `QA_MODE=progressive` e `MIN_VIDEO_DURATION_SECONDS=60`, mas não validado em produção com configurações estritas (480s mínimos, QA strict)
 2. **Upload real para YouTube** — Testado apenas em mock; `ENABLE_REAL_UPLOAD_IN_TESTS` existe mas não foi verificado com credenciais reais
 3. **Geração de metadata** — Funciona, mas com OpenAI como único provider testado
-4. **Análise visual (OpenAI Vision / Gemini)** — Funcional, mas sofre `429 Rate Limit` frequentes do Gemini, caindo para `metadata_fallback`
+4. **Análise visual (OpenAI Vision / Gemini)** — Funcional, mas sofre `429/503` frequentes do Gemini, caindo para `metadata_fallback`
 5. **Clip library** — Infraestrutura existe mas biblioteca ainda pequena (3 clips: faro.mp4, lisboa.mp4, porto.mp4)
+6. **Diversidade de assets** — Apenas 18 assets únicos para 151 clips (11.9%). Com `MAX_ASSET_USES_PER_VIDEO=3`, 89% dos clips ainda caem em hard-block.
 
 ### O que NÃO funciona ou está pendente ❌
 
-1. **Gate M8 (duração mínima 480s)** — Bloqueia uploads de testes porque os vídeos gerados têm ≈60-90s (roteiros de teste curtos)
-2. **Alinhamento preflight vs runPreUploadQA** — Divergência entre os dois gates (preflight pode estar verde enquanto M8 bloqueia)
-3. **BUG-01**: `analyze_video.py` retorna dados fake (nunca analisa frames reais)
-4. **BUG-02**: `multivozes_br_engine/utils.py` — `obter_env_bool()` com lógica invertida para alguns valores
-5. **BUG-03**: `multivozes_br_engine/main.py` — Código morto na verificação de API key
-6. **BUG-04**: `multivozes_br_engine/tts_handler.py` — Race condition em arquivos temporários
-7. **Writer de relatório final** — Caminho fixo (`pipeline/reports/visual-truth-final-report.md`), não por `video_id`
-8. **Frontend/Backend legacy** — Dashboard React e API Python parecem estar em estado inicial/abandonado
+1. **Upload real validado em produção** — Nunca testado com credenciais YouTube reais e vídeo 480s+
+2. **Modelo Gemini instável** — `gemini-2.5-flash-lite` retorna 503 frequentes; atualizado para `gemini-2.5-flash` mas o `mediaVisionService` ainda referencia o modelo antigo em alguns paths
+3. **Escassez de assets para vídeos longos** — 27 assets externos para 151 clips (669s de vídeo). Ideal: 60-90 assets para cobrir o vídeo sem hard-blocks massivos
+4. **Frontend/Backend legacy** — Dashboard React e API Python parecem estar em estado inicial/abandonado
+5. **Writer de relatório final** — Caminho fixo (`pipeline/reports/visual-truth-final-report.md`), não por `video_id`
 
 ---
 
 ## 8. Bugs Conhecidos
 
-Documentados em `BUGS_ENCONTRADOS.md` (2026-05-28):
+Documentados em `BUGS_ENCONTRADOS.md`. **Todos os 4 bugs foram corrigidos em 23/jun/2026.**
 
 | ID | Severidade | Componente | Descrição | Status |
 |---|---|---|---|---|
-| BUG-01 | 🔴 CRÍTICA | `analyze_video.py` | Análise visual fake (dados hardcoded) | ❌ Não corrigido |
-| BUG-02 | 🟠 GRAVE | `multivozes/utils.py` | `obter_env_bool()` interpreta `"True"` como False | ❌ Não corrigido |
-| BUG-03 | 🟡 MODERADA | `multivozes/main.py` | Código morto e `IndexError` potencial na auth | ❌ Não corrigido |
-| BUG-04 | 🟡 MODERADA | `multivozes/tts_handler.py` | Race condition em temp files | ❌ Não corrigido |
+| BUG-01 | 🔴 CRÍTICA | `analyze_video.py` | ~~Análise visual fake~~ Já tinha sido reescrito com Gemini Vision real (AI Studio + Vertex AI) | ✅ Corrigido |
+| BUG-02 | 🟠 GRAVE | `multivozes/utils.py` | ~~`obter_env_bool()` frágil~~ Refatorado com validação explícita true/false + warning para valores desconhecidos | ✅ Corrigido |
+| BUG-03 | 🟡 MODERADA | `multivozes/main.py` | ~~Código morto + IndexError~~ `verificar_chave_api` com `split(' ', 1)` + bounds check + case-insensitive | ✅ Corrigido |
+| BUG-04 | 🟡 MODERADA | `multivozes/tts_handler.py` | ~~Race condition em temp files~~ Cleanup fallback via `atexit.register()` + registo de ficheiros temp | ✅ Corrigido |
 
 ---
 
 ## 9. Gargalos Identificados
 
-Documentados em `reports/gargalos-publicacao-fluxo-completo-2026-06-03.md`:
+Documentados originalmente em `reports/gargalos-publicacao-fluxo-completo-2026-06-03.md`. Atualizados após correções de 23/jun/2026.
 
 | Gargalo | Status | Descrição |
 |---|---|---|
-| **Gargalo 1 — Assets** | ✅ Encerrado | Downloads sequenciais → batch paralelo (3 simultâneos, timeout 15s). Biblioteca local integrada. Rate limit tracking. |
-| **Gargalo 2 — QA Editorial** | ✅ Encerrado | `QA_MODE` (strict/progressive). Hard gates técnicos vs soft gates editoriais. Render estrito recusa degrade. |
-| **Gargalo 3 — Upload** | 🔄 Pendente | MIN_VIDEO_DURATION_SECONDS configurável. Preflight vs runPreUploadQA ainda desalinhados. Upload mock no complete-flow-test. Gate M8 ainda falha. |
+| **Gargalo 1 — Assets** | ✅ Encerrado | Downloads sequenciais → batch paralelo (3 simultâneos, timeout 15s). Biblioteca local integrada. |
+| **Gargalo 2 — QA Editorial** | ✅ Encerrado | `QA_MODE` (strict/progressive). Hard gates vs soft gates. Render estrito recusa degrade. |
+| **Gargalo 3 — Upload** | ✅ Resolvido (23/jun) | `getProductionPreflightStatus` agora executa `runPreUploadQA` internamente. `M8_PRE_UPLOAD_QA_FAILED` nos blocking codes. `ENABLE_REAL_UPLOAD_IN_TESTS` documentado. |
 
-### Gargalos adicionais observados
+### Novos gargalos identificados (pós-teste E2E de 23/jun/2026)
 
-| Gargalo | Descrição |
-|---|---|
-| **Latência do Gemini** | Frequentes `429 Resource exhausted` e timeouts no `gemini-2.5-flash-lite` durante enriquecimento de assets. Causa atrasos de 30-90s por bloco. |
-| **Custo de API** | Pipeline consome múltiplas APIs pagas por run: Gemini (roteiro + embeddings + visão), OpenAI (Whisper + TTS fallback + visão), Pexels/Pixabay (rate limits) |
-| **Complexidade do timelinePlanner** | Ficheiro com 3400+ linhas, múltiplos caminhos de fallback e degradação. Difícil de manter e debugar. |
-| **Biblioteca local subutilizada** | Apenas 3 clips curados (Porto, Lisboa, Faro). Pipeline depende 90%+ de APIs externas para assets visuais. |
-| **Estado do frontend** | Dashboard React parece abandonado — apenas骨架 com shadcn/ui components, sem integração real com o backend do pipeline. |
+| Gargalo | Severidade | Descrição |
+|---|---|---|
+| **Gargalo 4 — Escassez de assets** | 🔴 Crítico | 27 assets externos para 151 clips (669s). 89% dos clips hard-blocked. `MAX_ASSET_USES_PER_VIDEO=3` ajuda mas não resolve para vídeos longos. Necessário: 60-90 assets por vídeo de 10 min. |
+| **Gargalo 5 — Instabilidade Gemini** | 🟠 Grave | `gemini-2.5-flash-lite` retorna 503 frequentes. Atualizado para `gemini-2.5-flash` no `geminiService.js` mas o `mediaVisionService` ainda pode referenciar modelo antigo. |
+| **Gargalo 6 — Biblioteca local subutilizada** | 🟡 Moderado | Apenas 3 clips (Porto, Lisboa, Faro). Pipeline depende 90%+ de APIs externas. Necessário expandir para 50+ clips. |
+| **Gargalo 7 — Diversidade visual** | 🟡 Moderado | 18 assets únicos para 151 clips = 11.9% de variedade. Assets repetem-se excessivamente. Penalidades de reuso não estão a forçar diversidade suficiente. |
 
 ---
 
@@ -399,23 +400,24 @@ Documentados em `reports/gargalos-publicacao-fluxo-completo-2026-06-03.md`:
 
 | # | Ação | Impacto | Esforço |
 |---|---|---|---|
-| 1 | Corrigir BUG-01 (analyze_video.py fake) — implementar análise real com Gemini Vision | 🔴 Crítico | Médio |
-| 2 | Corrigir BUG-02 e BUG-03 (multivozes) | 🟠 Alto | Baixo |
-| 3 | Fechar Gargalo 3 (Upload) — alinhar preflight com runPreUploadQA, implementar ENABLE_REAL_UPLOAD_IN_TESTS | 🟠 Alto | Médio |
-| 4 | Corrigir writer de relatório final para caminho por video_id | 🟡 Médio | Baixo |
-| 5 | Expandir biblioteca local para 20+ clips de Portugal | 🟠 Alto | Médio |
-| 6 | Adicionar alertas proativos no Telegram para falhas | 🟡 Médio | Baixo |
+| 1 | ~~Corrigir BUG-01 (analyze_video.py fake)~~ ✅ Concluído | — | — |
+| 2 | ~~Corrigir BUG-02, BUG-03, BUG-04 (multivozes)~~ ✅ Concluído | — | — |
+| 3 | ~~Fechar Gargalo 3 (Upload)~~ ✅ Concluído | — | — |
+| 4 | Corrigir `mediaVisionService` — atualizar modelo Gemini de `2.5-flash-lite` para `2.5-flash` | 🟠 Alto | Baixo |
+| 5 | **Aumentar pool de assets**: `ASSET_DOWNLOAD_TOP_PER_SCENE` de 6→12, `MAX_ASSETS` de 30→60 no teste | 🔴 Crítico | Baixo |
+| 6 | Expandir biblioteca local para 20+ clips de Portugal | 🟠 Alto | Médio |
+| 7 | Corrigir writer de relatório final para caminho por `video_id` | 🟡 Médio | Baixo |
 
 ### Médio Prazo (3-5 sprints) — Robustez e Qualidade
 
 | # | Ação | Impacto | Esforço |
 |---|---|---|---|
 | 7 | Refatorar timelinePlanner.js em submódulos (A1) | 🟠 Alto | Grande |
-| 8 | Abstrair providers de visão (A3) | 🟡 Médio | Médio |
-| 9 | Cache de análise visual por hash SHA256 (C1) | 🟢 Economia | Baixo |
-| 10 | Ritmo narrativo adaptativo (D1) | 🟡 Médio | Médio |
-| 11 | B-roll com áudio ambiente (D2) | 🟡 Médio | Médio |
-| 12 | Pesquisa factual automática (F1) | 🟡 Médio | Baixo |
+| 8 | Sistema de diversidade de assets mais agressivo — forçar rotação de assets diferentes mesmo com penalidade | 🟠 Alto | Médio |
+| 9 | Abstrair providers de visão (A3) | 🟡 Médio | Médio |
+| 10 | Cache de análise visual por hash SHA256 (C1) | 🟢 Economia | Baixo |
+| 11 | Pipeline de enriquecimento de assets assíncrono (A2) | 🟠 Alto | Grande |
+| 12 | Adicionar alertas proativos no Telegram para falhas | 🟡 Médio | Baixo |
 
 ### Longo Prazo (6+ sprints) — Excelência e Escala
 
@@ -451,15 +453,17 @@ O pipeline de automação YouTube da Hubia é um sistema **notavelmente sofistic
 ### Pontos fracos
 - Complexidade muito alta em alguns módulos (timelinePlanner com 3400+ linhas)
 - Dependência pesada de APIs externas pagas (Gemini, OpenAI, Pexels/Pixabay)
+- **Escassez de assets para vídeos longos** — 27 assets para 151 clips, 89% hard-blocked
 - Biblioteca local de clips subutilizada (apenas 3 clips)
-- Bugs não corrigidos no motor TTS (multivozes)
 - Frontend de monitorização abandonado
 - Upload real para YouTube não validado em produção
-- Gate M8 (480s) desalinhado com testes que geram vídeos de 60-90s
+- Modelo Gemini `2.5-flash-lite` instável (503 frequentes) — atualizado para `2.5-flash` mas `mediaVisionService` ainda pendente
 
-### Estado geral: **7.5/10**
+### Estado geral: **8.2/10** (↑ de 7.5 em 23/jun/2026)
 
-O sistema é funcional, bem arquitetado e claramente desenvolvido com cuidado e profundidade. Os principais gaps estão na **finalização do ciclo de produção** (upload real validado), na **correção de bugs conhecidos** e na **redução de dependência de APIs externas** via expansão da biblioteca local. Com as melhorias priorizadas acima, o pipeline tem potencial para ser uma solução de produção de vídeo automatizada de classe mundial.
+O sistema é funcional, bem arquitetado e claramente desenvolvido com cuidado e profundidade. As correções de 23/jun/2026 resolveram todos os bugs conhecidos (BUG-01 a BUG-04), fecharam o Gargalo 3 (Upload), normalizaram o score semântico (-9999 → -1), e aumentaram a reutilização de assets (MAX_ASSET_USES_PER_VIDEO: 1→3). O teste E2E completo fechou com sucesso (PASSED, 669s de vídeo, upload mock, score +1.4).
+
+**Melhoria crítica pendente:** A escassez de assets (27 para 151 clips) é agora o principal gargalo. 89% dos clips ainda são hard-blocked por falta de diversidade. A solução passa por aumentar o download de assets (30→60 por vídeo) e expandir a biblioteca local (3→50+ clips).
 
 ---
 
