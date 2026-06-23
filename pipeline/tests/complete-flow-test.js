@@ -346,7 +346,7 @@ const run = async () => {
   const assets = await generateAssets({ 
     videoId, 
     mockMode: false, 
-    maxAssets: 30,
+    maxAssets: 60,
     minVideoDuration: 8
   });
   

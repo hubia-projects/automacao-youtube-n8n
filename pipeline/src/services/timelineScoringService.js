@@ -19,16 +19,22 @@ const {
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
 
+// Pesos rebalanceados para priorizar sincronia narração↔visual.
+// semanticScore (8.0) é o fator dominante — o que o áudio diz deve
+// corresponder ao que o vídeo mostra. visualIntentMatch (3.0) e
+// editorialFit (3.0) são secundários para evitar que um asset com
+// fit editorial "exact" mas sem relação com a narração vença um
+// asset com match semântico forte.
 const SCORE_WEIGHTS = {
-  semanticScore: 5.0,
-  visualIntentMatchScore: 6.0,
+  semanticScore: 8.0,
+  visualIntentMatchScore: 3.0,
   requiredEvidenceScore: 5.0,
-  blockMatchScore: 4.0,
+  blockMatchScore: 3.0,
   entityMatchScore: 3.5,
   visualSpecificityScore: 3.0,
   gastronomySpecificityScore: 3.0,
   evidenceSourceScore: 2.5,
-  editorialFitScore: 5.5,
+  editorialFitScore: 3.0,
   sceneBindingScore: 3.5,
   resolutionScore: 1.0,
   motionScore: 1.0,
@@ -44,6 +50,9 @@ const SCORE_WEIGHTS = {
   uncertainAssetPenalty: 5.0,
   metadataFallbackPenalty: 4.5,
   darkFramePenalty: 4.0,
+  // Penalidade de mismatch temático: narração fala de comida,
+  // asset mostra paisagem → penalidade severa para forçar coerência.
+  thematicMismatchPenalty: 15.0,
 };
 
 const EDITORIAL_FIT_SCORES = {
@@ -238,6 +247,57 @@ const computeReusePenalties = ({ block, candidate, usage, clipIndex }) => {
     total: clamp((sourceReusePenalty + assetReusePenalty + windowReusePenalty + signatureReusePenalty) / 4, 0, 1),
     signature: snapshot.signature,
   };
+};
+
+// ===== Penalidade de mismatch temático =====
+// Quando a narração menciona termos de gastronomia/comida mas o
+// asset não mostra nenhuma categoria visual de comida, aplica-se
+// uma penalidade severa. Isto evita que um vídeo de bacalhau mostre
+// um ponto turístico de Lisboa.
+
+const FOOD_NARRATION_TERMS = new Set([
+  "comida", "comidas", "prato", "pratos", "bacalhau", "sardinha",
+  "sardinhas", "marisco", "mariscos", "polvo", "lula", "lulas",
+  "camarao", "camaroes", "carne", "porco", "frango", "arroz",
+  "marisco", "peixe", "peixes", "atum", "salmao", "dourada",
+  "robalo", "cataplana", "acorda", "caldeirada", "cozido",
+  "grelhado", "grelhados", "assado", "assados", "frito", "fritos",
+  "cozinha", "culinaria", "gastronomia", "gastronomico",
+  "gastronomica", "restaurante", "restaurantes", "tasca", "tascas",
+  "taberna", "tabernas", "mercado", "mercados", "feira", "feiras",
+  "pastel", "pasteis", "nata", "docaria", "doce", "doces",
+  "sobremesa", "sobremesas", "queijo", "queijos", "vinho", "vinhos",
+  "azeite", "pão", "pao", "broa", "alheira", "francesinha",
+  "francesinhas", "bifana", "bifanas", "prego", "pregos",
+  "degustacao", "degustar", "provar", "saborear", "paladar",
+  "ingrediente", "ingredientes", "tempero", "temperos", "receita",
+  "receitas", "chef", "cozinheiro", "cozinheira",
+]);
+
+const FOOD_VISUAL_CATEGORIES = new Set([
+  "food", "local_food", "market", "wine", "pastry", "restaurant",
+  "cafe", "street_food", "people_eating", "dish", "meal", "cooking",
+  "kitchen", "seafood", "fish", "meat", "dessert", "bakery",
+  "fruit", "vegetable", "fresh_produce", "gastronomy",
+]);
+
+const computeThematicMismatchPenalty = ({ narrationText = "", candidate = {} }) => {
+  const narrationWords = normalizeLabel(narrationText).split(/\s+/).filter(Boolean);
+  const hasFoodNarration = narrationWords.some((word) => FOOD_NARRATION_TERMS.has(word));
+  if (!hasFoodNarration) return 0;
+
+  const candidateCategories = [
+    ...(candidate.detected_visual_categories || []),
+    ...(candidate.tags || []),
+  ].map((c) => normalizeLabel(String(c || "")));
+
+  const hasFoodVisual = candidateCategories.some((category) =>
+    FOOD_VISUAL_CATEGORIES.has(category)
+  );
+
+  // Narração fala de comida mas asset não mostra comida → penalidade máxima
+  if (!hasFoodVisual) return 1;
+  return 0;
 };
 
 const computeBlockMismatchPenalty = ({ block, candidate, previousMacroTopic }) => {
@@ -485,6 +545,7 @@ const rankCandidates = async ({
     const metadataFallbackPenalty = weakMetadataEvidence && specificIntentRequiresStrongEvidence ? 1 : weakMetadataEvidence ? 0.35 : 0;
     const uncertainAssetPenalty = editorialAssessment.editorial_fit === "uncertain" ? 1 : 0;
     const darkFramePenalty = computeDarkFramePenalty(candidate);
+    const thematicMismatchPenalty = computeThematicMismatchPenalty({ narrationText, candidate });
 
     const rawScore =
       semantic.score * SCORE_WEIGHTS.semanticScore +
@@ -511,7 +572,8 @@ const rankCandidates = async ({
       genericAssetPenalty * SCORE_WEIGHTS.genericAssetPenalty -
       uncertainAssetPenalty * SCORE_WEIGHTS.uncertainAssetPenalty -
       metadataFallbackPenalty * SCORE_WEIGHTS.metadataFallbackPenalty -
-      darkFramePenalty * SCORE_WEIGHTS.darkFramePenalty;
+      darkFramePenalty * SCORE_WEIGHTS.darkFramePenalty -
+      thematicMismatchPenalty * SCORE_WEIGHTS.thematicMismatchPenalty;
 
     const reasons = buildRejectedReasons({
       semanticScore: semantic.score,
@@ -527,6 +589,7 @@ const rankCandidates = async ({
       metadataFallbackPenalty,
       forbiddenCategoryPenalty,
       darkFramePenalty,
+      thematicMismatchPenalty,
     });
     const hardReuseBlockReason = computeHardReuseBlockReason({ candidate, usage });
     const namedEntityBlockReason = computeNamedEntityBlockReason({ narrationText, candidate, entityMatchScore });
@@ -582,6 +645,7 @@ const rankCandidates = async ({
         uncertainAssetPenalty: round3(uncertainAssetPenalty),
         metadataFallbackPenalty: round3(metadataFallbackPenalty),
         darkFramePenalty: round3(darkFramePenalty),
+        thematicMismatchPenalty: round3(thematicMismatchPenalty),
         hardBoundaryIntroBonus: round3(hardBoundaryIntroBonus),
         reusePenalty: round3(reuse.total),
         detectedVisualCategories: evidence.detected_visual_categories,
@@ -656,6 +720,7 @@ module.exports = {
     computeGenericAssetPenalty,
     computeGastronomySpecificityScore,
     computeDarkFramePenalty,
+    computeThematicMismatchPenalty,
     isWeakMetadataEvidence,
     FIT_PRIORITY,
   },

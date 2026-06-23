@@ -1,11 +1,20 @@
 {
   "description": "Vista panorâmica de Faro, cidade histórica do Algarve com marina e centro antigo",
-  "tags": ["faro", "algarve", "portugal", "marina", "cidade", "historico", "sul", "panoramica", "centro historico"],
+  "tags": [
+    "faro",
+    "algarve",
+    "portugal",
+    "marina",
+    "cidade",
+    "historico",
+    "sul",
+    "panoramica",
+    "centro historico"
+  ],
   "location": {
     "city": "Faro",
     "country": "Portugal"
   },
-  "type_hint": "urban",
-  "analyzed_at": "2026-06-10T00:00:00.000Z",
-  "analyzed_by": "manual"
+  "analyzed_by": "gemini_vision",
+  "analyzed_at": "2026-06-23T13:55:06.802Z"
 }

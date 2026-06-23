@@ -16,7 +16,7 @@ from urllib import request as urllib_request
 
 FRAME_COUNT = 3
 FRAME_TIMEOUT_SECONDS = 15
-DEFAULT_GEMINI_MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash"]
+DEFAULT_GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
 PROMPT = (
     "Analyze this video frame and return ONLY a valid JSON object with this exact schema:\n"
     "{\n"

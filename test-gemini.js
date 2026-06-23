@@ -10,7 +10,7 @@ const run = async () => {
   }
 
   const result = await generateTextWithGemini({
-    model: process.env.GEMINI_VISION_MODEL_LITE || "gemini-2.5-flash-lite",
+    model: process.env.GEMINI_VISION_MODEL_LITE || "gemini-2.5-flash",
     prompt: "Responda apenas: API Gemini funcionando.",
   });
 

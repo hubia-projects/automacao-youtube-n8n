@@ -72,6 +72,32 @@ const SEMANTIC_ALIAS_GROUPS = [
   ["mercado", "mercados", "market", "markets"],
   ["gastronomia", "culinaria", "food", "foods", "gastronomy", "culinary"],
   ["comida", "prato", "pratos", "food", "dish", "dishes", "meal", "meals"],
+  // Novos aliases para gastronomia — melhoram o keyword matching quando
+  // embeddings falham (ex: Gemini 503), garantindo que narração sobre
+  // bacalhau encontra assets de comida em vez de pontos turísticos.
+  ["bacalhau", "bacalhau_a_bras", "codfish", "cod", "salted_cod"],
+  ["sardinha", "sardinhas", "sardine", "sardines", "grilled_sardines"],
+  ["marisco", "mariscos", "seafood", "shellfish", "clams", "shrimp"],
+  ["polvo", "octopus", "pulpo"],
+  ["cataplana", "seafood_stew", "copper_pot"],
+  ["francesinha", "francesinhas", "porto_sandwich", "covered_sandwich"],
+  ["pastel_de_nata", "pasteis_de_nata", "custard_tart", "egg_tart", "portuguese_tart"],
+  ["vinho", "vinhos", "wine", "wines", "vineyard", "vineyards", "winery"],
+  ["vinho_do_porto", "port_wine", "porto_wine", "douro_wine"],
+  ["vinho_verde", "green_wine", "young_wine"],
+  ["azeite", "olive_oil", "azeite_portugues"],
+  ["queijo", "queijos", "cheese", "cheeses", "queijo_da_serra"],
+  ["pao", "broa", "bread", "corn_bread", "portuguese_bread"],
+  ["alheira", "alheiras", "portuguese_sausage"],
+  ["cozido", "cozido_a_portuguesa", "stew", "boiled_dinner"],
+  ["grelhado", "grelhados", "grilled", "charcoal_grilled"],
+  ["doce", "doces", "docaria", "dessert", "desserts", "sweet", "sweets", "pastry", "pastries"],
+  ["tasca", "tascas", "taberna", "tabernas", "tavern", "taverns", "local_eatery"],
+  ["feira", "feiras", "fair", "fairs", "open_market", "street_market"],
+  ["degustacao", "degustar", "tasting", "sampling", "wine_tasting"],
+  ["cozinha", "culinaria", "gastronomy", "gastronomic", "cuisine", "cooking"],
+  ["cozinheiro", "cozinheira", "chef", "cook", "cooking_hands"],
+  ["restaurante", "restaurantes", "restaurant", "restaurants", "dining"],
 ];
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
