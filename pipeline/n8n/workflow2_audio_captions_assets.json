@@ -1,6 +1,6 @@
 {
   "id": "YiezxhzyVQT3XJuz",
-  "name": "Workflow 2 — Audio, Captions and Assets",
+  "name": "Workflow 2 — Audio, Captions, Assets + Visual Evidence",
   "active": true,
   "nodes": [
     {
@@ -68,16 +68,30 @@
       }
     },
     {
-      "id": "if_assets_ready",
-      "name": "If Assets Ready",
+      "id": "approve_visual_evidence",
+      "name": "Approve Visual Evidence",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1140, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/assets/approve-evidence",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ video_id: $json.video_id, mock_mode: $env.MOCK_MODE === 'true' }) }}"
+      }
+    },
+    {
+      "id": "if_contract_covered",
+      "name": "If Visual Contract Covered",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1140, 200],
+      "position": [1300, 200],
       "parameters": {
         "conditions": {
           "boolean": [
             {
-              "value1": "={{!$json.missing_assets}}",
+              "value1": "={{!$json.visual_contract_not_covered}}",
               "operation": "isTrue"
             }
           ]
@@ -89,7 +103,7 @@
       "name": "Call Workflow 3",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1,
-      "position": [1260, 200],
+      "position": [1420, 200],
       "parameters": {
         "workflowId": "SWfoFJ3aNt2nJboC",
         "mode": "each",
@@ -98,17 +112,17 @@
       }
     },
     {
-      "id": "mark_manual_review_missing_assets",
-      "name": "Mark Needs Manual Review Missing Assets",
+      "id": "mark_manual_review_contract_not_covered",
+      "name": "Mark Manual Review — Contract Not Covered",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1380, 320],
+      "position": [1540, 320],
       "parameters": {
         "method": "POST",
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/review/mark-manual-review",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ ({ video_id: $json.video_id, note: $json.blocking_scene_indexes?.length ? `Assets insuficientes para render. Cenas bloqueadas: ${$json.blocking_scene_indexes.join(', ')}.` : 'Assets insuficientes para render.', source: 'workflow2_missing_assets', mock_mode: $env.MOCK_MODE === 'true' }) }}"
+        "jsonBody": "={{ ({ video_id: $json.video_id, note: $json.missing_moments ? `VISUAL_CONTRACT_NOT_COVERED — ${$json.missing_moments} micro-moments sem evidência visual. Precisa revisão manual. ${$json.needs_manual_review?.length ? JSON.stringify($json.needs_manual_review?.slice(0,5)) : ''}` : 'VISUAL_CONTRACT_NOT_COVERED — contrato visual não coberto. Precisa revisão manual.', source: 'workflow2_visual_evidence_approval', mock_mode: $env.MOCK_MODE === 'true' }) }}"
       }
     }
   ],
@@ -117,11 +131,12 @@
     "Generate Audio": { "main": [[{ "node": "Analyze Audio Intelligence", "type": "main", "index": 0 }]] },
     "Analyze Audio Intelligence": { "main": [[{ "node": "Generate Captions", "type": "main", "index": 0 }]] },
     "Generate Captions": { "main": [[{ "node": "Search Assets", "type": "main", "index": 0 }]] },
-    "Search Assets": { "main": [[{ "node": "If Assets Ready", "type": "main", "index": 0 }]] },
-    "If Assets Ready": {
+    "Search Assets": { "main": [[{ "node": "Approve Visual Evidence", "type": "main", "index": 0 }]] },
+    "Approve Visual Evidence": { "main": [[{ "node": "If Visual Contract Covered", "type": "main", "index": 0 }]] },
+    "If Visual Contract Covered": {
       "main": [
         [{ "node": "Call Workflow 3", "type": "main", "index": 0 }],
-        [{ "node": "Mark Needs Manual Review Missing Assets", "type": "main", "index": 0 }]
+        [{ "node": "Mark Manual Review — Contract Not Covered", "type": "main", "index": 0 }]
       ]
     }
   },

@@ -1661,6 +1661,30 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
 
   const clipPlan = timelineResult.clipPlan || timelineResult.clips || [];
 
+  // PARTE 5: Bloquear render se contrato visual não coberto em produção.
+  // A tolerância (CONTRACT_COVERAGE_TOLERANCE) permite avançar quando o nº de
+  // momentos em falta ficar dentro do limite configurado em env (ex: 5),
+  // deixando slots neutros/fallback preencherem o resto do timeline.
+  const missingCount = Number(timelineResult.needsManualReview?.length || 0);
+  const coverageTolerance = Math.max(0, Number(config.CONTRACT_COVERAGE_TOLERANCE || 0));
+  if (
+    !allowPlaceholderAssets
+    && timelineResult.contractCovered === false
+    && missingCount > coverageTolerance
+  ) {
+    throw new Error(
+      `Render blocked: visual contract not covered — ${missingCount} micro_moment(s) missing visual evidence (tolerance=${coverageTolerance})`
+    );
+  }
+  if (timelineResult.contractCovered === false && missingCount <= coverageTolerance && coverageTolerance > 0) {
+    logger.warn("renderService: contract não totalmente coberto, prosseguindo por tolerância", {
+      videoId,
+      missing: missingCount,
+      tolerance: coverageTolerance,
+      covered_from_planner: timelineResult.contractCovered,
+    });
+  }
+
   if (!allowPlaceholderAssets && clipPlan.some((clip) => isPlaceholderAsset(clip.asset))) {
     throw new Error("Render blocked: placeholder asset detected in clip plan.");
   }
@@ -1815,10 +1839,29 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     enabled: config.ENABLE_BLOCK_OVERLAYS,
     requireChapterOverlay: Boolean(config.HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY),
   });
-  const subtitlePath = config.BURN_CAPTIONS && state.caption_path_srt && (await fs.pathExists(state.caption_path_srt))
-    ? state.caption_path_srt
-    : "";
+
+  // PARTE 7 — Legendas e overlays devem falhar se não aplicarem
+  const burnCaptionsEnabled = Boolean(config.BURN_CAPTIONS);
+  const captionSrtExists = Boolean(state.caption_path_srt) && await fs.pathExists(state.caption_path_srt).catch(() => false);
+  const requireChapterOverlay = Boolean(config.HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY);
+  const hasChapterOverlays = overlays.some((o) => o.type === "chapter_card_clip");
+
+  // Se BURN_CAPTIONS=true e caption_path_srt não existe, falhar antes de renderizar
+  if (burnCaptionsEnabled && !captionSrtExists) {
+    throw new Error("Render blocked: BURN_CAPTIONS=true but caption_path_srt not found.");
+  }
+
+  // Se HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY=true e não há overlays de capítulo, falhar
+  if (requireChapterOverlay && timelineResult.narrativeBlocks?.some((b) => b.hard_boundary) && !hasChapterOverlays) {
+    throw new Error("Render blocked: HARD_BOUNDARY_REQUIRE_CHAPTER_OVERLAY=true but no chapter overlays generated.");
+  }
+
+  const subtitlePath = burnCaptionsEnabled && captionSrtExists ? state.caption_path_srt : "";
   let finalRenderPath = renderPath;
+  let captionsBurned = false;
+  let overlaysApplied = false;
+  let overlayErrorMessage = "";
+
   if (overlays.length || subtitlePath) {
     const overlayPath = path.join(paths.base, "render", "final-with-overlays.mp4");
     try {
@@ -1830,9 +1873,30 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
         fps: OUTPUT_FPS,
         videoBitrate: VIDEO_BITRATE,
         maxVideoBitrate: MAX_VIDEO_BITRATE,
+        width: outputResolution.width,
+        height: outputResolution.height,
       });
       finalRenderPath = overlayPath;
-    } catch {
+      captionsBurned = Boolean(subtitlePath);
+      overlaysApplied = overlays.length > 0;
+    } catch (error) {
+      overlayErrorMessage = error.message || "unknown overlay error";
+
+      // Se BURN_CAPTIONS=true, overlay deve falhar o render
+      if (burnCaptionsEnabled) {
+        throw new Error(`Render blocked: BURN_CAPTIONS=true but overlays failed: ${overlayErrorMessage}`);
+      }
+
+      // Se requireChapterOverlay e falhou, também falhar
+      if (requireChapterOverlay && hasChapterOverlays) {
+        throw new Error(`Render blocked: chapter overlay required but failed: ${overlayErrorMessage}`);
+      }
+
+      // Caso contrário, seguir com render original (comportamento antigo para retrocompatibilidade)
+      logger.warn("renderService: overlays falharam, seguindo com render original", {
+        videoId,
+        error: overlayErrorMessage,
+      });
       finalRenderPath = renderPath;
     }
   }
@@ -1842,6 +1906,9 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
     render_path: finalRenderPath,
     strategy: renderStrategy,
     transition,
+    captions_burned: captionsBurned,
+    overlays_applied: overlaysApplied,
+    overlay_error: overlayErrorMessage || "",
   });
 
   const outputInfo = await probeMedia(finalRenderPath).catch(() => ({ width: 0, height: 0, duration: audioDuration }));
@@ -1860,6 +1927,8 @@ const renderVideo = async ({ videoId, mockMode = false, backgroundMusicPath = ""
         output_duration_seconds: round3(outputInfo.duration || audioDuration),
         total_clips: clipPlan.length,
         unique_asset_count: uniqueAssetCount,
+        captions_burned: captionsBurned,
+        overlays_applied: overlaysApplied,
         semantic_alignment_score_average: round3(average(semanticScores)),
         low_confidence_clip_count: semanticScores.filter((score) => score < 0).length,
         sync_policy: timelineResult.syncPolicy || {},

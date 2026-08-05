@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { config } = require("../src/config/env");
+const { maybeSkipWithoutKeys } = require("./_helpers/shouldSkipWithoutKeys.js");
 const { updateState, loadState } = require("../src/services/stateService");
 const { generateScript } = require("../src/services/scriptService");
 const { generateAudio } = require("../src/services/ttsService");
@@ -138,6 +139,12 @@ const buildForcedVisualPlan = () => [
 ];
 
 const run = async () => {
+  const skipReason = await maybeSkipWithoutKeys({ requireTTS: true, requireVideoProviders: true });
+  if (skipReason) {
+    console.log(`⏭️ SKIP ${path.basename(__filename)}: ${skipReason}`);
+    return;
+  }
+
   const videoId = `final_validation_${Date.now()}`;
   let openAiAttempts = 0;
   let openAiScriptSource = "openai";

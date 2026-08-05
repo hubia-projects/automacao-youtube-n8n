@@ -103,3 +103,17 @@ memory/test_credentials.md
 
 # Mobile development
 android-sdk/
+
+# Studio v2 (Python)
+/data/
+studio/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Hubia projects safety net (added 2026-08-05 after GCP key leak in 8207fc3)
+.freebuff/
+.emergent/
+pipeline/output/cache/
+pipeline/output/system/
+pipeline/output/tests-*/

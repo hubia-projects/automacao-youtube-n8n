@@ -195,7 +195,15 @@ const concatenateAudioChunks = async ({ chunkPaths = [], outputPath }) => {
   }
 };
 
-const synthesizeOpenAiInChunks = async () => null;
+// Stub consciente: a implementação completa do OpenAI TTS em chunks está
+// planeada para a Fase B/A6. Enquanto não existir, qualquer chamada sinaliza
+// falha explícita em vez de devolver null silenciosamente (que o código antigo
+// fazia e mascarava a falha atrás do catch do multivozes).
+const synthesizeOpenAiInChunks = async () => {
+  throw new Error(
+    "synthesizeOpenAiInChunks not implemented yet (Fase B/A6). Configure provider='multivozes' ou 'elevenlabs'."
+  );
+};
 
 const ttsWithElevenLabs = async ({ text }) => {
   if (!hasElevenLabs()) return null;
@@ -450,9 +458,61 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "multivozes
     audioWritten = true;
   }
 
-  if (!audioWritten) {
+  const isRealTtsProvider = (effectiveProvider = "") => {
+    const key = String(effectiveProvider || "").toLowerCase();
+    return key.startsWith("multivozes") || key.startsWith("elevenlabs") || key.startsWith("openai_tts");
+  };
+
+  const audioReal = audioWritten && isRealTtsProvider(usedProvider);
+
+  if (!audioWritten && mockMode) {
     await createMockAudio(paths.audioPath);
     usedProvider = "mock";
+  }
+
+  if (!audioWritten && !mockMode) {
+    const failureReason = String(ttsErrorClass || "no_real_provider_audio_generated");
+    const failureMessage = `TTS production failure: nenhum provider real produziu áudio (requested=${provider || "multivozes"}, class=${failureReason}).`;
+
+    logger.error(failureMessage);
+
+    try {
+      await updateState(
+        videoId,
+        {
+          audio_path: paths.audioPath || "",
+          audio_provider: "failed",
+          audio_real: false,
+          audio_generation_failed_reason: failureReason,
+          duration_seconds: 0,
+          tts_primary_provider: String(provider || "multivozes"),
+          tts_effective_provider: "failed",
+          tts_fallback_used: true,
+          tts_error_class: String(ttsErrorClass || ""),
+          error_message: failureMessage,
+        },
+        {
+          currentStep: "audio_failed",
+          status: "audio_failed",
+        }
+      );
+    } catch (stateError) {
+      logger.warn(`Falha ao persistir estado em audio_failed`, { message: stateError.message });
+    }
+
+    await appendPipelineEvent({
+      videoId,
+      stage: "audio",
+      event: "production_failure",
+      status: "error",
+      payload: {
+        requested_provider: String(provider || "multivozes"),
+        reason: failureReason,
+        message: failureMessage,
+      },
+    }).catch(() => null);
+
+    throw new Error(failureMessage);
   }
 
   const duration = await getAudioDuration(paths.audioPath, text);
@@ -462,6 +522,9 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "multivozes
     videoId,
     {
       audio_path: paths.audioPath,
+      audio_provider: String(usedProvider || ""),
+      audio_real: audioReal,
+      audio_generation_failed_reason: "",
       duration_seconds: Math.round(duration || 0),
       tts_primary_provider: String(provider || "multivozes"),
       tts_effective_provider: String(usedProvider || ""),
@@ -485,13 +548,15 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "multivozes
     videoId,
     stage: "audio",
     event: "end",
-    status: "ok",
+    status: audioReal || mockMode ? "ok" : "warning",
     payload: {
       duration_ms: Date.now() - stageStartedAt,
       tts_primary_provider: String(provider || "multivozes"),
       tts_effective_provider: String(usedProvider || ""),
       tts_fallback_used: fallbackUsed,
       tts_error_class: String(ttsErrorClass || ""),
+      audio_real: audioReal,
+      mock_mode: Boolean(mockMode),
     },
   }).catch(() => null);
 
@@ -501,6 +566,8 @@ const generateAudio = async ({ videoId, mockMode = false, provider = "multivozes
     duration_seconds: nextState.duration_seconds,
     provider: usedProvider,
     voice: usedVoice || null,
+    audio_real: audioReal,
+    audio_generation_failed_reason: "",
     tts_primary_provider: String(provider || "multivozes"),
     tts_effective_provider: String(usedProvider || ""),
     tts_fallback_used: fallbackUsed,

@@ -10,6 +10,37 @@ const unique = (values = []) => [...new Set((values || []).filter(Boolean))];
 const MIN_CLIP_SECONDS = 0.8;
 const sourceDurationCache = new Map();
 
+// Observability — Capturar razões de fail-open top-3 para inspeção operacional.
+// Quando strict_mode (food/city) esvazia o pool via applyClipLibraryMinScore,
+// gravamos a razão. O consumidor drena via takeLocalLibraryMinScoreFallbackReasons()
+// e escreve em state.local_library_min_score_fallback_reasons para o operador
+// ver quando strict mode cedeu silenciosamente.
+const LOCAL_LIBRARY_MIN_SCORE_FALLBACK_REASONS_CAP = 30;
+const localLibraryMinScoreFallbackReasons = [];
+
+const recordLocalLibraryMinScoreFallbackReason = (entry = {}) => {
+  if (!entry || typeof entry !== "object") return;
+  localLibraryMinScoreFallbackReasons.push({
+    at: new Date().toISOString(),
+    ...entry,
+  });
+  if (localLibraryMinScoreFallbackReasons.length > LOCAL_LIBRARY_MIN_SCORE_FALLBACK_REASONS_CAP) {
+    localLibraryMinScoreFallbackReasons.splice(
+      0,
+      localLibraryMinScoreFallbackReasons.length - LOCAL_LIBRARY_MIN_SCORE_FALLBACK_REASONS_CAP
+    );
+  }
+};
+
+const takeLocalLibraryMinScoreFallbackReasons = () => {
+  if (!localLibraryMinScoreFallbackReasons.length) return [];
+  const snapshot = [...localLibraryMinScoreFallbackReasons];
+  localLibraryMinScoreFallbackReasons.length = 0;
+  return snapshot;
+};
+
+const getLocalLibraryMinScoreFallbackReasons = () => [...localLibraryMinScoreFallbackReasons];
+
 const getMicroClipDurations = () =>
   unique(
     String(config.CLIP_LIBRARY_TARGET_DURATIONS || "3,5,15")
@@ -838,14 +869,36 @@ const bulkUpdateStatusByAssetAndWindow = async ({
 const searchApprovedClips = async ({
   sceneIndex = 0,
   blockId = "",
+  videoId = "",
   visualIntent = "",
   keywords = [],
   expectedLocation = "",
   strictLocation = false,
   limit = config.CLIP_LIBRARY_MAX_SEARCH_RESULTS || 24,
+  minScoreOverride = null,
 }) => {
   const conn = ensureDb();
   const max = Math.max(1, Math.min(100, Number(limit || 24)));
+  // C1 — Local clip library min_score gate. Mantemos fail-open: se
+  // minScoreOverride é null, usamos o threshold do config. Em strict food
+  // mode activo usamos o threshold mais alto (default 0.5 vs 0.3 normal).
+  const foodStrictActive = Boolean(config.LOCAL_FOOD_STRICT_MODE)
+    && ["gastronomy", "market", "wine", "pastry", "restaurant", "cafe", "street_food"].includes(String(visualIntent || "").toLowerCase());
+  const cityStrictActive = Boolean(config.LOCAL_CITY_STRICT_MODE)
+    && ["city_landmark", "historic_street", "river"].includes(String(visualIntent || "").toLowerCase());
+  const strictActive = foodStrictActive || cityStrictActive;
+  const effectiveMinScore = minScoreOverride !== null && minScoreOverride !== undefined
+    ? Math.max(0, Math.min(1, Number(minScoreOverride)))
+    : Number(strictActive ? config.LOCAL_LIBRARY_STRICT_MIN_SCORE : config.LOCAL_LIBRARY_MIN_SCORE) || 0;
+  // Contexto para observability de fail-open (vai para state.local_library_min_score_fallback_reasons).
+  const effectiveContext = {
+    videoId: String(videoId || ""),
+    sceneIndex: Number(sceneIndex || 0),
+    blockId: String(blockId || ""),
+    visualIntent: String(visualIntent || "").toLowerCase(),
+    foodStrictActive,
+    cityStrictActive,
+  };
   let rows = [];
   if (Number(sceneIndex || 0) > 0) {
     rows = conn.prepare(`
@@ -895,9 +948,11 @@ const searchApprovedClips = async ({
       return true;
     });
 
-  if (!semanticQuery && !normalizedExpectedLocation) return clips;
+  if (!semanticQuery && !normalizedExpectedLocation) {
+    return applyClipLibraryMinScore(clips, effectiveMinScore, strictActive, effectiveContext);
+  }
 
-  return clips
+  const scored = clips
     .map((clip) => {
       const haystack = [
         clip.semantic_text,
@@ -926,6 +981,53 @@ const searchApprovedClips = async ({
       || Number(right.confidence || 0) - Number(left.confidence || 0)
       || Number(left.usage_count || 0) - Number(right.usage_count || 0)
     );
+  return applyClipLibraryMinScore(scored, effectiveMinScore, strictActive, effectiveContext);
+};
+
+// C1 — aplica o min_score gate ao resultado de clips ordenados.
+// O score combinado considera: _location_boost (até 0.25), _semantic_score
+// (0-1), confidence (0-1) e usage_count invertido (mais usado = penalizado).
+const computeClipLibraryCompositeScore = (clip = {}) => {
+  const locationBoost = Math.max(0, Math.min(0.25, Number(clip._location_boost || 0)));
+  const semanticComponent = Math.max(0, Math.min(1, Number(clip._semantic_score || 0)));
+  const confidenceComponent = Math.max(0, Math.min(1, Number(clip.confidence || 0)));
+  const usagePenalty = Math.min(0.15, Math.max(0, Number(clip.usage_count || 0)) * 0.015);
+  const composite = locationBoost + semanticComponent * 0.55 + confidenceComponent * 0.4 - usagePenalty;
+  return Math.max(0, Math.min(1, Number(composite.toFixed(3))));
+};
+
+const applyClipLibraryMinScore = (clips = [], minScore = 0, strictActive = false, context = {}) => {
+  if (!clips || !clips.length) return clips;
+  if (!minScore) return clips;
+  const filtered = clips.filter((clip) => {
+    const composite = computeClipLibraryCompositeScore(clip);
+    clip._library_composite_score = composite;
+    return composite >= minScore;
+  });
+  if (filtered.length || !strictActive) return filtered;
+  // Fail-open em strict mode quando TODOS os clips ficam abaixo do threshold:
+  // devolvemos o top-3 pelo composite para não esvaziar o pool.
+  const sortedForFallback = [...clips]
+    .sort((left, right) => (right._library_composite_score || 0) - (left._library_composite_score || 0));
+  const fallback = sortedForFallback.slice(0, 3);
+  // Observability — gravar razão para o operador inspeccionar em
+  // state.local_library_min_score_fallback_reasons (drenado pelo timelinePlanner).
+  recordLocalLibraryMinScoreFallbackReason({
+    reason: "min_score_top3_fail_open",
+    video_id: String(context.videoId || ""),
+    scene_index: Number(context.sceneIndex || 0),
+    block_id: String(context.blockId || ""),
+    visual_intent: String(context.visualIntent || ""),
+    min_score: Number(minScore),
+    raw_pool_size: clips.length,
+    fallback_pool_size: fallback.length,
+    max_composite_score_seen: Number(sortedForFallback[0]?._library_composite_score || 0),
+    top_3_clip_ids: sortedForFallback.slice(0, 3).map((clip) => String(clip.clip_id || "")),
+    strict_mode_active: Boolean(strictActive),
+    food_strict_mode_active: Boolean(context.foodStrictActive),
+    city_strict_mode_active: Boolean(context.cityStrictActive),
+  });
+  return fallback;
 };
 
 const markClipUsed = async ({ clipId = "" }) => {
@@ -979,11 +1081,23 @@ module.exports = {
   markClipUsed,
   summarizeClipLibrary,
   closeClipLibraryDb,
+  // Observability — fail-open top-3 reasons consumíveis por timeline/state.
+  takeLocalLibraryMinScoreFallbackReasons,
+  getLocalLibraryMinScoreFallbackReasons,
+  // R3: M2 perceptual dedup — exportados para timelineScoringService
+  hammingDistance,
+  DHASH_MAX_DISTANCE,
   __test__: {
     buildClipSignature,
     buildClipId,
     buildClipSemanticMetadata,
     keywordOverlapScore,
     mapRowToClip,
+    hammingDistance,
+    computeClipDhash,
+    computeClipLibraryCompositeScore,
+    applyClipLibraryMinScore,
+    recordLocalLibraryMinScoreFallbackReason,
+    LOCAL_LIBRARY_MIN_SCORE_FALLBACK_REASONS_CAP,
   },
 };

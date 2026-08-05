@@ -143,6 +143,8 @@ const INTENT_PATTERNS = [
 const GASTRONOMY_THEME_PATTERN = /(gastronom|food|meal|dish|restaurant|restaurante|cafe|coffee|bakery|pastry|market|mercado|wine|vinho|dessert|docaria|confeitaria|francesinha|bacalhau|seafood|people eating)/i;
 const ESTABLISHING_ALLOWED_ROLES = new Set(["intro", "outro"]);
 const SPECIFIC_GASTRONOMY_INTENTS = new Set(["market", "wine", "pastry", "cafe", "restaurant", "street_food", "local_food"]);
+const EXPLICIT_FOOD_SIGNALS = /(gastronomia|sabores|comida|prato|pratos|restaurante|restaurantes|mercado|mercados|vinho|vinhos|pastel|pastéis|nata|café|bacalhau|francesinha|sardinha|sardinhas|marisco|mariscos|doce|doces|sobremesa|docaria|confeitaria|cozinha|culinária|chef|tasca|taberna|degustação)/i;
+const EXPLICIT_LANDMARK_REFERENCES = /(monumento|monumentos|torre|torres|castelo|palácio|catedral|sé|basílica|ponte|pontes|elevador|miradouro|vista panorâmica|skyline|aérea|drone|vista aérea|patrimônio|patrimonio|arquitetura|azulejo|azulejos)/i;
 const REQUIRED_EVIDENCE_ALIASES = {
   city_landmark: ["city_landmark", "historic_street", "aerial_city", "river", "bridge"],
   plate: ["food", "local_food", "people_eating"],
@@ -271,12 +273,44 @@ const inferVisualIntent = ({ scene = {}, block = {}, topic = "" } = {}) => {
     visualIntent = "gastronomy";
   }
 
-  if (cityScopedScene) {
+  // PARTE 2 — Corrigir inferência de intenção visual:
+  // Para vídeos de gastronomia, food sempre vence location.
+  // city_landmark/historic_street só são permitidos se:
+  //   - A narração pede explicitamente um monumento (EXPLICIT_LANDMARK_REFERENCES)
+  //   - OU o micro_moment é establishing_context/chapter_transition
+  //   - OU accepts_landmark === true no visual_contract
+  const isGastronomyTopic = GASTRONOMY_THEME_PATTERN.test(`${topic} ${combined}`);
+  const hasExplicitFoodSignal = EXPLICIT_FOOD_SIGNALS.test(combined);
+  const hasExplicitLandmarkReference = EXPLICIT_LANDMARK_REFERENCES.test(combined);
+  const isFoodIntentCurrent = FOOD_SIGNAL_CATEGORIES.has(visualIntent) || SPECIFIC_GASTRONOMY_INTENTS.has(visualIntent);
+  const isEstablishingScene = ESTABLISHING_ALLOWED_ROLES.has(role);
+  const acceptsLandmark = scene.accepts_landmark === true || scene.content_slot_type === "establishing_context" || scene.content_slot_type === "chapter_transition";
+
+  if (cityScopedScene && isGastronomyTopic) {
+    // Se há sinais explícitos de comida, NUNCA converter para landmark/street
+    if (isFoodIntentCurrent && hasExplicitFoodSignal) {
+      // Manter intent de comida — não degradar
+      // visualIntent permanece o que já está
+    } else if (isFoodIntentCurrent && !hasExplicitLandmarkReference && !acceptsLandmark && !isEstablishingScene) {
+      // Tentativa de downgrade bloqueada: há intenção de comida sem evidência de landmark
+      // Manter visualIntent como está em vez de converter para city_landmark
+    } else if (!isFoodIntentCurrent && hasExplicitLandmarkReference && (acceptsLandmark || isEstablishingScene)) {
+      // Landmark explícito permitido: narração pede monumento E cena aceita
+      visualIntent = "city_landmark";
+    } else if (!isFoodIntentCurrent && !hasExplicitLandmarkReference && !hasExplicitFoodSignal) {
+      // Sem sinais fortes de comida nem landmark: contexto neutro, permite establishing
+      if (acceptsLandmark || isEstablishingScene) {
+        visualIntent = "historic_street";
+      }
+      // else: mantém generic_travel — não força landmark
+    }
+    // Se hasExplicitFoodSignal: manter intent de comida sempre
+  } else if (cityScopedScene && !isGastronomyTopic) {
+    // Comportamento original para tópicos não-gastronómicos
     const sectionLabel = `${scene.title || ""}`;
-    const explicitFoodSection = /(gastronom|culin|sabores|comida|food)/i.test(sectionLabel);
     const locationLandmarkCue = /(landmark|monument|castle|tower|cathedral|palace|belem|alfama|ribeira|historic center|historic district|centro historico|ponte|bridge|douro|tejo|tagus|tram|bonde)/i.test(combined);
     const isSpecificFoodIntent = SPECIFIC_GASTRONOMY_INTENTS.has(visualIntent);
-    if (isSpecificFoodIntent && matchedSpecificGastronomyIntents.length < 2 && !explicitFoodSection) {
+    if (isSpecificFoodIntent && matchedSpecificGastronomyIntents.length < 2) {
       visualIntent = locationLandmarkCue ? "city_landmark" : "historic_street";
     } else if (visualIntent === "generic_travel") {
       visualIntent = locationLandmarkCue ? "city_landmark" : "historic_street";
@@ -597,7 +631,107 @@ const resolveVisualEvidenceProvider = (providerVersion = "") => {
 
 const evaluateVisualEvidence = ({ scene = {}, window = {}, asset = {}, providerVersion = "" } = {}) => {
   const provider = resolveVisualEvidenceProvider(providerVersion);
-  return provider({ scene, window, asset });
+  return applyStrictModeAdjustments(provider({ scene, window, asset }), scene);
+};
+
+// C2 — food/city strict modes.
+// Quando LOCAL_FOOD_STRICT_MODE ou LOCAL_CITY_STRICT_MODE estão activos e o
+// visual_intent da cena é compatível, exigimos um limiar mais alto de
+// required_evidence_score e penalizamos clips com semantic_risk elevado.
+// Esta função é fail-open: quando strict modes são false, devolve o
+// evaluation inalterado (zero-overhead).
+const FOOD_INTENTS_SET = new Set(["gastronomy", "market", "wine", "pastry", "restaurant", "cafe", "street_food"]);
+const CITY_INTENTS_SET = new Set(["city_landmark", "historic_street", "river"]);
+const FOOD_CATEGORY_HINTS = new Set(["food", "local_food", "market", "wine", "pastry", "restaurant", "cafe", "street_food", "people_eating"]);
+const CITY_CATEGORY_HINTS = new Set(["city_landmark", "historic_street", "river", "bridge", "aerial_city"]);
+
+// Resolve visual_intent primário para aplicar strict modes.
+// Opções:
+//   1) scene.visual_intent (campo explícito do caller) — fonte primária
+//   2) Detecção via allowed_visual_categories presentes no editor.inference
+//   3) Heurística via detected_visual_categories do result (fallback)
+const resolveSceneIntentForStrict = (scene = {}, evidenceResult = {}) => {
+  const explicit = String(scene.visual_intent || "").toLowerCase().trim();
+  if (explicit && (FOOD_INTENTS_SET.has(explicit) || CITY_INTENTS_SET.has(explicit))) return explicit;
+  // Fallback: usar allowed_visual_categories se algum está em FOOD_INTENTS_SET ou CITY_INTENTS_SET
+  const allowedCats = (evidenceResult.editorial_inference && Array.isArray(evidenceResult.editorial_inference.matched_allowed_categories))
+    ? evidenceResult.editorial_inference.matched_allowed_categories
+    : [];
+  if (allowedCats.some((c) => FOOD_INTENTS_SET.has(String(c).toLowerCase()))) return "gastronomy";
+  if (allowedCats.some((c) => CITY_INTENTS_SET.has(String(c).toLowerCase()))) return "city_landmark";
+  // Fallback: usar detected_visual_categories
+  const detected = Array.isArray(evidenceResult.detected_visual_categories) ? evidenceResult.detected_visual_categories : [];
+  if (detected.some((c) => FOOD_CATEGORY_HINTS.has(String(c).toLowerCase()))) return "gastronomy";
+  if (detected.some((c) => CITY_CATEGORY_HINTS.has(String(c).toLowerCase()))) return "city_landmark";
+  return "generic_travel";
+};
+
+const applyStrictModeAdjustments = (evidenceResult = {}, scene = {}) => {
+  const safer = { ...(evidenceResult || {}) };
+  if (typeof evidenceResult?.editorial_inference !== "object") return safer;
+
+  const inferredIntent = resolveSceneIntentForStrict(scene, evidenceResult);
+  const isFoodIntent = FOOD_INTENTS_SET.has(inferredIntent);
+  const isCityIntent = CITY_INTENTS_SET.has(inferredIntent);
+  const foodStrict = isFoodIntent && Boolean(config.LOCAL_FOOD_STRICT_MODE);
+  const cityStrict = isCityIntent && Boolean(config.LOCAL_CITY_STRICT_MODE);
+  // Respeita intro/outro/establishing exemption (Q4 do review):
+  // strict mode não aplica em cenas que legitimamente aceitam landmarks/aerial
+  // (e.g. intro de um vídeo gastronómico com city establishing shot).
+  const role = String(scene.role || "").toLowerCase();
+  const acceptsLandmark = Boolean(scene.accepts_landmark)
+    || scene.content_slot_type === "establishing_context"
+    || scene.content_slot_type === "chapter_transition";
+  const isEstablishingScene = ["intro", "outro"].includes(role) || acceptsLandmark;
+  const exemptionApplied = (foodStrict || cityStrict) && isEstablishingScene;
+
+  // Q4 review fix — city-only strict mode estava a ser skip'd: a condição
+  // original `if (!foodStrict || exemptionApplied)` retornava early também
+  // para cityStrict=true com foodStrict=false, sem aplicar gating de city.
+  // A condição correcta: ambos OFF OU exemption aplicável.
+  if (exemptionApplied || (!foodStrict && !cityStrict)) {
+    safer.editorial_inference = safer.editorial_inference || {};
+    safer.editorial_inference.strict_mode_active = (foodStrict || cityStrict) && !exemptionApplied;
+    safer.editorial_inference.strict_mode_type = exemptionApplied ? "exempted"
+      : (foodStrict && cityStrict) ? "food+city"
+      : foodStrict ? "food"
+      : cityStrict ? "city"
+      : "none";
+    safer.editorial_inference.strict_mode_required_score_min = 0;
+    safer.food_strict_mode_active = foodStrict && !exemptionApplied;
+    safer.city_strict_mode_active = cityStrict && !exemptionApplied;
+    safer.strict_mode_exempted = exemptionApplied;
+    safer.visual_intent_match = Boolean(safer.editorial_inference.visual_intent_match);
+    return safer;
+  }
+
+  const editorInf = { ...safer.editorial_inference };
+  const requiredScoreMin = foodStrict ? 0.5 : (cityStrict ? 0.7 : 0);
+  const riskThreshold = Number(config.LOCAL_LIBRARY_STRICT_RISK_THRESHOLD || 0.4);
+  let visualIntentMatch = Boolean(editorInf.visual_intent_match);
+  // city-only OU food-only OU ambos
+  if (foodStrict) {
+    if (Number(editorInf.required_evidence_score || 0) < 0.5) visualIntentMatch = false;
+    if (Number(safer.semantic_risk_score || 0) >= riskThreshold) visualIntentMatch = false;
+    if ((editorInf.matched_forbidden_categories || []).length > 0) visualIntentMatch = false;
+  }
+  if (cityStrict) {
+    if (Number(editorInf.required_evidence_score || 0) < requiredScoreMin) visualIntentMatch = false;
+  }
+  editorInf.visual_intent_match = visualIntentMatch;
+  editorInf.strict_mode_active = true;
+  editorInf.strict_mode_type = foodStrict ? "food" : "city";
+  editorInf.strict_mode_required_score_min = requiredScoreMin;
+
+  safer.editorial_inference = editorInf;
+  safer.visual_intent_match = visualIntentMatch;
+  if ((foodStrict || cityStrict) && (!safer.risk_flags || !safer.risk_flags.includes("strict_mode_risk"))) {
+    safer.risk_flags = Array.isArray(safer.risk_flags) ? [...safer.risk_flags, "strict_mode_risk"] : ["strict_mode_risk"];
+  }
+  safer.food_strict_mode_active = foodStrict;
+  safer.city_strict_mode_active = cityStrict;
+  safer.strict_mode_exempted = false;
+  return safer;
 };
 
 module.exports = {
@@ -617,5 +751,11 @@ module.exports = {
     evaluateVisualEvidenceV3Multimodal,
     resolveVisualEvidenceProvider,
     inferVisualIntent,
+    applyStrictModeAdjustments,
+    resolveSceneIntentForStrict,
+    FOOD_INTENTS_SET,
+    CITY_INTENTS_SET,
+    FOOD_CATEGORY_HINTS,
+    CITY_CATEGORY_HINTS,
   },
 };

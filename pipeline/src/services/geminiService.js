@@ -25,7 +25,7 @@ const safeJsonParse = (raw, fallback) => {
   }
 };
 
-const generateContent = async ({ prompt, imageParts = [], model = GEMINI_CHAT_MODEL, responseFormat = "text", timeoutMs = 90000, temperature = 0.5 }) => {
+const generateContent = async ({ prompt, imageParts = [], model = GEMINI_CHAT_MODEL, responseFormat = "text", timeoutMs = 90000, temperature = 0.5, maxOutputTokens = 8192 }) => {
   if (!hasGemini()) return null;
 
   const url = `${GEMINI_BASE}/models/${model}:generateContent?key=${config.GEMINI_API_KEY}`;
@@ -34,7 +34,7 @@ const generateContent = async ({ prompt, imageParts = [], model = GEMINI_CHAT_MO
     contents: [{ parts: [...imageParts, { text: prompt }] }],
     generationConfig: {
       temperature,
-      maxOutputTokens: 8192,
+      maxOutputTokens,
     },
   };
 
@@ -117,11 +117,65 @@ const describeImagesWithGemini = async ({ prompt, imagePaths = [] }) => {
   });
 };
 
-const generateScriptPackageWithGemini = async ({ topic, angle, targetWords = 1400 }) => {
+const generateScriptPackageWithGemini = async ({ topic, angle, targetWords = 1400, videoDurationSeconds = 0, wordCountRetry = false, previousWordCount = 0 } = {}) => {
   if (!hasGemini()) return null;
 
+  const shortModeWindow = 240;
+  const isShortMode = Number(videoDurationSeconds || 0) > 0 && Number(videoDurationSeconds) <= shortModeWindow;
+  const minWordsShort = Number(process.env.TARGET_SCRIPT_WORDS_MIN || config.TARGET_SCRIPT_WORDS_MIN || 380);
+  const maxWordsShort = Number(process.env.TARGET_SCRIPT_WORDS_MAX || config.TARGET_SCRIPT_WORDS_MAX || 520);
   const targetMinutes = Math.round(targetWords / 130);
-  const prompt = `Você é roteirista especialista em vídeos faceless para YouTube. Escreva em português do Brasil com alta retenção.
+  const shortBlockCount = Math.min(12, Math.max(8, Math.round(Number(videoDurationSeconds || 0) / 20)));
+  const shortBlockSeconds = isShortMode ? Math.min(25, Math.max(12, Math.round(Number(videoDurationSeconds || 180) / shortBlockCount))) : 30;
+
+  let prompt;
+
+  if (isShortMode) {
+    prompt = `Você é roteirista especialista em vídeos faceless curtos para YouTube (modo MVP). Escreva em português do Brasil com alta retenção.
+
+Tema: ${topic}
+Ângulo: ${angle || "educativo/documental"}
+Duração alvo: ${videoDurationSeconds}s (curto, MVP 3 min)
+
+IMPORTANTE (MODO CURTO):
+- O campo "script_text" deve ter entre ${minWordsShort} e ${maxWordsShort} palavras de narração corrida (equivalente a ~${videoDurationSeconds}s @ 2.4 wps).
+- Não escreva mais do que ${maxWordsShort} palavras; seja direto e use vocabulário específico.
+- NÃO é um vídeo longo. Seja conciso; cada bloco deve ter substância visual.
+
+Gere ${shortBlockCount} blocos visuais pequenos (8–12) em array structured_blocks, cada um com 12–25s. Cada bloco precisa ter intenção visual clara: city_landmark | gastronomy | restaurant | market | pastry | wine | street | generic_transition.
+
+Gere JSON estrito com:
+{
+  "video_objective": "",
+  "intro_hook": "",
+  "research_json": {"facts": [""], "risks": [""], "sources": [""]},
+  "outline_json": {"sections": [{"title": "", "objective": ""}]},
+  "script_text": "narração completa entre ${minWordsShort} e ${maxWordsShort} palavras",
+  "visual_suggestions": [{"section": "", "shots": [""]}],
+  "factual_notes": [""],
+  "seo_keywords": [""],
+  "youtube_title_options": [""],
+  "youtube_description": "",
+  "tags": [""],
+  "chapters": ["00:00 Introdução"],
+  "structured_blocks": [
+    {
+      "block_id": "b01",
+      "order": 1,
+      "text": "trecho exato da narração deste bloco",
+      "duration_estimate": ${shortBlockSeconds},
+      "visual_intent": "city_landmark|gastronomy|restaurant|market|pastry|wine|street|generic_transition",
+      "expected_location": "Lisboa|Porto|Sintra|Portugal|vazio se genérico",
+      "expected_country": "Portugal",
+      "required_visual_evidence": ["pastel de nata","food closeup","Porto","Douro"],
+      "forbidden_visual_categories": ["wrong_city","generic_landmark","unrelated_city_square"],
+      "asset_query_hints": ["porto francesinha restaurant","pastel de nata cafe portugal"],
+      "generic_asset_allowed": false
+    }
+  ]
+}`;
+  } else {
+    prompt = `Você é roteirista especialista em vídeos faceless para YouTube. Escreva em português do Brasil com alta retenção.
 
 Tema: ${topic}
 Ângulo: ${angle || "educativo/documental"}
@@ -143,8 +197,15 @@ Gere JSON estrito com:
   "tags": [""],
   "chapters": ["00:00 Introdução"]
 }`;
+  }
 
-  return generateContent({ prompt, responseFormat: "json", timeoutMs: 180000 });
+  const maxOutputTokens = isShortMode ? (wordCountRetry ? Math.round(4096 * 1.3) : 4096) : 8192;
+  let promptWithShortHint = isShortMode ? `${prompt}\n\nNUNCA escreva mais que ${maxWordsShort} palavras no script_text. Se atingir o limite, pare de narrar imediatamente — não invente conteúdo extra.` : prompt;
+  if (isShortMode && wordCountRetry && previousWordCount > 0) {
+    promptWithShortHint += `\n\n⚠️ RETRY OBRIGATÓRIO: O rascunho anterior tinha apenas ${previousWordCount} palavras — abaixo do mínimo de ${minWordsShort}. Desta vez o campo "script_text" DEVE ter no mínimo ${minWordsShort} palavras. Expanda cada bloco com detalhes concretos, exemplos reais e contexto histórico ou cultural. Não encurte a narração; escreva até atingir o mínimo de palavras exigido.`;
+  }
+
+  return generateContent({ prompt: promptWithShortHint, responseFormat: "json", timeoutMs: 180000, model: GEMINI_CHAT_MODEL, maxOutputTokens });
 };
 
 const basicGeminiHealthcheck = async () => {

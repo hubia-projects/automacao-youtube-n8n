@@ -166,12 +166,38 @@ const generateIdeasWithOpenAI = async ({ count = 5, videoId = "" }) => {
   }
 };
 
+const shortVideoWindowSeconds = 240;
+const shortModeMinWordsOverride = Number(process.env.TARGET_SCRIPT_WORDS_MIN || 380);
+const shortModeMaxWordsOverride = Number(process.env.TARGET_SCRIPT_WORDS_MAX || 520);
+
 const buildScriptDurationHint = (targetDurationSeconds = 0) => {
   const numericTarget = Number(targetDurationSeconds || 0);
   if (!(numericTarget > 0)) {
     return {
       scriptRequirement: "roteiro completo para 10-15 minutos",
       durationInstruction: "",
+      isShortMode: false,
+      minWords: 0,
+      maxWords: 0,
+      secondsPerBlock: 0,
+      blockCount: 0,
+    };
+  }
+
+  if (numericTarget <= shortVideoWindowSeconds) {
+    const minWords = shortModeMinWordsOverride;
+    const maxWords = shortModeMaxWordsOverride;
+    const minutes = (numericTarget / 60).toFixed(1);
+    const blockCount = Math.min(12, Math.max(8, Math.round(numericTarget / 20)));
+    const secondsPerBlock = Math.min(25, Math.max(12, Math.round(numericTarget / blockCount)));
+    return {
+      scriptRequirement: `roteiro curto para aproximadamente ${minutes} minutos (${minWords} a ${maxWords} palavras de narracao)`,
+      durationInstruction: `Modo curto MVP. Duracao alvo: ${numericTarget}s (~${minutes} min). O campo script_text deve ter entre ${minWords} e ${maxWords} palavras. NAO escreva mais que ${maxWords} palavras; seja direto, use vocabulario especifico e pare ao atingir o limite. NUNCA invente conteudo extra.`,
+      isShortMode: true,
+      minWords,
+      maxWords,
+      secondsPerBlock,
+      blockCount,
     };
   }
 
@@ -185,6 +211,11 @@ const buildScriptDurationHint = (targetDurationSeconds = 0) => {
   return {
     scriptRequirement: `roteiro completo para aproximadamente ${minutes} minutos (${minWords} a ${maxWords} palavras de narracao)`,
     durationInstruction: `Duracao alvo: aproximadamente ${minutes} minutos. O campo script_text deve ter entre ${minWords} e ${maxWords} palavras de narracao corrida. Nunca entregue menos de ${minWords} palavras no script_text. Se precisar, expanda exemplos concretos, transicoes e detalhes visuais para atingir essa faixa sem enrolacao.`,
+    isShortMode: false,
+    minWords,
+    maxWords,
+    secondsPerBlock: 45,
+    blockCount: 0,
   };
 };
 
@@ -246,8 +277,15 @@ const generateScriptPackageWithOpenAI = async ({
 
   const system = `Você é roteirista especialista em vídeos faceless para YouTube. Escreva em português do Brasil com alta retenção.`;
   const durationHint = buildScriptDurationHint(targetDurationSeconds);
-  const structuredBlocksInstruction = `O array structured_blocks deve cobrir toda a narração em blocos sequenciais de 30–60s. visual_type deve ser "specific" quando a cena precisa de exatidão (prato específico, monumento real, pessoa real), ou "generic" para b-roll genérico.`;
-  const user = `Tema: ${topic}\nÂngulo: ${angle || "educativo/documental"}\n${durationHint.durationInstruction ? `\n${durationHint.durationInstruction}` : ""}\n\n${structuredBlocksInstruction}\n\nGere JSON estrito com:\n{\n  "video_objective": "",\n  "intro_hook": "",\n  "research_json": {"facts": [""], "risks": [""], "sources": [""]},\n  "outline_json": {"sections": [{"title": "", "objective": ""}]},\n  "script_text": "${durationHint.scriptRequirement}",\n  "visual_suggestions": [{"section": "", "shots": [""]}],\n  "factual_notes": [""],\n  "seo_keywords": [""],\n  "youtube_title_options": [""],\n  "youtube_description": "",\n  "tags": [""],\n  "chapters": ["00:00 Introdução"],\n  "structured_blocks": [{"block_id": "b01", "text": "", "duration_estimate": 45, "visual_type": "generic", "visual_description": "", "keywords": [""]}]\n}`;
+  const structuredBlocksInstruction = durationHint.isShortMode
+    ? `Modo curto MVP: gere ${durationHint.blockCount} blocos (8–12) em array structured_blocks, cada um com ~${durationHint.secondsPerBlock}s (12–25s). Cada bloco precisa ter intenção visual clara: visual_intent deve ser um de [city_landmark, gastronomy, restaurant, market, pastry, wine, street, generic_transition]. Quando a cena for específica, preencha expected_location, expected_country, required_visual_evidence, forbidden_visual_categories e asset_query_hints. Quando for genérico, generic_asset_allowed=true.`
+    : `O array structured_blocks deve cobrir toda a narração em blocos sequenciais de 30–60s. visual_type deve ser "specific" quando a cena precisa de exatidão (prato específico, monumento real, pessoa real), ou "generic" para b-roll genérico.`;
+
+  const structuredBlocksExampleShape = durationHint.isShortMode
+    ? `[{"block_id":"b01","order":1,"text":"trecho exato","duration_estimate":${durationHint.secondsPerBlock},"visual_intent":"city_landmark","expected_location":"Lisboa","expected_country":"Portugal","required_visual_evidence":["Lisboa","Praça do Comércio"],"forbidden_visual_categories":["wrong_city","generic_landmark"],"asset_query_hints":["lisboa square aerial"],"generic_asset_allowed":false}]`
+    : `[{"block_id": "b01", "text": "", "duration_estimate": 45, "visual_type": "generic", "visual_description": "", "keywords": [""]}]`;
+
+  const user = `Tema: ${topic}\nÂngulo: ${angle || "educativo/documental"}\n${durationHint.durationInstruction ? `\n${durationHint.durationInstruction}` : ""}\n\n${structuredBlocksInstruction}\n\nGere JSON estrito com:\n{\n  "video_objective": "",\n  "intro_hook": "",\n  "research_json": {"facts": [""], "risks": [""], "sources": [""]},\n  "outline_json": {"sections": [{"title": "", "objective": ""}]},\n  "script_text": "${durationHint.scriptRequirement}",\n  "visual_suggestions": [{"section": "", "shots": [""]}],\n  "factual_notes": [""],\n  "seo_keywords": [""],\n  "youtube_title_options": [""],\n  "youtube_description": "",\n  "tags": [""],\n  "chapters": ["00:00 Introdução"],\n  "structured_blocks": ${structuredBlocksExampleShape}\n}`;
 
   try {
     const response = await openaiClient.chat.completions.create({

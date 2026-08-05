@@ -1,4 +1,6 @@
 const assert = require("assert");
+const path = require("path");
+const { maybeSkipWithoutKeys } = require("./_helpers/shouldSkipWithoutKeys.js");
 const { updateState, loadState } = require("../src/services/stateService");
 const { generateScript } = require("../src/services/scriptService");
 const { generateAudio } = require("../src/services/ttsService");
@@ -264,6 +266,16 @@ const buildBlockLevelVisualPlan = ({ visualPlan = [], structuredBlocks = [], out
 
 const run = async () => {
   const videoId = `security_test_${Date.now()}`;
+
+  const skipReason = await maybeSkipWithoutKeys({
+    requireTTS: true,
+    requireVideoProviders: true,
+    requireYoutube: false,
+  });
+  if (skipReason) {
+    console.log(`⏭️ SKIP ${path.basename(__filename)}: ${skipReason}`);
+    return;
+  }
 
   console.log("🍷 Iniciando teste completo: Portugal gastronomia");
   console.log(`[QA] Modo: ${QA_MODE} | minDuration: ${MIN_VIDEO_DURATION_SECONDS}s | upload: ${ENABLE_REAL_UPLOAD ? 'real/private' : 'mock'}`);

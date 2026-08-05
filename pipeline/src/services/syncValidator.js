@@ -523,11 +523,21 @@ const evaluateVisualIntentCoverage = ({ state = {}, timeline = {} }) => {
   };
 };
 
-const collectTimelineIssues = ({ timeline, technical, visual, diversityScore }) => {
+const collectTimelineIssues = ({ timeline, technical, visual, diversityScore, audioIntelligenceTimingEstimated }) => {
   const issues = [...(technical.issues || [])];
   const clips = timeline?.clips || [];
   const fallbackClipCount = clips.filter((clip) => clip.clip_script_source === "scene_fallback").length;
   const metadataFallbackClipCount = clips.filter((clip) => clip.asset_analysis_provider === "metadata_fallback").length;
+  const isUnreliableTiming = audioIntelligenceTimingEstimated === true;
+
+  if (isUnreliableTiming) {
+    issues.push({
+      type: "unreliable_timing",
+      severity: "info",
+      message: "Audio timings estimated proportionally (Whisper unavailable); max_visual_lag_sec tolerance relaxed.",
+      audio_intelligence_timing_estimated: true,
+    });
+  }
 
   if (visual.hard_boundary_status === "fail") {
     issues.push({
@@ -747,13 +757,20 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
     ? timeline.narrative_blocks
     : buildNarrativeBlocks({ state, audioIntelligence, audioDuration: renderDuration }).macroBlocks;
   const hardBoundaries = getHardBoundaries(narrativeBlocks);
-  const hardBoundaryMaxLagSec = Number(
+  const baseHardBoundaryMaxLagSec = Number(
     config.HARD_BOUNDARY_MAX_LAG_SEC
     || timeline?.hard_boundary_policy?.max_topic_switch_latency_sec
     || timeline?.sync_policy?.max_topic_switch_latency_sec
     || config.SEMANTIC_SYNC_MAX_LATENCY_SEC
     || 0.5
   );
+  // B3 final: when audio timings are proportional estimates (Whisper unavailable),
+  // relax max_visual_lag threshold with an additive buffer. Default +0.5s.
+  const unreliableTimingRelaxationSec = Number(config.HARD_BOUNDARY_UNRELIABLE_LAG_RELAXATION_SEC || 0.5);
+  const isUnreliableTiming = state.audio_intelligence_timing_estimated === true;
+  const hardBoundaryMaxLagSec = isUnreliableTiming
+    ? baseHardBoundaryMaxLagSec + Math.max(unreliableTimingRelaxationSec, baseHardBoundaryMaxLagSec * 0.2)
+    : baseHardBoundaryMaxLagSec;
   const sampleIntervalSec = Number(config.SEMANTIC_SYNC_QA_SAMPLE_INTERVAL_SEC || (config.SEMANTIC_SYNC_MODE === "high-quality" ? 1 : 2));
   const sampleTimestamps = buildQaSampleTimestamps({ duration: renderDuration, hardBoundaries, intervalSec: sampleIntervalSec });
   const visionByTimestamp = await classifyFramesWithVision({ renderPath, sampleTimestamps });
@@ -870,6 +887,10 @@ const validateRenderWithVision = async ({ videoId, renderPath, audioIntelligence
     failed_ranges: failedRanges,
     should_regenerate: shouldRegenerate,
     samples: samples.slice(0, 80),
+    audio_intelligence_timing_estimated: isUnreliableTiming,
+    unreliable_timing: isUnreliableTiming,
+    unreliable_timing_relaxation_sec: isUnreliableTiming ? round3(unreliableTimingRelaxationSec) : 0,
+    effective_max_visual_lag_sec: round3(hardBoundaryMaxLagSec),
   };
 };
 
@@ -884,7 +905,7 @@ const evaluateClipAuditGate = ({ clipAuditRows = [] }) => {
 
 // Gate simplificado: 3 verificações técnicas objetivas.
 // Removidos gates editoriais que bloqueavam vídeos válidos por falta de pool rico de assets.
-const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
+const validateRender = async ({ videoId, mockMode = config.MOCK_MODE, shortVideoModeOverride = null } = {}) => {
   const state = await loadState(videoId);
   const renderPath = state.render_path;
   const issues = [];
@@ -919,13 +940,29 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     issues.push({ type: "render_too_small", severity: "critical", size: stat?.size || 0 });
   }
 
-  // Gate 2: duração mínima
+  // Gate 2: duração mínima + teto (opcional em SHORT_VIDEO_MODE)
+  // Nota MVP: em SHORT_VIDEO_MODE, aplicamos um piso de 150s quando o env
+  // tem o default antigo (>=480) para não bloquearmos vídeos curtos legítimos.
+  // O teto MAX_VIDEO_DURATION_SECONDS é warning-only nesta fase — não bloqueia.
+  // Fora de SHORT_VIDEO_MODE, mantém-se o comportamento legacy (apenas piso).
   const renderProbe = await probeMedia(renderPath).catch(() => ({ width: 0, height: 0, duration: 0, streams: [] }));
   const duration = Number(renderProbe.duration || 0);
-  const minDuration = parseInt(process.env.MIN_VIDEO_DURATION_SECONDS || 480, 10);
+  const shortVideoMode = shortVideoModeOverride !== null && shortVideoModeOverride !== undefined
+    ? Boolean(shortVideoModeOverride)
+    : Boolean(config.SHORT_VIDEO_MODE);
+  const envMin = parseInt(process.env.MIN_VIDEO_DURATION_SECONDS || String(config.MIN_VIDEO_DURATION_SECONDS || 480), 10);
+  const minDuration = shortVideoMode
+    ? Math.min(150, Math.max(60, envMin))
+    : envMin;
 
   if (duration < minDuration) {
     issues.push({ type: "render_too_short", severity: "critical", duration, min_duration: minDuration });
+  }
+
+  const envMax = Number(process.env.MAX_VIDEO_DURATION_SECONDS || config.MAX_VIDEO_DURATION_SECONDS || 0);
+  const maxDuration = shortVideoMode && envMax > 0 ? envMax : 0;
+  if (maxDuration > 0 && duration > maxDuration) {
+    issues.push({ type: "render_too_long", severity: "warning", duration, max_duration: maxDuration });
   }
 
   // Gate 3: trilha de áudio presente
@@ -955,6 +992,8 @@ const validateRender = async ({ videoId, mockMode = config.MOCK_MODE }) => {
     ffprobe_duration: round3(duration),
     state_output_resolution: state.output_resolution || "",
     youtube_video_id: state.youtube_video_id || "",
+    audio_intelligence_timing_estimated: state.audio_intelligence_timing_estimated === true,
+    unreliable_timing: state.audio_intelligence_timing_estimated === true,
   };
 
   await updateState(videoId, { render_validation: validationResult, error_message: "" }, { currentStep: "render_validated", status: "render_validated" });
@@ -971,6 +1010,17 @@ const fixRenderSync = async ({ videoId, mockMode = false }) => {
       ...validation,
       needs_manual_review: true,
       fix_skipped_reason: "max_attempts_reached",
+    };
+  }
+
+  // B3 final: when audio timings are estimated (Whisper unavailable), re-rendering
+  // does NOT fix timing drift — the source data is the issue. Skipping the fix
+  // saves budget and avoids redundant API calls; user reviews manually if needed.
+  if (validation.unreliable_timing === true) {
+    return {
+      ...validation,
+      needs_manual_review: false, // do not block upload; ensureRenderIsPublishableForUpload handles warn-skip.
+      fix_skipped_reason: "unreliable_timing_skip_render_fix",
     };
   }
 

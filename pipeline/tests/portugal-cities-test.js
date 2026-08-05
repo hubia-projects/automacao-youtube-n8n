@@ -1,3 +1,5 @@
+const path = require("path");
+const { maybeSkipWithoutKeys } = require("./_helpers/shouldSkipWithoutKeys.js");
 const { updateState, loadState } = require("../src/services/stateService");
 const { generateAudio } = require("../src/services/ttsService");
 const { generateAssets, basicPexelsHealthcheck, basicPixabayHealthcheck } = require("../src/services/assetsService");
@@ -77,6 +79,15 @@ const scriptText = [
 ].join(" ");
 
 const run = async () => {
+  const skipReason = await maybeSkipWithoutKeys({
+    requireTTS: true,
+    requireVideoProviders: true,
+  });
+  if (skipReason) {
+    console.log(`⏭️ SKIP ${path.basename(__filename)}: ${skipReason}`);
+    return;
+  }
+
   const videoId = `portugal_cities_${Date.now()}`;
 
   console.log("🇵🇹 Iniciando teste: 3 Melhores Cidades de Portugal");

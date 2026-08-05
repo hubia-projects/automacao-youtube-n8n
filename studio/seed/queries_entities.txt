@@ -1,0 +1,43 @@
+# Seed dirigido a ENTIDADES nomeadas — lacunas confirmadas pelo revisor
+# (run 20260714-102323): monumentos/pratos que o guião nomeia e a biblioteca
+# não tinha. Uso: studio ingest seed --queries seed/queries_entities.txt
+
+# --- Porto: monumentos específicos ---
+livraria lello bookstore porto interior
+sao bento railway station azulejo tiles porto
+porto cathedral se terreiro
+clerigos tower porto street view
+bolhao market porto stalls
+porto ribeira colorful houses river
+dom luis bridge porto walking deck
+vila nova de gaia wine cellars rooftops
+porto tram historic street
+
+# --- Porto: gastronomia específica ---
+francesinha sandwich melted cheese porto
+francesinha sauce pouring portugal
+port wine glass tasting cellar
+tripas a moda do porto dish
+
+# --- Lisboa: monumentos específicos ---
+santa justa lift elevator lisbon
+belem tower close-up river tagus
+jeronimos monastery cloister interior
+tram 28 lisbon yellow close-up
+alfama viewpoint miradouro lisbon
+rossio square lisbon wave pattern
+lx factory lisbon street art
+padrão dos descobrimentos monument lisbon
+
+# --- Lisboa: gastronomia específica ---
+pastel de nata custard tart close-up
+pasteis de belem bakery queue
+bifana pork sandwich lisbon
+ginjinha cherry liquor shot lisbon
+bacalhau a bras dish portuguese
+
+# --- b-roll de ligação (cenas de comparação/transição) ---
+lisbon porto train interior portugal
+portugal highway driving pov
+tourist checking map street portugal
+suitcase rolling cobblestone street

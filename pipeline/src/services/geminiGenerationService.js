@@ -20,7 +20,7 @@ const { logger } = require("../utils/logger");
 const IMAGEN_MODEL = "imagen-3.0-generate-002";
 const IMAGEN_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
-const isImagenEnabled = () => Boolean(config.GEMINI_API_KEY);
+const isImagenEnabled = () => Boolean(config.GEMINI_API_KEY) && !config.DISABLE_GEMINI_GENERATION;
 
 const getCacheDir = () => path.join(config.OUTPUT_ROOT || "output", "cache", "generated_assets");
 
@@ -97,9 +97,29 @@ const generateImageBuffer = async (prompt) => {
  * Aplica Ken Burns (zoom lento + pan suave) ao PNG → MP4 de durationSec segundos.
  * Usa zoompan do FFmpeg para aparência profissional.
  */
-const applyKenBurns = async (imagePath, outputPath, durationSec = 5) => {
+const resolveFfmpegPath = () => {
+  try {
+    const fromStatic = require("ffmpeg-static");
+    // ffmpeg-static pode devolver um path cujo binário não existe (ex: install incompleto).
+    // Validamos com fs.pathExistsSync antes de aceitar.
+    if (fromStatic && typeof fromStatic === "string" && fs.pathExistsSync(fromStatic)) return fromStatic;
+  } catch {
+    // ignore — fallback abaixo
+  }
+  if (process.env.FFMPEG_BIN && fs.pathExistsSync(process.env.FFMPEG_BIN)) return process.env.FFMPEG_BIN;
+  const fallbacks = ["/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/opt/homebrew/bin/ffmpeg"];
+  for (const candidate of fallbacks) {
+    if (fs.pathExistsSync(candidate)) return candidate;
+  }
+  return null;
+};
+
+const applyKenBurns = async (imagePath, outputPath, durationSec = 5, opts = {}) => {
   const { spawn } = require("child_process");
-  const ffmpegPath = require("ffmpeg-static");
+  const ffmpegPath = opts.ffmpegPath || resolveFfmpegPath();
+  if (!ffmpegPath) {
+    throw new Error("ffmpeg binary not found — set FFMPEG_BIN env or ensure ffmpeg-static is installed");
+  }
   const fps = 25;
   const totalFrames = durationSec * fps;
 
@@ -204,4 +224,5 @@ module.exports = {
   isImagenEnabled,
   generateFallbackAsset,
   buildImagePrompt,
+  applyKenBurns,
 };

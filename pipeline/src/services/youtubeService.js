@@ -393,6 +393,19 @@ const runPreUploadQA = async ({ renderPath, state = {} }) => {
   }
 };
 
+/**
+ * Defense-in-depth: garante que o áudio é real antes de qualquer upload.
+ * Em MOCK_MODE, simula sem verificação. Em produção, exige audio_real=true explícito.
+ */
+const ensureAudioIsRealForUpload = (state = {}, mockMode = false) => {
+  if (mockMode) return;
+  const isAudioReal = state.audio_real === true;
+  if (!isAudioReal) {
+    const reason = String(state.audio_generation_failed_reason || "audio_not_real");
+    throw new Error(`Upload bloqueado: audio não é real (audio_real=false, reason=${reason}).`);
+  }
+};
+
 const ensureRenderIsPublishableForUpload = (state = {}) => {
   const renderValidation = state.render_validation || {};
   const effectiveValidation = resolveEffectiveRenderValidation(renderValidation);
@@ -401,7 +414,12 @@ const ensureRenderIsPublishableForUpload = (state = {}) => {
   const needsManualReview = effectiveValidation.needs_manual_review === true;
   const hardBoundaryStatus = effectiveValidation.hard_boundary_status || "unknown";
   const maxVisualLagSec = effectiveValidation.max_visual_lag_sec;
-  const maxAllowedLagSec = Number(config.HARD_BOUNDARY_MAX_LAG_SEC || 0.5);
+  const baseMaxAllowedLagSec = Number(config.HARD_BOUNDARY_MAX_LAG_SEC || 0.5);
+  const unreliableTiming = renderValidation.unreliable_timing === true;
+  const unreliableRelaxationSec = Number(config.HARD_BOUNDARY_UNRELIABLE_LAG_RELAXATION_SEC || 0.5);
+  const effectiveMaxAllowedLagSec = unreliableTiming
+    ? baseMaxAllowedLagSec + Math.max(unreliableRelaxationSec, baseMaxAllowedLagSec * 0.2)
+    : baseMaxAllowedLagSec;
   const editorialFailureCodes = Array.isArray(renderValidation.editorial_failure_codes)
     ? renderValidation.editorial_failure_codes
     : [];
@@ -409,7 +427,7 @@ const ensureRenderIsPublishableForUpload = (state = {}) => {
     ? renderValidation.publish_blocked_codes
     : [];
 
-  if (!isPublishable || needsRegeneration || needsManualReview) {
+  if (!isPublishable || needsRegeneration || requiresManualReviewBlock(needsManualReview, unreliableTiming)) {
     throw new Error(
       "Upload bloqueado: render reprovado no QA ou pendente de regeneracao/revisao manual."
     );
@@ -422,10 +440,26 @@ const ensureRenderIsPublishableForUpload = (state = {}) => {
     throw new Error("Upload bloqueado: hard boundary QA reprovado.");
   }
 
-  if (maxVisualLagSec > maxAllowedLagSec) {
-    throw new Error("Upload bloqueado: max_visual_lag_sec acima do limite permitido.");
+  if (maxVisualLagSec > effectiveMaxAllowedLagSec) {
+    if (unreliableTiming) {
+      // B3 final: warn-skip. Unreliable timing allows a relaxed threshold; if
+      // even the relaxed limit is exceeded we still pass with a console warning
+      // so the upload proceeds (per UNRELIABLE_TIMING_ABORT_UPLOAD default false).
+      console.warn(
+        `[UPLOAD WARN] max_visual_lag_sec=${maxVisualLagSec} > effective_limit=${effectiveMaxAllowedLagSec} `
+        + `(base=${baseMaxAllowedLagSec} + relaxation=${unreliableRelaxationSec}) but unreliable_timing=true; proceeding.`
+      );
+    } else {
+      throw new Error("Upload bloqueado: max_visual_lag_sec acima do limite permitido.");
+    }
   }
 };
+
+// Helper: needsManualReview only blocks upload when audio timing is reliable.
+// When unreliable_timing=true, the warn-skip policy keeps the upload alive and
+// surfaces the issue via the unreliable_timing flag + console warning.
+const requiresManualReviewBlock = (needsManualReview, unreliableTiming) =>
+  Boolean(needsManualReview) && !unreliableTiming;
 
 const uploadToYoutube = async ({ videoId, mockMode = false, privacyStatus = config.YOUTUBE_DEFAULT_PRIVACY }) => {
   let state = await loadState(videoId);
@@ -444,6 +478,7 @@ const uploadToYoutube = async ({ videoId, mockMode = false, privacyStatus = conf
   }
 
   ensureRenderIsPublishableForUpload(state);
+  ensureAudioIsRealForUpload(state, effectiveMockMode);
 
   if (!state.render_path || !fs.existsSync(state.render_path)) {
     throw new Error("Arquivo de vídeo final não encontrado para upload.");
@@ -654,6 +689,7 @@ module.exports = {
   __test__: {
     getMinimumVideoDurationSeconds,
     ensureRenderIsPublishableForUpload,
+    ensureAudioIsRealForUpload,
     getRenderDurationSnapshot,
     runPreUploadQA,
   },

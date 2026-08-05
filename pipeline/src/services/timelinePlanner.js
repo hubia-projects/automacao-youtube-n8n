@@ -18,11 +18,13 @@ const {
 } = require("./narrativeBlockPlanner");
 const { isPublishableAsset } = require("./assetReadinessService");
 const { isSameCountry } = require("./assetRejectionService");
+const { GASTRONOMY_CATEGORIES, NON_GASTRONOMY_CATEGORIES } = require("./editorialQaService");
 const { rankCandidates, registerClipUsage, buildVisualSignature } = require("./timelineScoringService");
 const {
   enrichCandidateIdentity,
   filterCandidatesByHardDiversity,
   buildTimelineDiversityAudit,
+  applyContractDiversityRules,
 } = require("./diversityGuardService");
 const {
   findLocalRecutCandidate,
@@ -31,6 +33,7 @@ const {
 const {
   searchApprovedClips,
   markClipUsed,
+  takeLocalLibraryMinScoreFallbackReasons,
 } = require("./clipLibraryService");
 const { generateFallbackAsset, isImagenEnabled } = require("./geminiGenerationService");
 
@@ -280,7 +283,11 @@ const flattenAssetWindows = (assets = []) => {
 
   assets.forEach((asset, assetIndex) => {
     const assetIdentity = getAssetIdentity(asset, assetIndex);
-    normalizeAssetAnalysisWindows(asset).forEach((window, windowIndex) => {
+    // R4: Limitar a 2 janelas por asset para evitar que um vídeo longo
+    // (ex: 60s) gere dezenas de candidatos independentes do mesmo ficheiro
+    const normalizedWindows = normalizeAssetAnalysisWindows(asset);
+    const limitedWindows = normalizedWindows.slice(0, 2);
+    limitedWindows.forEach((window, windowIndex) => {
       const semanticText = `${window.description || ""} ${(window.tags || []).join(" ")} ${asset.query || ""} ${asset.semantic_text || ""}`.trim();
       const { width, height } = getAssetResolution(asset);
       const resolutionScore = width >= OUTPUT_WIDTH && height >= OUTPUT_HEIGHT ? 1 : width >= 1280 && height >= 720 ? 0.75 : 0.35;
@@ -579,6 +586,8 @@ const mapClipLibraryRecordToCandidate = (clip = {}) => {
     source_url: `clip_library://${clip.clip_id}`,
     from_clip_library: true,
     clip_library_id: clip.clip_id,
+    // R3: Perceptual hash (M2 dhash) para dedup visual na timeline
+    perceptual_hash: String(clip.perceptual_hash || ""),
   };
 };
 
@@ -599,6 +608,7 @@ const mergeApprovedPoolWithClipLibrary = async ({ microBlocks = [], approvedCand
       );
     const results = await searchApprovedClips({
       sceneIndex: Number(block.scene_index || 0),
+      videoId: String(videoId || ""),
       blockId: String(block.block_id || ""),
       visualIntent: String(block.visual_intent || ""),
       keywords: block.keywords || [],
@@ -764,6 +774,18 @@ const filterCandidatesByHardRules = ({
   }
 
   if (foodIntent && strict.length) {
+    // Rejeitar clips com APENAS categorias não-gastronômicas (nuvens, paisagem,
+    // city_landmark etc.) em cenas de gastronomia — esses clips passam pelas
+    // regras hard mas destroem a cobertura do editorial QA.
+    const categoryFiltered = strict.filter((candidate) => {
+      const detected = candidate.detected_visual_categories || [];
+      if (!detected.length) return true;
+      const hasGastronomy = detected.some((c) => GASTRONOMY_CATEGORIES.has(c));
+      const hasNonGastronomy = detected.some((c) => NON_GASTRONOMY_CATEGORIES.has(c));
+      return !(hasNonGastronomy && !hasGastronomy);
+    });
+    if (categoryFiltered.length > 0) strict = categoryFiltered;
+
     const requiresThemeProof = criticalSlot || ["hook_exact", "proof_exact", "closing_payoff"].includes(slotRole);
     const themeMatches = strict.filter((candidate) => candidateHasThemeEvidence({ block, candidate }));
     if (requiresThemeProof && !themeMatches.length && !allowPlaceholderFallback) {
@@ -841,9 +863,10 @@ const filterCandidatesByHardRules = ({
 };
 
 const getNarrationTextBetween = ({ words = [], startSeconds = 0, endSeconds = 0, fallback = "", block = null }) => {
-  // Janela expandida: ±2s para capturar landmarks mencionados perto do slot
-  const expandedStart = Math.max(0, startSeconds - 2);
-  const expandedEnd = endSeconds + 2;
+  // Janela de contexto reduzida: +1s antes, +0.75s depois para evitar
+  // contaminação semântica de slots adjacentes e melhorar a precisão do matching
+  const expandedStart = Math.max(0, startSeconds - 1);
+  const expandedEnd = endSeconds + 0.75;
   const matchedWords = words
     .filter((word) => Number(word.start || 0) < expandedEnd && Number(word.end || 0) > expandedStart)
     .map((word) => word.word)
@@ -1176,7 +1199,7 @@ const pickAdjacencyDiversityAlternative = ({
   return alternative || selected;
 };
 
-const splitBlockIntoTimelineSlots = ({ block, policy, pauseMarkers = [] }) => {
+const splitBlockIntoTimelineSlots = ({ block, policy, pauseMarkers = [], words = [] }) => {
   const slots = [];
   let cursor = Number(block.start_sec || 0);
   const end = Number(block.end_sec || cursor);
@@ -1191,6 +1214,31 @@ const splitBlockIntoTimelineSlots = ({ block, policy, pauseMarkers = [] }) => {
     const idealCount = Math.max(2, Math.ceil(remaining / policy.preferred_clip_duration_sec));
     const evenDuration = round3(remaining / idealCount);
     if (evenDuration >= policy.min_clip_duration_sec && evenDuration <= policy.max_clip_duration_sec) {
+      const preferredEnd = Math.min(end, cursor + evenDuration);
+
+      // Ancorar em word boundary também no caminho evenDuration
+      const minEnd = cursor + policy.min_clip_duration_sec;
+      const maxEnd = Math.min(end, cursor + policy.max_clip_duration_sec);
+      const eligibleWords = words.filter((w) => Number(w.end || 0) >= minEnd && Number(w.end || 0) <= maxEnd);
+      if (eligibleWords.length > 0) {
+        const bestWord = eligibleWords.sort((a, b) => {
+          const distA = Math.abs(Number(a.end || 0) - preferredEnd);
+          const distB = Math.abs(Number(b.end || 0) - preferredEnd);
+          const penA = a.synthetic ? 0.2 : 0;
+          const penB = b.synthetic ? 0.2 : 0;
+          return (distA + penA) - (distB + penB);
+        })[0];
+        const nextEnd = round3(bestWord.end);
+        slots.push({
+          start: round3(cursor),
+          end: nextEnd,
+          duration: round3(nextEnd - cursor),
+          cutReason: block.hard_boundary && slots.length === 0 ? "block_transition" : "word_boundary",
+        });
+        cursor = nextEnd;
+        continue;
+      }
+
       const nextEnd = round3(Math.min(end, cursor + evenDuration));
       slots.push({
         start: round3(cursor),
@@ -1217,6 +1265,28 @@ const splitBlockIntoTimelineSlots = ({ block, policy, pauseMarkers = [] }) => {
         cutReason: block.hard_boundary && slots.length === 0 ? "block_transition" : "pause_marker",
       });
       cursor = Number(marker.start || cursor);
+      continue;
+    }
+
+    // Procurar word boundary no intervalo [minEnd, maxEnd] para evitar corte a meio de palavra
+    const eligibleWords = words.filter((w) => Number(w.end || 0) >= minEnd && Number(w.end || 0) <= maxEnd);
+    if (eligibleWords.length > 0) {
+      const bestWord = eligibleWords.sort((a, b) => {
+        const distA = Math.abs(Number(a.end || 0) - preferredEnd);
+        const distB = Math.abs(Number(b.end || 0) - preferredEnd);
+        // Penalização leve se a palavra for sintética (timing estimado, não Whisper real)
+        const penA = a.synthetic ? 0.2 : 0;
+        const penB = b.synthetic ? 0.2 : 0;
+        return (distA + penA) - (distB + penB);
+      })[0];
+      const nextEnd = round3(bestWord.end);
+      slots.push({
+        start: round3(cursor),
+        end: nextEnd,
+        duration: round3(nextEnd - cursor),
+        cutReason: block.hard_boundary && slots.length === 0 ? "block_transition" : "word_boundary",
+      });
+      cursor = nextEnd;
       continue;
     }
 
@@ -1287,6 +1357,164 @@ const buildMicroSlotsForBlock = ({ block = {}, microVisualPlan = [], policy = {}
 const buildMicroRepairQuery = ({ block = {}, microMoment = {} }) => {
   const location = block.expected_location || block.location?.city || block.macro_topic || "";
   return `${location} ${microMoment.visual_need || "authentic scene"} real action`;
+};
+
+// ─── PARTE 5: Contract-Based Slot Building ───────────────────────────────────
+
+const stripAccents = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+const buildContractBasedSlotsForBlock = ({ block = {}, microMoments = [], policy = {} }) => {
+  const blockMoments = (microMoments || [])
+    .filter((moment) => {
+      const momentCity = stripAccents(moment.city || "");
+      const blockCity = stripAccents(block.location?.city || block.macro_topic || "");
+      if (!blockCity) return true;
+      if (!momentCity) return true; // momento sem cidade não é excluído — fallback aceita
+      return momentCity === blockCity || momentCity.includes(blockCity) || blockCity.includes(momentCity);
+    })
+    .filter((moment) =>
+      Number(moment.start_sec || 0) < Number(block.end_sec || Number.MAX_SAFE_INTEGER)
+      && Number(moment.end_sec || 0) > Number(block.start_sec || 0)
+    )
+    .sort((left, right) => Number(left.start_sec || 0) - Number(right.start_sec || 0));
+
+  if (!blockMoments.length) return [];
+
+  return blockMoments.map((moment, index) => {
+    const rawStart = Math.max(Number(block.start_sec || 0), Number(moment.start_sec || 0));
+    const rawEnd = Math.min(Number(block.end_sec || rawStart + 0.5), Number(moment.end_sec || rawStart + 0.5));
+    const maxDur = Number(policy.max_clip_duration_sec || 7);
+    const duration = clamp(Math.max(0.2, rawEnd - rawStart), 0.2, maxDur);
+
+    // Inferir slot_role do content_slot_type ou do visual_intent
+    const slotRole = inferNarrativeSlotRole({ block, slotIndex: index, totalSlots: blockMoments.length });
+    const isCritical = moment.criticality === "critical";
+
+    return {
+      start: round3(rawStart),
+      end: round3(rawStart + duration),
+      duration: round3(duration),
+      cutReason: "contract_micro_moment",
+      slot_role: slotRole,
+      critical_slot: isCritical,
+      micro_moment: { ...moment, start_sec: round3(rawStart), end_sec: round3(rawStart + duration) },
+      // Metadados do contrato para filtrar candidatos
+      accepts_landmark: moment.accepts_landmark !== false,
+      forbidden_visual_categories: moment.forbidden_visual_categories || [],
+      allowed_visual_categories: moment.allowed_visual_categories || [],
+      required_visual_evidence: moment.required_visual_evidence || [],
+      visual_intent: moment.visual_intent || "",
+      minimum_confidence: moment.minimum_confidence || 0.6,
+      dish_entities: moment.dish_entities || [],
+      content_slot_type: moment.content_slot_type || "",
+    };
+  });
+};
+
+// ─── PARTE 5: Contract Hard Rules Filtering ──────────────────────────────────
+
+const filterCandidatesByContractHardRules = ({
+  candidates = [],
+  slot = {},
+  microMoment = null,
+}) => {
+  if (!microMoment || !candidates.length) return candidates;
+
+  const forbiddenCategories = new Set(
+    (microMoment.forbidden_visual_categories || []).map((c) => String(c || "").toLowerCase().trim())
+  );
+  const requiredEvidence = new Set(
+    (microMoment.required_visual_evidence || []).map((e) => String(e || "").toLowerCase().trim())
+  );
+  const isCritical = microMoment.criticality === "critical";
+  const minConfidence = Number(microMoment.minimum_confidence || 0.6);
+  const acceptsLandmark = microMoment.accepts_landmark !== false;
+
+  const filtered = candidates.filter((candidate) => {
+    // Regra 1: metadata_fallback nunca aprova slot crítico
+    const evidenceSource = String(candidate.visual_evidence_source || candidate.analysis_provider || "").toLowerCase();
+    if (isCritical && evidenceSource === "metadata_fallback") return false;
+
+    // Regra 2: Forbidden categories — se o candidato detectou alguma categoria proibida, rejeitar
+    const detectedCategories = new Set(
+      (candidate.detected_visual_categories || []).map((c) => String(c || "").toLowerCase().trim())
+    );
+    const hasForbiddenCategory = [...forbiddenCategories].some((fc) => detectedCategories.has(fc));
+    if (hasForbiddenCategory && forbiddenCategories.size > 0) return false;
+
+    // Regra 3: accepts_landmark — se o momento não aceita landmark, rejeitar candidatos de city_landmark
+    if (!acceptsLandmark && detectedCategories.has("city_landmark")) return false;
+
+    // Regra 4: Editorial confidence mínima para slots críticos
+    const editorialConfidence = Number(candidate.editorial_confidence || candidate.confidence || 0);
+    if (isCritical && editorialConfidence < minConfidence) return false;
+
+    // Regra 5: visual_truth_status para slots críticos — só exact/regional
+    if (isCritical) {
+      const truthStatus = String(candidate.visual_truth_status || "").toLowerCase();
+      if (!["exact", "regional"].includes(truthStatus)) return false;
+    }
+
+    return true;
+  });
+
+  return filtered;
+};
+
+// ─── PARTE 5: Contract-Based Priority Selection ──────────────────────────────
+
+const selectByContractPriority = ({
+  ranked = [],
+  slot = {},
+  microMoment = null,
+  usage = {},
+}) => {
+  if (!microMoment || !ranked.length) return null;
+
+  const available = ranked.filter((item) => !item.hard_blocked);
+  if (!available.length) return null;
+
+  // Ordenar por prioridade do contrato:
+  // 1º exact match → 2º editorial_evidence_score → 3º semantic_relevance_score
+  // → 4º menor semantic_risk_score → 5º menor uso (diversidade)
+  const sorted = [...available].sort((a, b) => {
+    // Prioridade 1: visual_truth_status (exact > regional > generic > unknown)
+    const statusOrder = { exact: 0, regional: 1, generic: 2, unknown: 3, wrong: 4 };
+    const statusA = statusOrder[String(a.candidate?.visual_truth_status || "").toLowerCase()] ?? 3;
+    const statusB = statusOrder[String(b.candidate?.visual_truth_status || "").toLowerCase()] ?? 3;
+    if (statusA !== statusB) return statusA - statusB;
+
+    // Prioridade 2: editorial_evidence_score (maior primeiro)
+    const evidenceA = Number(a.candidate?.editorial_evidence_score || 0);
+    const evidenceB = Number(b.candidate?.editorial_evidence_score || 0);
+    if (Math.abs(evidenceA - evidenceB) > 0.01) return evidenceB - evidenceA;
+
+    // Prioridade 3: semantic_relevance_score (maior primeiro)
+    const relevanceA = Number(a.candidate?.semantic_relevance_score || 0);
+    const relevanceB = Number(b.candidate?.semantic_relevance_score || 0);
+    if (Math.abs(relevanceA - relevanceB) > 0.01) return relevanceB - relevanceA;
+
+    // Prioridade 4: semantic_risk_score (menor primeiro)
+    const riskA = Number(a.candidate?.semantic_risk_score || 0);
+    const riskB = Number(b.candidate?.semantic_risk_score || 0);
+    if (Math.abs(riskA - riskB) > 0.01) return riskA - riskB;
+
+    // Prioridade 5: diversidade (menos usado primeiro)
+    const usageA = Math.max(
+      usage.usedAssetIds?.get(a.candidate?.asset_id || "") || 0,
+      usage.usedLocalPaths?.get(a.candidate?.asset?.local_path || "") || 0
+    );
+    const usageB = Math.max(
+      usage.usedAssetIds?.get(b.candidate?.asset_id || "") || 0,
+      usage.usedLocalPaths?.get(b.candidate?.asset?.local_path || "") || 0
+    );
+    if (usageA !== usageB) return usageA - usageB;
+
+    // Desempate: score original
+    return Number(b.score || 0) - Number(a.score || 0);
+  });
+
+  return sorted[0] || null;
 };
 
 const buildVideoSourceWindow = ({ asset, clipDuration, preferredWindow = null, assetReuseIndex = 0, clipIndex = 1, draftVersion = 1 }) => {
@@ -1567,6 +1795,11 @@ const buildTimeline = async ({
   const hardBoundaryPolicy = getHardBoundaryPolicy();
   const audioIntelligence = await getCachedAudioIntelligence({ videoId }).catch(() => null);
   const { macroBlocks, microBlocks } = buildNarrativeBlocks({ state, audioIntelligence, audioDuration });
+
+  // PARTE 5: Carregar visual_contract se existir
+  const visualContract = state.visual_contract || null;
+  const contractMicroMoments = visualContract?.micro_moments || [];
+  const useContractTimeline = visualContract && contractMicroMoments.length > 0;
   const blockCoverageById = (Array.isArray(state.assets_json?.block_coverage_by_block) ? state.assets_json.block_coverage_by_block : [])
     .reduce((acc, item) => {
       const key = String(item.block_id || "").trim();
@@ -1619,6 +1852,14 @@ const buildTimeline = async ({
     microBlocks,
     approvedCandidates: approvedWindowCandidatesBase,
   });
+  // Observability — drenar razões de fail-open clipLibrary top-3 → state.local_library_min_score_fallback_reasons.
+  const clipLibraryFallbackReasons = takeLocalLibraryMinScoreFallbackReasons();
+  if (clipLibraryFallbackReasons.length) {
+    const priorReasons = Array.isArray(state.local_library_min_score_fallback_reasons)
+      ? state.local_library_min_score_fallback_reasons
+      : [];
+    state.local_library_min_score_fallback_reasons = [...priorReasons, ...clipLibraryFallbackReasons].slice(-30);
+  }
   const sceneBlockIdByIndex = (Array.isArray(state.visual_plan) ? state.visual_plan : []).reduce((acc, scene) => {
     const sceneIndex = Number(scene.scene_index || 0);
     if (!sceneIndex) return acc;
@@ -1655,6 +1896,8 @@ const buildTimeline = async ({
     usedBlockProviders: new Map(),
     usedBlockLandmarks: new Map(),
     usedLandmarks: new Map(),
+    // R3: Perceptual dedup (M2 dhash) — hashes visuais de clips já selecionados
+    usedPerceptualHashes: new Map(),
     lastClipByAssetId: new Map(),
   };
   const clips = [];
@@ -1674,10 +1917,12 @@ const buildTimeline = async ({
     const block = microBlocks[blockIndex];
     const previousBlock = microBlocks[blockIndex - 1] || null;
     const previousMacroTopic = block.hard_boundary ? previousBlock?.macro_topic || "" : "";
-    const microSlots = buildMicroSlotsForBlock({ block, microVisualPlan, policy });
+    const microSlots = useContractTimeline
+      ? buildContractBasedSlotsForBlock({ block, microMoments: contractMicroMoments, policy })
+      : buildMicroSlotsForBlock({ block, microVisualPlan, policy });
     const slots = microSlots.length
       ? microSlots
-      : splitBlockIntoTimelineSlots({ block, policy, pauseMarkers });
+      : splitBlockIntoTimelineSlots({ block, policy, pauseMarkers, words: audioIntelligence?.words || [] });
 
     for (let slotIndex = 0; slotIndex < slots.length; slotIndex += 1) {
       const slot = slots[slotIndex];
@@ -1709,8 +1954,17 @@ const buildTimeline = async ({
         slotRole,
         hardBoundaryPolicy,
       });
+      // PARTE 5: Aplicar contract hard rules antes da diversidade
+      const contractFilteredCandidates = slot.micro_moment
+        ? filterCandidatesByContractHardRules({
+            candidates,
+            slot,
+            microMoment: slot.micro_moment,
+          })
+        : candidates;
+
       const diversityFilter = filterCandidatesByHardDiversity({
-        candidates,
+        candidates: contractFilteredCandidates,
         clips,
         block,
         slotRole,
@@ -1726,12 +1980,30 @@ const buildTimeline = async ({
             visualIntent: block.visual_intent || "",
           })
         : null;
+
+      // R1: Hard stop na escassez — quando o diversity filter bloqueia todos os
+      // candidatos (bypass_required), gerar um asset novo via Gemini Imagen em
+      // vez de forçar reuso do mesmo clip já usado. O asset gerado é
+      // geolocalizado (cidade/país do bloco) e tem Ken Burns aplicado.
+      let generatedDiversityBypassCandidate = null;
+      if (
+        diversityFilter.bypass_required
+        && !diversityFilter.allowed_candidates.length
+        && !strictCriticalFallbackCandidate
+        && isImagenEnabled()
+        && !config.DISABLE_GEMINI_GENERATION
+      ) {
+        generatedDiversityBypassCandidate = await generateFallbackAsset(block, videoId).catch(() => null);
+      }
+
       const candidatesForRanking = diversityFilter.allowed_candidates.length
         ? diversityFilter.allowed_candidates
         : (
           strictCriticalFallbackCandidate
             ? [enrichCandidateIdentity({ candidate: strictCriticalFallbackCandidate, slotRole, block })]
-            : (candidates || []).map((candidate) => enrichCandidateIdentity({ candidate, slotRole, block }))
+            : generatedDiversityBypassCandidate
+              ? [enrichCandidateIdentity({ candidate: generatedDiversityBypassCandidate, slotRole, block })]
+              : (candidates || []).map((candidate) => enrichCandidateIdentity({ candidate, slotRole, block }))
         );
       const ranked = await rankCandidates({
         block: {
@@ -1793,6 +2065,48 @@ const buildTimeline = async ({
         freeCriticalUsageByBlock,
         usage,
       });
+
+      // PARTE 5: Prioridade do contrato sobre source tier policy
+      const contractPrioritySelected = slot.micro_moment && useContractTimeline
+        ? selectByContractPriority({
+            ranked,
+            slot,
+            microMoment: slot.micro_moment,
+            usage,
+          })
+        : null;
+
+      let policySelectedBase = contractPrioritySelected || selectedFromPolicy;
+      let contractDiversityViolations = [];
+      if (useContractTimeline && policySelectedBase?.candidate) {
+        const contractDivResult = applyContractDiversityRules({
+          candidate: policySelectedBase.candidate,
+          clips,
+          block,
+          visualContract,
+        });
+        if (!contractDivResult.passed) {
+          contractDiversityViolations = contractDivResult.violations;
+          // Tentar alternativa que passe as regras de diversidade do contrato
+          const contractSafeAlternative = [...ranked]
+            .filter((entry) => {
+              if (!entry?.candidate || entry.hard_blocked) return false;
+              if (entry.candidate.id === policySelectedBase.candidate.id) return false;
+              const altResult = applyContractDiversityRules({
+                candidate: entry.candidate,
+                clips,
+                block,
+                visualContract,
+              });
+              return altResult.passed;
+            })
+            .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))[0];
+          if (contractSafeAlternative) {
+            policySelectedBase = contractSafeAlternative;
+            contractDiversityViolations = [];
+          }
+        }
+      }
       const microMoment = slot.micro_moment || null;
       const microNeed = String(microMoment?.visual_need || "").toLowerCase();
       const microNeedsProof = microMoment?.needs_visual_proof === true;
@@ -1822,7 +2136,7 @@ const buildTimeline = async ({
           return usageA - usageB;
         })[0] || null;
       };
-      const policySelected = selectedFromPolicy
+      const policySelected = policySelectedBase
         || microProofPreferred
         || ranked.find((item) => !item.hard_blocked)
         || getLeastUsedRanked(ranked)
@@ -2152,6 +2466,8 @@ const buildTimeline = async ({
 
       clips.push({
         clip_index: clips.length + 1,
+        micro_moment_id: slot.micro_moment?.id || "",
+        contract_diversity_violations: contractDiversityViolations,
         scene_index: block.scene_index,
         fallback_missing_scene_assets: blockingSceneIndexes.includes(Number(block.scene_index || 0)),
         scene_role: block.role || "body",
@@ -2374,12 +2690,54 @@ const buildTimeline = async ({
     adjacent_repeat_total: Number(diversityAudit.adjacent_repeat_total || 0),
   };
 
+  // PARTE 5: Contract coverage gate — verificar se todos os micro_moments críticos foram cobertos
+  const needsManualReview = [];
+  if (useContractTimeline) {
+    const criticalMoments = contractMicroMoments.filter((m) => m.criticality === "critical");
+    const coveredMomentIds = new Set(
+      clips
+        .filter((clip) => clip.micro_moment_id)
+        .map((clip) => String(clip.micro_moment_id || ""))
+    );
+
+    criticalMoments.forEach((moment) => {
+      if (!coveredMomentIds.has(String(moment.id || ""))) {
+        needsManualReview.push({
+          micro_moment_id: moment.id,
+          narration_excerpt: moment.narration_excerpt,
+          required_visual_evidence: moment.required_visual_evidence,
+          missing_evidence: moment.required_visual_evidence,
+          attempted_queries: [],
+          why_rejected: "no_candidate_found_for_critical_contract_moment",
+        });
+      }
+    });
+
+    // Verificar cobertura de non-critical também
+    const nonCriticalMoments = contractMicroMoments.filter((m) => m.criticality !== "critical");
+    nonCriticalMoments.forEach((moment) => {
+      if (!coveredMomentIds.has(String(moment.id || ""))) {
+        needsManualReview.push({
+          micro_moment_id: moment.id,
+          narration_excerpt: moment.narration_excerpt,
+          required_visual_evidence: moment.required_visual_evidence,
+          missing_evidence: moment.required_visual_evidence,
+          attempted_queries: [],
+          why_rejected: "no_candidate_found_for_contract_moment",
+        });
+      }
+    });
+  }
+
   return {
     clips,
     clipPlan: clips,
     audioDuration,
     totalClipCount: clips.length,
     uniqueAssetCount,
+    needsManualReview,
+    contractCovered: needsManualReview.length <= Number(config.CONTRACT_COVERAGE_TOLERANCE || 0),
+    useContractTimeline,
     semanticAlignmentScoreAverage: round3(semanticScores.reduce((acc, score) => acc + score, 0) / Math.max(1, semanticScores.length)),
     lowConfidenceClipCount: semanticScores.filter((score) => score < 0).length,
     narrativeBlocks: macroBlocks,

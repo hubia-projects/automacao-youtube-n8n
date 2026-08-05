@@ -1,4 +1,56 @@
 const { FOOD_VISUAL_INTENTS } = require("../config/editorialPolicy");
+const { config } = require("../config/env");
+
+// Regras de diversidade baseadas no visual_contract (PARTE 5)
+const CONTRACT_DIVERSITY_RULES = {
+  gastronomy: {
+    max_same_asset_uses: 1,
+    max_same_source_url_uses: 1,
+    max_same_visual_family_ratio: 0.12,
+    max_same_landmark_appearances: 2,
+    max_city_landmark_ratio: 0.15,
+    max_aerial_city_ratio: 0.10,
+    max_consecutive_visual_family: 2,
+    max_consecutive_location: 2,
+  },
+  // C2 — strict gastronomy (food_strict_mode activo): regras 30% mais apertadas
+  // para reduzir repetição de family/source e bloquear landmark+skyline em
+  // vídeos temáticos de comida.
+  gastronomy_strict: {
+    max_same_asset_uses: 1,
+    max_same_source_url_uses: 1,
+    max_same_visual_family_ratio: 0.08,
+    max_same_landmark_appearances: 1,
+    max_city_landmark_ratio: 0.08,
+    max_aerial_city_ratio: 0.05,
+    max_consecutive_visual_family: 1,
+    max_consecutive_location: 1,
+  },
+  default: {
+    max_same_asset_uses: 2,
+    max_same_source_url_uses: 2,
+    max_same_visual_family_ratio: 0.20,
+    max_same_landmark_appearances: 3,
+    max_city_landmark_ratio: 0.40,
+    max_aerial_city_ratio: 0.25,
+    max_consecutive_visual_family: 3,
+    max_consecutive_location: 3,
+  },
+};
+
+const resolveContractDiversityRules = (visualContract = null, options = {}) => {
+  // 1) options.foodStrictMode explícito tem prioridade absoluta.
+  // 2) Caso contrário, fallback no config.LOCAL_FOOD_STRICT_MODE cached
+  //    no module load (consistente com o resto do pipeline).
+  const foodStrict = options.foodStrictMode !== undefined && options.foodStrictMode !== null
+    ? Boolean(options.foodStrictMode)
+    : Boolean(config.LOCAL_FOOD_STRICT_MODE);
+  if (!visualContract) return CONTRACT_DIVERSITY_RULES.default;
+  if (visualContract.dominant_theme === "gastronomy") {
+    return foodStrict ? CONTRACT_DIVERSITY_RULES.gastronomy_strict : CONTRACT_DIVERSITY_RULES.gastronomy;
+  }
+  return CONTRACT_DIVERSITY_RULES.default;
+};
 
 const unique = (values = []) => [...new Set((values || []).filter(Boolean))];
 const normalize = (value = "") => String(value || "").toLowerCase().trim();
@@ -83,6 +135,77 @@ const resolveDiversityPolicy = (block = {}) => {
   if (DIVERSITY_POLICY_BY_INTENT[intent]) return DIVERSITY_POLICY_BY_INTENT[intent];
   if (FOOD_VISUAL_INTENTS.has(intent)) return DIVERSITY_POLICY_BY_INTENT.gastronomy;
   return DIVERSITY_POLICY_BY_INTENT.default;
+};
+
+// Aplica regras de diversidade do contrato visual (PARTE 5)
+const applyContractDiversityRules = ({
+  candidate = {},
+  clips = [],
+  block = {},
+  visualContract = null,
+  foodStrictMode = null,
+  scene = {},
+}) => {
+  const explicitFoodStrict = foodStrictMode;
+  // Q4 review fix — não aplicar strict em cenas com role intro/outro ou
+  // accepts_landmark=true (legítimo abrir com aerial context).
+  const sceneRole = String(scene.role || block.role || "").toLowerCase();
+  const acceptsLandmark = Boolean(scene.accepts_landmark)
+    || scene.content_slot_type === "establishing_context"
+    || scene.content_slot_type === "chapter_transition";
+  const isEstablishing = ["intro", "outro"].includes(sceneRole) || acceptsLandmark;
+  const rules = resolveContractDiversityRules(visualContract, {
+    foodStrictMode: explicitFoodStrict !== null && explicitFoodStrict !== undefined
+      ? Boolean(explicitFoodStrict) && !isEstablishing
+      : Boolean(config.LOCAL_FOOD_STRICT_MODE) && !isEstablishing,
+  });
+  const violations = [];
+  const family = normalize(candidate.visual_family);
+  const sourceUrl = normalize(candidate.source_url || candidate.asset?.source_url || "");
+  const assetId = String(candidate.asset_id || "").trim();
+
+  // max_same_asset_uses: conta quantas vezes o mesmo asset já foi usado
+  if (assetId) {
+    const assetUseCount = clips.filter((clip) =>
+      String(clip.asset_id || clip.source_asset_id || "").trim() === assetId
+    ).length;
+    if (assetUseCount >= rules.max_same_asset_uses) {
+      violations.push("contract_max_asset_uses");
+    }
+  }
+
+  // max_same_source_url_uses
+  if (sourceUrl) {
+    const sourceCount = clips.filter((clip) =>
+      normalize(clip.source_url || clip.asset?.source_url || "") === sourceUrl
+    ).length;
+    if (sourceCount >= rules.max_same_source_url_uses) {
+      violations.push("contract_max_source_url_uses");
+    }
+  }
+
+  // max_same_visual_family_ratio
+  if (family && clips.length > 0) {
+    const familyCount = clips.filter((clip) =>
+      normalize(clip.visual_family) === family
+    ).length;
+    if (familyCount / Math.max(1, clips.length) > rules.max_same_visual_family_ratio) {
+      violations.push("contract_visual_family_ratio");
+    }
+  }
+
+  // max_consecutive_visual_family
+  const recentClips = clips.slice(-rules.max_consecutive_visual_family);
+  if (family && recentClips.length >= rules.max_consecutive_visual_family &&
+      recentClips.every((clip) => normalize(clip.visual_family) === family)) {
+    violations.push("contract_consecutive_visual_family");
+  }
+
+  return {
+    passed: violations.length === 0,
+    violations,
+    rules_used: rules,
+  };
 };
 
 const normalizeLandmark = (candidate = {}) => {
@@ -354,13 +477,19 @@ const buildTimelineDiversityAudit = ({ clips = [], microBlocks = [] } = {}) => {
 
 module.exports = {
   resolveDiversityPolicy,
+  resolveContractDiversityRules,
+  applyContractDiversityRules,
   enrichCandidateIdentity,
   filterCandidatesByHardDiversity,
   buildTimelineDiversityAudit,
+  CONTRACT_DIVERSITY_RULES,
   __test__: {
     classifyVisualFamily,
     classifySceneFunction,
     evaluateCandidateHardDiversity,
     buildBlockDiversityAudit,
+    resolveContractDiversityRules,
+    applyContractDiversityRules,
+    CONTRACT_DIVERSITY_RULES,
   },
 };

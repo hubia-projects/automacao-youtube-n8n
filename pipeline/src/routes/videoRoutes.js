@@ -17,6 +17,10 @@ const { triggerWorkflow2, triggerWorkflow3 } = require("../services/workflowHand
 const { requestReviewRegeneration } = require("../services/reviewRevisionService");
 const { ingestRetentionLearning } = require("../services/editorialLearningService");
 const { runClipLibraryShadow } = require("../services/clipLibraryShadowService");
+const { generateVisualContract, getVisualContract, refineWithAudioIntelligence } = require("../services/visualContractService");
+const { approveVisualEvidence, getApprovedPool } = require("../services/visualEvidenceApprovalService");
+const { runEditorialQa } = require("../services/editorialQaService");
+const { runMediaIntegrityQa } = require("../services/mediaIntegrityQaService");
 const { config } = require("../config/env");
 
 const router = Router();
@@ -450,6 +454,92 @@ router.post("/videos/clip-library/shadow-run", async (req, res, next) => {
     });
     res.json({ ok: true, ...result });
   } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/videos/visual-contract/generate", async (req, res, next) => {
+  try {
+    const schema = bodyWithVideoId.extend({
+      topic: z.string().optional(),
+      niche: z.string().optional(),
+    });
+    const parsed = schema.parse(req.body || {});
+    const result = await generateVisualContract({
+      videoId: parsed.video_id,
+      topic: parsed.topic || "",
+      niche: parsed.niche || "",
+    });
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    await setStateError(req.body?.video_id, error, "visual_contract_generation_failed").catch(() => null);
+    next(error);
+  }
+});
+
+router.get("/videos/:video_id/visual-contract", async (req, res, next) => {
+  try {
+    const contract = await getVisualContract(req.params.video_id);
+    res.json({ ok: true, video_id: req.params.video_id, visual_contract: contract });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/videos/visual-contract/refine", async (req, res, next) => {
+  try {
+    const parsed = bodyWithVideoId.parse(req.body || {});
+    const result = await refineWithAudioIntelligence(parsed.video_id);
+    res.json({ ok: true, video_id: parsed.video_id, visual_contract: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/videos/assets/approve-evidence", async (req, res, next) => {
+  try {
+    const parsed = bodyWithVideoId.parse(req.body || {});
+    const result = await approveVisualEvidence({
+      videoId: parsed.video_id,
+    });
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    await setStateError(req.body?.video_id, error, "visual_evidence_approval_failed").catch(() => null);
+    next(error);
+  }
+});
+
+router.get("/videos/:video_id/approved-evidence-pool", async (req, res, next) => {
+  try {
+    const pool = await getApprovedPool(req.params.video_id);
+    res.json({ ok: true, video_id: req.params.video_id, approved_visual_evidence_pool: pool });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/videos/render/editorial-qa", async (req, res, next) => {
+  try {
+    const parsed = bodyWithVideoId.parse(req.body || {});
+    const result = await runEditorialQa({
+      videoId: parsed.video_id,
+    });
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    await setStateError(req.body?.video_id, error, "editorial_qa_failed").catch(() => null);
+    next(error);
+  }
+});
+
+router.post("/videos/render/media-integrity-qa", async (req, res, next) => {
+  try {
+    const parsed = bodyWithVideoId.parse(req.body || {});
+    const result = await runMediaIntegrityQa({
+      videoId: parsed.video_id,
+    });
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    await setStateError(req.body?.video_id, error, "media_integrity_qa_failed").catch(() => null);
     next(error);
   }
 });

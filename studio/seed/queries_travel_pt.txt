@@ -1,0 +1,64 @@
+# Seed da biblioteca — queries EM INGLÊS (ADR-0003), nicho viagens/gastronomia PT/BR.
+# Uso:  while read -r q; do [[ "$q" =~ ^# ]] || uv run studio ingest sweep --query "$q" --provider pexels --count 8; done < seed/queries_travel_pt.txt
+# Repetir com --provider pixabay. Meta Fase 2: ≥2.000 shots (ver ROADMAP).
+
+# --- Lisboa ---
+lisbon tram 28 street
+lisbon alfama narrow streets
+lisbon miradouro viewpoint sunset
+lisbon belem tower river
+lisbon jeronimos monastery architecture
+lisbon time out market food hall
+pastel de nata custard tart close-up
+lisbon street art graffiti
+lisbon rossio square people walking
+tagus river bridge aerial
+
+# --- Porto ---
+porto ribeira riverside houses
+porto dom luis bridge aerial
+port wine cellar barrels
+porto francesinha sandwich food
+porto sao bento station azulejos
+douro river valley vineyards aerial
+
+# --- Portugal geral ---
+algarve beach cliffs turquoise water
+sintra pena palace colorful
+obidos medieval village street
+portuguese azulejos tiles close-up
+portugal fishing village boats
+madeira levada forest hiking
+azores lagoon green crater
+
+# --- Gastronomia ---
+bacalhau codfish dish traditional
+portuguese grilled sardines
+seafood rice cataplana pot
+portuguese bifana pork sandwich
+espresso coffee cup cafe table
+wine glass pouring red wine close-up
+traditional bakery bread oven
+food market fresh fish stall
+chef cooking kitchen flames close-up
+ginjinha cherry liqueur shot glass
+
+# --- Brasil (expansão) ---
+rio de janeiro copacabana beach aerial
+rio christ redeemer statue clouds
+sao paulo skyline timelapse
+brazilian feijoada food close-up
+brazilian churrasco barbecue grill
+acai bowl close-up
+salvador pelourinho colorful houses
+iguazu falls aerial
+
+# --- B-roll genérico de viagem ---
+airplane window clouds view
+traveler walking with backpack
+suitcase packing hands
+train station platform departure
+hotel room opening curtains
+walking cobblestone street feet close-up
+map and coffee planning trip
+golden hour city rooftops

@@ -68,21 +68,27 @@ const buildBlockOverlays = ({
     .filter(Boolean);
 };
 
-const buildOverlayFilter = ({ overlays = [] }) => {
+const buildOverlayFilter = ({ overlays = [], width = 1920, height = 1080 }) => {
   const fontPath = process.platform === "win32"
     ? "C\\:/Windows/Fonts/arial.ttf"
     : "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
+
+  // FFmpeg 8.0+ rejeita expressões aritméticas (w*0.06) em drawbox/drawtext.
+  // Pre-calcular pixels literais a partir da resolução de saída real.
+  const boxX = Math.round(width * 0.06);
+  const boxY = Math.round(height * 0.08);
+  const boxW = Math.round(width * 0.42);
+  const textX = Math.round(width * 0.09);
+  const textY = Math.round(height * 0.115);
 
   const parts = [];
   overlays.forEach((overlay) => {
     const start = Number(overlay.start_seconds || 0);
     const end = Number(overlay.end_seconds || start + 2.5);
     const enable = `between(t,${start.toFixed(3)},${end.toFixed(3)})`;
-    // Fade in/out de 0.3s no texto — overlays que aparecem/somem secos
-    // denunciam template.
     const fadeAlpha = `if(lt(t,${(start + 0.3).toFixed(3)}),(t-${start.toFixed(3)})/0.3,if(gt(t,${(end - 0.3).toFixed(3)}),(${end.toFixed(3)}-t)/0.3,1))`;
-    parts.push(`drawbox=x=w*0.06:y=h*0.08:w=w*0.42:h=92:color=black@0.45:t=fill:enable='${enable}'`);
-    parts.push(`drawtext=fontfile='${fontPath}':text='${escapeDrawtext(overlay.text || "")}':fontcolor=white:fontsize=42:x=w*0.09:y=h*0.115:alpha='${fadeAlpha}':enable='${enable}'`);
+    parts.push(`drawbox=x=${boxX}:y=${boxY}:w=${boxW}:h=92:color=black@0.45:t=fill:enable='${enable}'`);
+    parts.push(`drawtext=fontfile='${fontPath}':text='${escapeDrawtext(overlay.text || "")}':fontcolor=white:fontsize=42:x=${textX}:y=${textY}:alpha='${fadeAlpha}':enable='${enable}'`);
   });
   return parts.join(",");
 };
@@ -96,7 +102,7 @@ const buildBurnedCaptionsFilter = (subtitlePath) => {
   return `subtitles='${escaped}':force_style='${style}'`;
 };
 
-const applyOverlaysToVideo = async ({ inputPath, outputPath, overlays = [], subtitlePath = "", fps = config.OUTPUT_FPS || 30, videoBitrate = config.VIDEO_BITRATE || "6M", maxVideoBitrate = config.MAX_VIDEO_BITRATE || "8M" }) => {
+const applyOverlaysToVideo = async ({ inputPath, outputPath, overlays = [], subtitlePath = "", fps = config.OUTPUT_FPS || 30, videoBitrate = config.VIDEO_BITRATE || "6M", maxVideoBitrate = config.MAX_VIDEO_BITRATE || "8M", width = config.OUTPUT_WIDTH || 1920, height = config.OUTPUT_HEIGHT || 1080 }) => {
   const captionsFilter = config.BURN_CAPTIONS ? buildBurnedCaptionsFilter(subtitlePath) : "";
 
   if (!overlays.length && !captionsFilter) {
@@ -106,7 +112,7 @@ const applyOverlaysToVideo = async ({ inputPath, outputPath, overlays = [], subt
     return outputPath;
   }
 
-  const filter = [buildOverlayFilter({ overlays }), captionsFilter].filter(Boolean).join(",");
+  const filter = [buildOverlayFilter({ overlays, width, height }), captionsFilter].filter(Boolean).join(",");
   await runFfmpeg([
     "-y",
     "-i",

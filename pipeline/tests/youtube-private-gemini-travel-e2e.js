@@ -20,6 +20,7 @@ const fs = require("fs-extra");
 const path = require("path");
 const { DatabaseSync } = require("node:sqlite");
 const { config } = require("../src/config/env");
+const { maybeSkipWithoutKeys } = require("./_helpers/shouldSkipWithoutKeys.js");
 const { updateState, loadState } = require("../src/services/stateService");
 const { generateScript } = require("../src/services/scriptService");
 const { generateAudio, basicMultivozesHealthcheck } = require("../src/services/ttsService");
@@ -350,6 +351,17 @@ const run = async () => {
   assertOk(pexelsHealth.ok, `Pexels indisponivel: ${pexelsHealth.message}`);
   assertOk(pixabayHealth.ok, `Pixabay indisponivel: ${pixabayHealth.message}`);
   assertOk(youtubeHealth.ok, `YouTube indisponivel: ${youtubeHealth.message}`);
+
+  // Helper skip (A5/A7): saltar limpo se providers reais não estão configurados.
+  const skipReason = await maybeSkipWithoutKeys({
+    requireTTS: false, // já garantido pelos asserts acima
+    requireVideoProviders: false,
+    requireYoutube: false,
+  });
+  if (skipReason) {
+    console.log(`⏭️ SKIP ${path.basename(__filename)}: ${skipReason}`);
+    return;
+  }
 
   await updateState(
     videoId,

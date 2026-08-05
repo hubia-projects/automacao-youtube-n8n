@@ -82,8 +82,8 @@ const scorePreDownloadCandidate = ({ candidate, scene }) => {
     cityMatch * 3 +
     videoBonus * 2 +
     resolutionScore -
-    forbiddenCategoryPenalty * 8 -
-    genericTravelPenalty * 5;
+    forbiddenCategoryPenalty * 12 -
+    genericTravelPenalty * 8;
 
   const minPreDownloadScore = Number(config.PRE_DOWNLOAD_MIN_SCORE || 4);
   const sceneRequiresLocation = Boolean(scene.location?.city || scene.expected_location) && !scene.generic_asset_allowed;

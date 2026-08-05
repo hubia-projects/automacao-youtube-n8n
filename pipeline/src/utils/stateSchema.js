@@ -164,6 +164,7 @@ const makeInitialState = ({ videoId, topic = "", angle = "", selectedIdea = null
       clip_indexes_to_replace: [],
     },
     editorial_observability_history: [],
+    local_library_min_score_fallback_reasons: [],
     clip_library_summary: {
       clips_generated: 0,
       clips_approved: 0,

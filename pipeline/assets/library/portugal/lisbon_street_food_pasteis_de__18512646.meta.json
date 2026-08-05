@@ -1,15 +1,15 @@
 {
   "description": "O vídeo mostra uma rua em uma cidade com arquitetura europeia, possivelmente em uma área montanhosa. Há edifícios coloridos, árvores exuberantes e pessoas caminhando. A cena é iluminada pelo sol, sugerindo um dia claro.",
   "tags": [
-    "",
-    "",
-    "",
-    "",
-    ""
+    "european_architecture",
+    "colorful_buildings",
+    "pedestrian_street",
+    "sunny",
+    "urban"
   ],
   "location": {
-    "city": "",
-    "country": ""
+    "city": "Lisboa",
+    "country": "Portugal"
   },
   "analyzed_by": "gemini_vision",
   "analyzed_at": "2026-06-23T15:09:53.338Z"

@@ -15,6 +15,7 @@ const fs = require("fs-extra");
 const path = require("path");
 const { DatabaseSync } = require("node:sqlite");
 const { config } = require("../src/config/env");
+const { maybeSkipWithoutKeys } = require("./_helpers/shouldSkipWithoutKeys.js");
 const { updateState, loadState } = require("../src/services/stateService");
 const { generateAudio } = require("../src/services/ttsService");
 const { generateAssets } = require("../src/services/assetsService");
@@ -115,6 +116,16 @@ const buildDetailedScript = () => [
 ].join(" ");
 
 const run = async () => {
+  const skipReason = await maybeSkipWithoutKeys({
+    requireTTS: true,
+    requireVideoProviders: true,
+    requireYoutube: true,
+  });
+  if (skipReason) {
+    console.log(`⏭️ SKIP ${path.basename(__filename)}: ${skipReason}`);
+    return;
+  }
+
   const topic = "3 cidades mais bonitas de Portugal: Lisboa, Porto e Braga com turismo e culinária";
   const angle = "documentário detalhado com decupagem inteligente, indexação Gemini e timeline rica";
   const scriptText = buildDetailedScript();

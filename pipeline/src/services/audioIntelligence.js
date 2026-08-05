@@ -33,27 +33,73 @@ const extractOriginalScriptWords = (value = "") =>
     .map((word) => word.trim())
     .filter(Boolean);
 
-const buildFallbackWordTiming = ({ scriptText = "", audioDuration = 0 }) => {
+// Cálculo determinístico (sem Math.random) de duração por palavra.
+// Fórmula: base + len*coeff + first/last penalty + punctuation terminal penalty.
+// Determinístico garante que o mesmo input → mesmo output em todas as execuções.
+const computeDeterministicWordDuration = ({ word = "", wordsPerSecond = 2.4, isFirst = false, isLast = false }) => {
+  const base = 1 / Math.max(0.1, wordsPerSecond);
+  const lengthPenalty = Math.min(0.4, Math.max(0, String(word || "").length - 4) * 0.02);
+  const boundaryPenalty = (isFirst || isLast) ? 0.08 : 0;
+  const endsWithPunctuation = /[.!?]\s*$/.test(String(word || ""));
+  const punctuationPenalty = endsWithPunctuation ? 0.15 : 0;
+  const nonWordNoise = /^[^\\p{L}\\p{N}]+$/u.test(String(word || "").trim()) ? -0.05 : 0;
+  return Math.max(0.12, base + lengthPenalty + boundaryPenalty + punctuationPenalty + nonWordNoise);
+};
+
+const buildFallbackWordTiming = ({ scriptText = "", audioDuration = 0, seed = "deterministic" }) => {
   const words = extractOriginalScriptWords(scriptText);
   const safeDuration = Math.max(5, Number(audioDuration || 0) || words.length / (FALLBACK_WPM / 60));
-  const wordTimings = [];
   const wordsPerSecond = words.length / safeDuration;
 
-  words.forEach((word, index) => {
-    const wordDuration = (Math.random() * 0.08 + 0.33) / Math.max(0.1, wordsPerSecond);
-    const start = Math.max(0, index / Math.max(1, wordsPerSecond) - wordDuration * 0.15);
-    const end = Math.min(safeDuration, start + wordDuration);
-    wordTimings.push({ word, start: Math.max(0, Number(start.toFixed(3))), end: Number(end.toFixed(3)), synthetic: true });
+  // Primeira passagem: durações deterministicas
+  const computed = words.map((word, index) => {
+    const isFirst = index === 0;
+    const isLast = index === words.length - 1;
+    return {
+      word,
+      rawDuration: computeDeterministicWordDuration({ word, wordsPerSecond, isFirst, isLast }),
+    };
   });
 
+  // Segunda passagem: ajuste proporcional para fechar exatamente safeDuration
+  const totalRaw = computed.reduce((acc, item) => acc + item.rawDuration, 0) || 1;
+  const scale = safeDuration / totalRaw;
+
+  let cursor = 0;
+  const wordTimings = computed.map((item, index) => {
+    const wordDuration = Math.max(0.1, item.rawDuration * scale);
+    const start = Math.max(0, cursor);
+    const end = Math.min(safeDuration, start + wordDuration);
+    cursor = end;
+    return {
+      word: item.word,
+      start: Number(start.toFixed(3)),
+      end: Number(end.toFixed(3)),
+      synthetic: true,
+      deterministic: true,
+      seed,
+    };
+  });
+
+  // Filtrar durações <0.05s fundindo com vizinha anterior para evitar cue-flicker
+  for (let i = wordTimings.length - 1; i >= 1; i -= 1) {
+    const duration = wordTimings[i].end - wordTimings[i].start;
+    if (duration < 0.05) {
+      wordTimings[i - 1].end = wordTimings[i].end;
+      wordTimings.splice(i, 1);
+    }
+  }
+
   const segments = [];
-  const segmentSize = Math.max(3, Math.ceil(words.length / Math.max(1, Math.ceil(safeDuration / 12))));
-  for (let i = 0; i < wordTimings.length; i += segmentSize) {
-    const segmentWords = wordTimings.slice(i, i + segmentSize);
+  const segmentCount = Math.max(1, Math.ceil(safeDuration / 12));
+  const targetWordsPerSegment = Math.max(3, Math.ceil(words.length / segmentCount));
+  for (let i = 0; i < wordTimings.length; i += targetWordsPerSegment) {
+    const segmentWords = wordTimings.slice(i, i + targetWordsPerSegment);
+    if (!segmentWords.length) continue;
     segments.push({
       text: segmentWords.map((w) => w.word).join(" "),
-      start: segmentWords[0]?.start || 0,
-      end: segmentWords[segmentWords.length - 1]?.end || safeDuration,
+      start: segmentWords[0].start,
+      end: segmentWords[segmentWords.length - 1].end,
       confidence: 0.5,
       words: segmentWords,
     });
@@ -61,7 +107,7 @@ const buildFallbackWordTiming = ({ scriptText = "", audioDuration = 0 }) => {
 
   const pauseMarkers = [];
   for (let i = 1; i < wordTimings.length; i += 1) {
-    const isSentenceEnd = /[.!?]$/.test(wordTimings[i - 1]?.word || "");
+    const isSentenceEnd = /[.!?]\s*$/.test(wordTimings[i - 1]?.word || "");
     if (isSentenceEnd) {
       pauseMarkers.push({
         start: wordTimings[i - 1].end,
@@ -82,7 +128,9 @@ const buildFallbackWordTiming = ({ scriptText = "", audioDuration = 0 }) => {
       total_words: words.length,
       total_segments: segments.length,
     },
-    provider: "fallback_estimation",
+    provider: "fallback_proportional_deterministic",
+    timing_estimated: true,
+    seed,
   };
 };
 
@@ -383,11 +431,17 @@ const analyzeAudio = async ({ videoId }) => {
   const audioIntelligencePath = path.join(paths.base, "audio", "audio_intelligence.json");
   await writeJsonAtomic(audioIntelligencePath, audioIntelligenceData);
 
+  const isTimingEstimated = audioIntelligence.timing_estimated === true
+    || provider === "fallback_proportional"
+    || provider === "fallback_proportional_deterministic";
+
   const nextState = await updateState(videoId, {
     audio_intelligence_path: audioIntelligencePath,
     scene_boundaries: sceneBoundaries,
     chapter_triggers: chapterTriggers,
     audio_intelligence_provider: provider,
+    audio_intelligence_timing_estimated: isTimingEstimated,
+    caption_quality_expected: isTimingEstimated ? "estimated" : "real",
     error_message: "",
   }, { currentStep: "audio_intelligence_ready", status: "audio_intelligence_ready" });
 
@@ -396,6 +450,7 @@ const analyzeAudio = async ({ videoId }) => {
     audio_intelligence_path: audioIntelligencePath,
     scene_boundaries: sceneBoundaries,
     provider,
+    timing_estimated: isTimingEstimated,
     words_count: audioIntelligence.words.length,
     pause_markers_count: audioIntelligence.pause_markers.length,
     micro_segments_count: microSegments.length,

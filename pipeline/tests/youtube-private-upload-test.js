@@ -1,3 +1,5 @@
+const path = require("path");
+const { maybeSkipWithoutKeys } = require("./_helpers/shouldSkipWithoutKeys.js");
 const { updateState, loadState } = require("../src/services/stateService");
 const { generateAudio } = require("../src/services/ttsService");
 const { generateAssets, basicPexelsHealthcheck, basicPixabayHealthcheck } = require("../src/services/assetsService");
@@ -52,6 +54,17 @@ const run = async () => {
   assert(youtubeHealth.ok, `YouTube indisponível: ${youtubeHealth.message}`);
   assert(pexelsHealth.ok, `Pexels indisponível: ${pexelsHealth.message}`);
   assert(pixabayHealth.ok, `Pixabay indisponível: ${pixabayHealth.message}`);
+
+  // Helper skip (A5/A7): saltar limpo se providers reais não estão configurados.
+  const skipReason = await maybeSkipWithoutKeys({
+    requireTTS: false, // já garantido pelos asserts acima
+    requireVideoProviders: false,
+    requireYoutube: false,
+  });
+  if (skipReason) {
+    console.log(`⏭️ SKIP ${path.basename(__filename)}: ${skipReason}`);
+    return;
+  }
 
   await updateState(
     videoId,

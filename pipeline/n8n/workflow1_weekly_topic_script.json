@@ -1,5 +1,5 @@
 {
-  "name": "Workflow 1 — Weekly Topic + Script",
+  "name": "Workflow 1 — Weekly Topic + Script + Visual Contract",
   "active": true,
   "nodes": [
     {
@@ -89,11 +89,25 @@
       }
     },
     {
+      "id": "generate_visual_contract",
+      "name": "Generate Visual Contract",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/visual-contract/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ video_id: $json.video_id || $json.body?.video_id || $json.query?.video_id, mock_mode: $env.MOCK_MODE === 'true' }) }}"
+      }
+    },
+    {
       "id": "call_workflow2",
       "name": "Call Workflow 2",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1,
-      "position": [1540, 200],
+      "position": [1800, 200],
       "parameters": {
         "workflowId": "YiezxhzyVQT3XJuz",
         "mode": "each",
@@ -107,7 +121,8 @@
     "Schedule Trigger": { "main": [[{ "node": "Generate Ideas", "type": "main", "index": 0 }]] },
     "Idea Approval Webhook": { "main": [[{ "node": "Approve Idea", "type": "main", "index": 0 }]] },
     "Approve Idea": { "main": [[{ "node": "Generate Script", "type": "main", "index": 0 }]] },
-    "Generate Script": { "main": [[{ "node": "Call Workflow 2", "type": "main", "index": 0 }]] }
+    "Generate Script": { "main": [[{ "node": "Generate Visual Contract", "type": "main", "index": 0 }]] },
+    "Generate Visual Contract": { "main": [[{ "node": "Call Workflow 2", "type": "main", "index": 0 }]] }
   },
   "settings": { "executionOrder": "v1" }
 }

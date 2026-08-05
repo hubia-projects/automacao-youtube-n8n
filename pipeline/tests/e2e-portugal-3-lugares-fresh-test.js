@@ -118,6 +118,21 @@ const run = async () => {
     basicPixabayHealthcheck(),
   ]);
 
+  // MVP skip guard (A5/A7): se nenhum provider real está configurado,
+  // abortar com skip limpo em vez de explodir em generateAudio/uploadToYoutube.
+  const skipReasons = [];
+  if (!youtubeHealth.configured) skipReasons.push(`youtube nao configurado (${youtubeHealth.message})`);
+  if (!pexelsHealth.configured) skipReasons.push(`pexels nao configurado (${pexelsHealth.message})`);
+  if (!pixabayHealth.configured) skipReasons.push(`pixabay nao configurado (${pixabayHealth.message})`);
+  const hasRealTts = Boolean(config.MULTIVOZES_BR_ENGINE || config.MULTIVOZEZ_BR_ENGINE || config.ELEVENLABS_API_KEY);
+  if (!hasRealTts) skipReasons.push("nenhum TTS real (MULTIVOZES_BR_ENGINE/ELEVENLABS_API_KEY ausente)");
+
+  if (skipReasons.length > 0) {
+    console.log(`⏭️ SKIP e2e-portugal-3-lugares-fresh-test: ${skipReasons.join(" | ")}.`);
+    console.log("    Configure credenciais reais ou corra com MOCK_MODE=true (caminho mock a integrar na Fase A).");
+    return;
+  }
+
   assert(youtubeHealth.ok, `YouTube indisponível: ${youtubeHealth.message}`);
   assert(pexelsHealth.ok, `Pexels indisponível: ${pexelsHealth.message}`);
   assert(pixabayHealth.ok, `Pixabay indisponível: ${pixabayHealth.message}`);

@@ -1,6 +1,6 @@
 {
   "id": "SWfoFJ3aNt2nJboC",
-  "name": "Workflow 3 — Render and YouTube Preparation",
+  "name": "Workflow 3 — Render, QA, Metadata + YouTube",
   "active": true,
   "nodes": [
     {
@@ -61,7 +61,7 @@
       "name": "Fix Render Sync",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1180, 320],
+      "position": [1180, 400],
       "parameters": {
         "method": "POST",
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/render/fix-sync",
@@ -75,7 +75,7 @@
       "name": "Validate Render Sync After Fix",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1420, 320],
+      "position": [1420, 400],
       "parameters": {
         "method": "POST",
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/render/validate",
@@ -89,7 +89,7 @@
       "name": "If Render OK After Fix",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1660, 320],
+      "position": [1660, 400],
       "parameters": {
         "conditions": {
           "boolean": [
@@ -102,11 +102,115 @@
       }
     },
     {
+      "id": "editorial_qa",
+      "name": "Editorial QA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1180, 100],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/render/editorial-qa",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ video_id: $json.video_id, mock_mode: $env.MOCK_MODE === 'true' }) }}"
+      }
+    },
+    {
+      "id": "if_editorial_qa_ok",
+      "name": "If Editorial QA OK",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1420, 100],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.passed}}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "media_integrity_qa",
+      "name": "Media Integrity QA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1660, 100],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/render/media-integrity-qa",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ video_id: $json.video_id, mock_mode: $env.MOCK_MODE === 'true' }) }}"
+      }
+    },
+    {
+      "id": "if_media_integrity_qa_ok",
+      "name": "If Media Integrity QA OK",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1900, 100],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.passed}}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "mark_manual_review_sync",
+      "name": "Mark Manual Review — Sync Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1900, 520],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/review/mark-manual-review",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ video_id: $json.video_id, note: ($json.issues || []).slice(0, 4).map(issue => issue.message || issue.type).filter(Boolean).join('; ') || 'sync validation falhou após fix', source: 'workflow3_post_fix_validation', mock_mode: $env.MOCK_MODE === 'true' }) }}"
+      }
+    },
+    {
+      "id": "mark_manual_review_editorial_qa",
+      "name": "Mark Manual Review — Editorial QA Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1660, 260],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/review/mark-manual-review",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ video_id: $json.video_id, note: $json.failures?.length ? `EDITORIAL_QA_FAILED — ${$json.failures.length} falhas: ${JSON.stringify($json.failures?.slice(0, 5).map(f => f.rule || f.detail || ''))}` : 'EDITORIAL_QA_FAILED', source: 'workflow3_editorial_qa', mock_mode: $env.MOCK_MODE === 'true' }) }}"
+      }
+    },
+    {
+      "id": "mark_manual_review_media_qa",
+      "name": "Mark Manual Review — Media Integrity QA Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2140, 260],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/review/mark-manual-review",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ video_id: $json.video_id, note: $json.failures?.length ? `MEDIA_INTEGRITY_QA_FAILED — ${$json.failures.length} falhas: ${JSON.stringify($json.failures?.slice(0, 5).map(f => f.stage || f.error || ''))}` : 'MEDIA_INTEGRITY_QA_FAILED — decode ou resolução inválida', source: 'workflow3_media_integrity_qa', mock_mode: $env.MOCK_MODE === 'true' }) }}"
+      }
+    },
+    {
       "id": "generate_metadata",
       "name": "Generate Metadata",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1180, 140],
+      "position": [2140, 60],
       "parameters": {
         "method": "POST",
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/metadata/generate",
@@ -116,26 +220,12 @@
       }
     },
     {
-      "id": "generate_metadata_with_warning",
-      "name": "Mark Needs Manual Review",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1900, 400],
-      "parameters": {
-        "method": "POST",
-        "url": "={{$env.BACKEND_BASE_URL}}/api/videos/review/mark-manual-review",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ ({ video_id: $json.video_id, note: ($json.issues || []).slice(0, 4).map(issue => issue.message || issue.type).filter(Boolean).join('; '), source: 'workflow3_post_fix_validation', mock_mode: $env.MOCK_MODE === 'true' }) }}"
-      }
-    },
-    {
       "id": "final_approval_webhook",
       "name": "Final Approval Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "webhookId": "yt-w3-final-approval",
-      "position": [1460, 140],
+      "position": [2380, 60],
       "parameters": {
         "path": "final-approval",
         "httpMethod": "POST",
@@ -148,7 +238,7 @@
       "name": "Save Approval",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1700, 140],
+      "position": [2620, 60],
       "parameters": {
         "method": "POST",
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/final/approve",
@@ -162,7 +252,7 @@
       "name": "If Approved",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1940, 140],
+      "position": [2860, 60],
       "parameters": {
         "conditions": {
           "boolean": [
@@ -179,7 +269,7 @@
       "name": "Upload to YouTube",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2180, 80],
+      "position": [3100, 10],
       "parameters": {
         "method": "POST",
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/youtube/upload",
@@ -193,7 +283,7 @@
       "name": "Regenerate Review Draft",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2180, 200],
+      "position": [3100, 140],
       "parameters": {
         "method": "POST",
         "url": "={{$env.BACKEND_BASE_URL}}/api/videos/review/regenerate",
@@ -209,7 +299,7 @@
     "Validate Render Sync": { "main": [[{ "node": "If Render OK", "type": "main", "index": 0 }]] },
     "If Render OK": {
       "main": [
-        [{ "node": "Generate Metadata", "type": "main", "index": 0 }],
+        [{ "node": "Editorial QA", "type": "main", "index": 0 }],
         [{ "node": "Fix Render Sync", "type": "main", "index": 0 }]
       ]
     },
@@ -217,8 +307,22 @@
     "Validate Render Sync After Fix": { "main": [[{ "node": "If Render OK After Fix", "type": "main", "index": 0 }]] },
     "If Render OK After Fix": {
       "main": [
+        [{ "node": "Editorial QA", "type": "main", "index": 0 }],
+        [{ "node": "Mark Manual Review — Sync Failed", "type": "main", "index": 0 }]
+      ]
+    },
+    "Editorial QA": { "main": [[{ "node": "If Editorial QA OK", "type": "main", "index": 0 }]] },
+    "If Editorial QA OK": {
+      "main": [
+        [{ "node": "Media Integrity QA", "type": "main", "index": 0 }],
+        [{ "node": "Mark Manual Review — Editorial QA Failed", "type": "main", "index": 0 }]
+      ]
+    },
+    "Media Integrity QA": { "main": [[{ "node": "If Media Integrity QA OK", "type": "main", "index": 0 }]] },
+    "If Media Integrity QA OK": {
+      "main": [
         [{ "node": "Generate Metadata", "type": "main", "index": 0 }],
-        [{ "node": "Mark Needs Manual Review", "type": "main", "index": 0 }]
+        [{ "node": "Mark Manual Review — Media Integrity QA Failed", "type": "main", "index": 0 }]
       ]
     },
     "Generate Metadata": { "main": [[{ "node": "Final Approval Webhook", "type": "main", "index": 0 }]] },

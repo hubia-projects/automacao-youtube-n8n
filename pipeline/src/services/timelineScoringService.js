@@ -15,6 +15,9 @@ const {
   isCriticalScene,
   isSpecificScene,
 } = require("./editorialAssetService");
+// R3: M2 perceptual dedup — importado do clipLibraryService para verificar
+// duplicados visuais durante o scoring da timeline
+const { hammingDistance, DHASH_MAX_DISTANCE } = require("./clipLibraryService");
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const round3 = (value) => Number(Number(value || 0).toFixed(3));
@@ -347,10 +350,17 @@ const computeSceneBinding = ({ block, candidate }) => {
 
 // ===== Dedup hard: asset/source/landmark usados não voltam (FASE 4) =====
 
-const computeHardReuseBlockReason = ({ candidate, usage }) => {
+const computeHardReuseBlockReason = ({ candidate, usage, block = {} }) => {
   const maxUses = Math.max(1, Number(config.MAX_ASSET_USES_PER_VIDEO || 1));
   const assetUseCount = usage.usedAssetIds?.get(candidate.asset_id) || 0;
   if (assetUseCount >= maxUses) return "asset_reuse_blocked";
+
+  // R2: Block-scoped reuse — mesmo asset não pode aparecer 2x no mesmo bloco narrativo
+  const blockId = String(block.block_id || block.macro_block_id || "").trim();
+  if (blockId) {
+    const blockAssetCount = usage.usedBlockAssetIds?.get(`${blockId}:${candidate.asset_id}`) || 0;
+    if (blockAssetCount >= 1) return "same_asset_in_block";
+  }
 
   const sourceUrl = candidate.asset?.source_url || "";
   if (sourceUrl && (usage.usedSourceUrls?.get(sourceUrl) || 0) >= maxUses) return "source_url_reuse_blocked";
@@ -364,6 +374,17 @@ const computeHardReuseBlockReason = ({ candidate, usage }) => {
   if (candidateLandmarks.length && usage.usedLandmarks) {
     const reusedLandmark = candidateLandmarks.find((name) => (usage.usedLandmarks.get(name) || 0) >= maxUses);
     if (reusedLandmark) return "landmark_reuse_blocked";
+  }
+
+  // R3: M2 perceptual dedup — bloquear candidatos visualmente idênticos
+  // (dhash ≤ 6 bits) a clips já selecionados na timeline
+  const candidateHash = String(candidate.perceptual_hash || "");
+  if (candidateHash && usage.usedPerceptualHashes?.size) {
+    for (const usedHash of usage.usedPerceptualHashes.keys()) {
+      if (hammingDistance(candidateHash, usedHash) <= (DHASH_MAX_DISTANCE || 6)) {
+        return "perceptual_dup_blocked";
+      }
+    }
   }
 
   return "";
@@ -469,6 +490,62 @@ const rankCandidates = async ({
 
   for (const [index, candidate] of candidates.entries()) {
     const semantic = semanticScores[index] || { score: 0, method: "keyword_fallback" };
+
+    // S3: Hard boundary check ANTES do scoring — evita computação cara para
+    // candidatos que seriam rejeitados por violarem a fronteira de tópico.
+    const hardBoundaryBlockReason = computeHardBoundaryBlockReason({
+      block,
+      candidate,
+      previousMacroTopic,
+      hardBoundaryPolicy,
+      isBoundaryFirstSlot,
+    });
+    if (hardBoundaryBlockReason) {
+      ranked.push({
+        candidate,
+        score: -1,
+        hard_blocked: true,
+        hard_blocked_reason: hardBoundaryBlockReason,
+        features: {
+          semanticScore: round3(semantic.score),
+          visualIntentMatchScore: 0,
+          requiredEvidenceScore: 0,
+          blockMatchScore: 0,
+          entityMatchScore: 0,
+          visualSpecificityScore: 0,
+          gastronomySpecificityScore: 0,
+          evidenceSourceScore: 0,
+          editorialFit: "hard_blocked",
+          editorialFitScore: 0,
+          sceneBindingScore: 0,
+          sceneBindingPenalty: 0,
+          resolutionScore: 0,
+          motionScore: 0,
+          confidenceScore: 0,
+          forbiddenCategoryPenalty: 0,
+          sourceReusePenalty: 0,
+          assetReusePenalty: 0,
+          windowReusePenalty: 0,
+          signatureReusePenalty: 0,
+          blockMismatchPenalty: 1,
+          genericAssetPenalty: 0,
+          uncertainAssetPenalty: 0,
+          metadataFallbackPenalty: 0,
+          darkFramePenalty: 0,
+          thematicMismatchPenalty: 0,
+          hardBoundaryIntroBonus: 0,
+          reusePenalty: 0,
+          detectedVisualCategories: [],
+          missingRequiredVisualEvidence: [],
+          rejectionWarnings: [hardBoundaryBlockReason],
+          visualEvidenceSource: "hard_boundary_skip",
+        },
+        selection_reason: `hard_blocked_${hardBoundaryBlockReason}`,
+        rejected_reasons: [hardBoundaryBlockReason],
+      });
+      continue;
+    }
+
     const windowContext = {
       summary: candidate.description || candidate.summary || candidate.semantic_text || "",
       description: candidate.description || candidate.summary || candidate.semantic_text || "",
@@ -530,13 +607,6 @@ const rankCandidates = async ({
     const confidenceScore = weakMetadataEvidence ? Math.min(computeConfidenceScore(candidate), 0.35) : computeConfidenceScore(candidate);
     const reuse = computeReusePenalties({ block, candidate, usage, clipIndex });
     const blockMismatchPenalty = computeBlockMismatchPenalty({ block, candidate, previousMacroTopic });
-    const hardBoundaryBlockReason = computeHardBoundaryBlockReason({
-      block,
-      candidate,
-      previousMacroTopic,
-      hardBoundaryPolicy,
-      isBoundaryFirstSlot,
-    });
     const hardBoundaryIntroBonus = computeHardBoundaryIntroBonus({ block, candidate, isBoundaryFirstSlot });
     const genericAssetPenalty = hardRejection.reason === "generic_visual_for_specific_intent"
       ? 1
@@ -591,17 +661,15 @@ const rankCandidates = async ({
       darkFramePenalty,
       thematicMismatchPenalty,
     });
-    const hardReuseBlockReason = computeHardReuseBlockReason({ candidate, usage });
+    const hardReuseBlockReason = computeHardReuseBlockReason({ candidate, usage, block });
     const namedEntityBlockReason = computeNamedEntityBlockReason({ narrationText, candidate, entityMatchScore });
 
-    if (hardBoundaryBlockReason) reasons.unshift(hardBoundaryBlockReason);
     if (hardReuseBlockReason) reasons.unshift(hardReuseBlockReason);
     if (namedEntityBlockReason) reasons.unshift(namedEntityBlockReason);
     if (sceneBinding.hardBlocked && sceneBinding.reason) reasons.unshift(sceneBinding.reason);
     if (hardRejection.reject && hardRejection.reason) reasons.unshift(hardRejection.reason);
 
     const hardBlocked = Boolean(
-      hardBoundaryBlockReason ||
       hardReuseBlockReason ||
       namedEntityBlockReason ||
       hardRejection.reject ||
@@ -697,6 +765,13 @@ const registerClipUsage = ({ usage, block, candidate, clipIndex }) => {
     const name = normalizeLabel(item?.name || "");
     if (name) usage.usedLandmarks.set(name, (usage.usedLandmarks.get(name) || 0) + 1);
   });
+
+  // R3: M2 perceptual dedup — registar hash visual do clip selecionado
+  const perceptualHash = String(candidate.perceptual_hash || "");
+  if (perceptualHash) {
+    usage.usedPerceptualHashes = usage.usedPerceptualHashes || new Map();
+    usage.usedPerceptualHashes.set(perceptualHash, (usage.usedPerceptualHashes.get(perceptualHash) || 0) + 1);
+  }
 };
 
 module.exports = {

@@ -1,15 +1,15 @@
 {
   "description": "The video shows a close-up of two containers filled with sea snails, likely at a market or seafood stall. A person's hand is visible pointing towards the snails in the first two frames. The snails are dark brown and have a rough, textured shell. The lighting is somewhat dim, and the focus is on the seafood.",
   "tags": [
-    "",
-    "",
-    "",
-    "",
-    ""
+    "seafood",
+    "sea_snails",
+    "caramujos",
+    "closeup",
+    "market_stall"
   ],
   "location": {
     "city": "",
-    "country": ""
+    "country": "Portugal"
   },
   "analyzed_by": "gemini_vision",
   "analyzed_at": "2026-06-23T15:10:37.830Z"

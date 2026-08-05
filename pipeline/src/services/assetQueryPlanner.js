@@ -452,8 +452,8 @@ const buildSceneQueryPlan = ({ scene = {}, topic = "" }) => {
   }
 
   // Queries específicas de landmark quando narração cita um ponto conhecido.
-  // Essas queries entram ANTES dos presets para garantir que o pool contenha
-  // candidatos com evidência do landmark antes de qualquer outro clip.
+  // Para cenas gastronómicas: landmark queries só entram se accepts_landmark === true
+  // e entram no FIM (push, não unshift) para não dominar o pool.
   const narrationLandmarks = detectLandmarks(scene.narration_excerpt || "");
   if (narrationLandmarks.length) {
     const landmarkEntries = [];
@@ -464,12 +464,20 @@ const buildSceneQueryPlan = ({ scene = {}, topic = "" }) => {
       queries.forEach((query) => {
         if (!landmarkSeen.has(query)) {
           landmarkSeen.add(query);
-          landmarkEntries.push({ query, reason: `landmark_narration_${key.replace(/\s+/g, "_")}` });
+          const entry = { query, reason: `landmark_narration_${key.replace(/\s+/g, "_")}` };
+          // Para food-intent: landmark vai no fim como supporting_context
+          if (isFoodIntent(intent)) {
+            if (scene.accepts_landmark === true || role === "intro" || role === "outro") {
+              entries.push({ ...entry, reason: `${entry.reason}_supporting_context` });
+            }
+            // else: landmark não entra em cena de comida sem accepts_landmark
+          } else {
+            // Para cenas não-food: landmark mantém-se mas no fim (push em vez de unshift)
+            entries.push(entry);
+          }
         }
       });
     });
-    // Inserir no início para dar prioridade de busca
-    entries.unshift(...landmarkEntries);
   }
 
   if (shouldUseCityPresets({ scene, intent })) {
@@ -486,11 +494,48 @@ const buildSceneQueryPlan = ({ scene = {}, topic = "" }) => {
 
   return {
     queries: entries.map((entry) => entry.query),
-    queryDetails: entries,
+    queryDetails: entries.map((entry, index) => {
+      const queryIntent = isFoodIntent(intent);
+      const isLandmarkQuery = /landmark_narration/i.test(entry.reason);
+      const isCityPreset = /city_preset/i.test(entry.reason);
+      let category = "supporting_queries";
+      if (queryIntent && !isLandmarkQuery && !isCityPreset) {
+        category = index < 6 ? "critical_queries" : "supporting_queries";
+      } else if (isLandmarkQuery && queryIntent) {
+        category = "supporting_queries";
+      } else if (isCityPreset && queryIntent) {
+        category = "transition_queries";
+      } else {
+        category = index < 4 ? "critical_queries" : "supporting_queries";
+      }
+      return { ...entry, category };
+    }),
+    critical_queries: entries
+      .filter((e, i) => {
+        const queryIntent = isFoodIntent(intent);
+        const isLandmarkQuery = /landmark_narration/i.test(e.reason);
+        const isCityPreset = /city_preset/i.test(e.reason);
+        if (queryIntent) return i < 6 && !isLandmarkQuery && !isCityPreset;
+        return i < 4;
+      })
+      .map((e) => e.query),
+    supporting_queries: entries
+      .filter((e, i) => {
+        const queryIntent = isFoodIntent(intent);
+        const isLandmarkQuery = /landmark_narration/i.test(e.reason);
+        const isCityPreset = /city_preset/i.test(e.reason);
+        if (queryIntent) return (i >= 6 || isLandmarkQuery) && !isCityPreset;
+        return i >= 4 && !isCityPreset;
+      })
+      .map((e) => e.query),
+    transition_queries: entries
+      .filter((e) => /city_preset/i.test(e.reason))
+      .map((e) => e.query),
+    fallback_queries: [],
     negativeKeywords,
     hardBoundaryScene: isHardBoundaryScene,
     searchReason: isFoodIntent(intent)
-      ? `visual_intent_${intent} + exact_then_regional_then_equivalent`
+      ? `visual_intent_${intent}_gastronomy_priority_food_first`
       : `visual_intent_${intent} + entity_keywords`,
     specificIntentRequired: isFoodIntent(intent) && !scene.generic_asset_allowed,
   };
