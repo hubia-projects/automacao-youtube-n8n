@@ -49,6 +49,9 @@ class PipelineRunner:
         self.stages = stages
 
     def run(self, ctx: RunContext, state: RunState) -> RunState:
+        # run_dir absoluto: cron pode acordar num CWD arbitrário, e o _outputs_ok
+        # exige paths que existam desde CWD — relativos partem sem aviso.
+        ctx.run_dir = Path(ctx.run_dir).resolve()
         ctx.state = state  # único objeto de estado; só o runner grava run.json
         # params persistidos no run.json vencem defaults do CLI no resume
         ctx.params = {**ctx.params, **state.params}
@@ -99,6 +102,9 @@ class PipelineRunner:
 
 
 def resume(ctx: RunContext, stages: list[Stage]) -> RunState:
+    # mesmo motivo que em run(): state_path() é a primeira coisa tocada em
+    # disco, e precisa de path absoluto para sobreviver ao CWD do cron.
+    ctx.run_dir = Path(ctx.run_dir).resolve()
     if not state_path(ctx.run_dir).exists():
         raise FileNotFoundError(f"run.json não existe em {ctx.run_dir} — usa `studio run`")
     state = load_state(ctx.run_dir)

@@ -1,0 +1,355 @@
+[quinta 06 ago 2026 01:34:39 WEST] === START theme=tema1 LOG=/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/logs/overnight-tema1-20260806-013438.log pid=2546049 ===
+[01:34:39 +0s] pexels : faro old town narrow streets portugal
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=faro+old+town+narrow+streets+portugal&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/36366856/15423842_1920_1080_60fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_36366856.mp4 (1080p) — faro old town narrow streets portugal
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/35431301/15011377_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_35431301.mp4 (1080p) — faro old town narrow streets portugal
+studio.sources.pexels INFO pexels: pexels_14260653.mp4 (1080p) — faro old town narrow streets portugal
+[01:44:39] pexels EXIT=124 for: faro old town narrow streets portugal
+[01:44:39 +600s] pixabay: faro old town narrow streets portugal
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=faro+old+town+narrow+streets+portugal&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2018/02/24/14476-257440741_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_14476.mp4 — faro old town narrow streets portugal
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2015/12/11/1643-148614430_medium.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_1643.mp4 — faro old town narrow streets portugal
+studio.sources.pixabay INFO pixabay: pixabay_160767.mp4 — faro old town narrow streets portugal
+studio.sources.pixabay INFO pixabay: pixabay_49321.mp4 — faro old town narrow streets portugal
+studio.sources.pixabay INFO pixabay: pixabay_45080.mp4 — faro old town narrow streets portugal
+studio.sources.pixabay INFO pixabay: pixabay_260895.mp4 — faro old town narrow streets portugal
+studio.sources.pixabay INFO pixabay: pixabay_208442.mp4 — faro old town narrow streets portugal
+[01:54:39] pixabay EXIT=124 for: faro old town narrow streets portugal
+[01:54:39 +1200s] pexels : faro se cathedral algarve bell tower
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=faro+se+cathedral+algarve+bell+tower&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_34397127.mp4 (1080p) — faro se cathedral algarve bell tower
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/28426412/12379215_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_28426412.mp4 (1080p) — faro se cathedral algarve bell tower
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/35868247/15211830_1920_1080_60fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_35868247.mp4 (1080p) — faro se cathedral algarve bell tower
+studio.sources.pexels INFO pexels: pexels_34395771.mp4 (1080p) — faro se cathedral algarve bell tower
+[02:04:39] pexels EXIT=124 for: faro se cathedral algarve bell tower
+[02:04:39 +1800s] pixabay: faro se cathedral algarve bell tower
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=faro+se+cathedral+algarve+bell+tower&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2019/11/18/29224-374487088_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_29224.mp4 — faro se cathedral algarve bell tower
+studio.sources.pixabay INFO pixabay: pixabay_14088.mp4 — faro se cathedral algarve bell tower
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2024/08/08/225461_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_225461.mp4 — faro se cathedral algarve bell tower
+studio.sources.pixabay INFO pixabay: pixabay_13772.mp4 — faro se cathedral algarve bell tower
+[02:14:39] pixabay EXIT=124 for: faro se cathedral algarve bell tower
+[02:14:39 +2400s] pexels : faro marina boats sunset
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=faro+marina+boats+sunset&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_35868247.mp4 (1080p) — faro marina boats sunset
+studio.sources.pexels INFO pexels: pexels_36366856.mp4 (1080p) — faro marina boats sunset
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/11619724/11619724-hd_1920_1080_24fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_11619724.mp4 (1080p) — faro marina boats sunset
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/34178850/14488716_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_34178850.mp4 (1080p) — faro marina boats sunset
+[02:24:39] pexels EXIT=124 for: faro marina boats sunset
+[02:24:39 +3000s] pixabay: faro marina boats sunset
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=faro+marina+boats+sunset&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2020/02/28/33014-395456435_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_33014.mp4 — faro marina boats sunset
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/09/29/132932-755272963_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_132932.mp4 — faro marina boats sunset
+[02:34:39] pixabay EXIT=124 for: faro marina boats sunset
+[02:34:39 +3600s] pexels : ravina fortress tavira old town
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=ravina+fortress+tavira+old+town&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/20118001/20118001-hd_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_20118001.mp4 (1080p) — ravina fortress tavira old town
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/30518131/13075690_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_30518131.mp4 (1080p) — ravina fortress tavira old town
+[02:44:39] pexels EXIT=124 for: ravina fortress tavira old town
+[02:44:39 +4200s] pixabay: ravina fortress tavira old town
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=ravina+fortress+tavira+old+town&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/07/14/124170-730515125_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_124170.mp4 — ravina fortress tavira old town
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2024/06/16/216912_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_216912.mp4 — ravina fortress tavira old town
+[02:54:40] pixabay EXIT=124 for: ravina fortress tavira old town
+[02:54:40 +4801s] pexels : tavira roman bridge gilao river
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=tavira+roman+bridge+gilao+river&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/36584879/15510644_1920_1080_60fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_36584879.mp4 (1080p) — tavira roman bridge gilao river
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/31573453/13455798_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_31573453.mp4 (1080p) — tavira roman bridge gilao river
+[03:04:40] pexels EXIT=124 for: tavira roman bridge gilao river
+[03:04:40 +5401s] pixabay: tavira roman bridge gilao river
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=tavira+roman+bridge+gilao+river&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2026/07/29/367164_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_367164.mp4 — tavira roman bridge gilao river
+studio.sources.pixabay INFO pixabay: pixabay_336253.mp4 — tavira roman bridge gilao river
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/12/02/141354-777517863_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_141354.mp4 — tavira roman bridge gilao river
+studio.sources.pixabay INFO pixabay: pixabay_188057.mp4 — tavira roman bridge gilao river
+studio.sources.pixabay INFO pixabay: pixabay_14205.mp4 — tavira roman bridge gilao river
+[03:14:40] pixabay EXIT=124 for: tavira roman bridge gilao river
+[03:14:40 +6001s] pexels : olhao market fishermen morning
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=olhao+market+fishermen+morning&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/17008645/17008645-hd_1920_1080_60fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_17008645.mp4 (1080p) — olhao market fishermen morning
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/29844413/12816626_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_29844413.mp4 (1080p) — olhao market fishermen morning
+[03:24:40] pexels EXIT=124 for: olhao market fishermen morning
+[03:24:40 +6601s] pixabay: olhao market fishermen morning
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=olhao+market+fishermen+morning&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_14088.mp4 — olhao market fishermen morning
+studio.sources.pixabay INFO pixabay: pixabay_27111.mp4 — olhao market fishermen morning
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2023/07/27/173522-849651812_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_173522.mp4 — olhao market fishermen morning
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2017/09/20/12127-235051444_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_12127.mp4 — olhao market fishermen morning
+[03:34:40] pixabay EXIT=124 for: olhao market fishermen morning
+[03:34:40 +7201s] pexels : olhao cubist colorful houses waterfront
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=olhao+cubist+colorful+houses+waterfront&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_35431301.mp4 (1080p) — olhao cubist colorful houses waterfront
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/35749087/15154123_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_35749087.mp4 (1080p) — olhao cubist colorful houses waterfront
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/35749091/15154152_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_35749091.mp4 (1080p) — olhao cubist colorful houses waterfront
+[03:44:40] pexels EXIT=124 for: olhao cubist colorful houses waterfront
+[03:44:40 +7801s] pixabay: olhao cubist colorful houses waterfront
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=olhao+cubist+colorful+houses+waterfront&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_14088.mp4 — olhao cubist colorful houses waterfront
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/10/29/137036-765458136_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_137036.mp4 — olhao cubist colorful houses waterfront
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/11/14/138959-770800074_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_138959.mp4 — olhao cubist colorful houses waterfront
+[03:54:40] pixabay EXIT=124 for: olhao cubist colorful houses waterfront
+[03:54:40 +8401s] pexels : ria formosa natural park lagoon birds
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=ria+formosa+natural+park+lagoon+birds&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/35319234/14963561_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_35319234.mp4 (1080p) — ria formosa natural park lagoon birds
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/35327091/14967981_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_35327091.mp4 (1080p) — ria formosa natural park lagoon birds
+[04:04:40] pexels EXIT=124 for: ria formosa natural park lagoon birds
+[04:04:40 +9001s] pixabay: ria formosa natural park lagoon birds
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=ria+formosa+natural+park+lagoon+birds&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_10835.mp4 — ria formosa natural park lagoon birds
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2025/10/05/308073_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_308073.mp4 — ria formosa natural park lagoon birds
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2015/11/08/1287-145131537_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_1287.mp4 — ria formosa natural park lagoon birds
+[04:14:40] pixabay EXIT=124 for: ria formosa natural park lagoon birds
+[04:14:40 +9601s] pexels : faro arco da vila gateway historic
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=faro+arco+da+vila+gateway+historic&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_31366903.mp4 (1080p) — faro arco da vila gateway historic
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/31366733/13385320_1920_1080_50fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_31366733.mp4 (1080p) — faro arco da vila gateway historic
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/16549914/16549914-hd_1920_1080_60fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_16549914.mp4 (1080p) — faro arco da vila gateway historic
+[04:24:40] pexels EXIT=124 for: faro arco da vila gateway historic
+[04:24:40 +10201s] pixabay: faro arco da vila gateway historic
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=faro+arco+da+vila+gateway+historic&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/07/14/124162-730195519_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_124162.mp4 — faro arco da vila gateway historic
+studio.sources.pixabay INFO pixabay: pixabay_124156.mp4 — faro arco da vila gateway historic
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/07/14/124163-730195526_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_124163.mp4 — faro arco da vila gateway historic
+[04:34:41] pixabay EXIT=124 for: faro arco da vila gateway historic
+[04:34:41 +10802s] pexels : faro church carmo bone chapel interior
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=faro+church+carmo+bone+chapel+interior&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/6158366/6158366-hd_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_6158366.mp4 (1080p) — faro church carmo bone chapel interior
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/27359930/12124081_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_27359930.mp4 (1080p) — faro church carmo bone chapel interior
+[04:44:41] pexels EXIT=124 for: faro church carmo bone chapel interior
+[04:44:41 +11402s] pixabay: faro church carmo bone chapel interior
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=faro+church+carmo+bone+chapel+interior&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2019/02/16/21472-318172509_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_21472.mp4 — faro church carmo bone chapel interior
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2024/02/03/199094-909564708_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_199094.mp4 — faro church carmo bone chapel interior
+[04:54:41] pixabay EXIT=124 for: faro church carmo bone chapel interior
+[04:54:41 +12002s] pexels : faro beach sand isle coastline aerial
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=faro+beach+sand+isle+coastline+aerial&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_19331951.mp4 (1080p) — faro beach sand isle coastline aerial
+studio.sources.pexels INFO pexels: pexels_36366856.mp4 (1080p) — faro beach sand isle coastline aerial
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/5499004/5499004-hd_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_5499004.mp4 (1080p) — faro beach sand isle coastline aerial
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/35213578/14917281_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_35213578.mp4 (1080p) — faro beach sand isle coastline aerial
+[05:04:41] pexels EXIT=124 for: faro beach sand isle coastline aerial
+[05:04:41 +12602s] pixabay: faro beach sand isle coastline aerial
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=faro+beach+sand+isle+coastline+aerial&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2026/03/08/338904_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_338904.mp4 — faro beach sand isle coastline aerial
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2016/06/27/3581-172488192_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_3581.mp4 — faro beach sand isle coastline aerial
+[05:14:41] pixabay EXIT=124 for: faro beach sand isle coastline aerial
+[05:14:41 +13202s] pexels : algarve coast faro cliffs turquoise
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=algarve+coast+faro+cliffs+turquoise&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_19331951.mp4 (1080p) — algarve coast faro cliffs turquoise
+studio.sources.pexels INFO pexels: pexels_27535839.mp4 (1080p) — algarve coast faro cliffs turquoise
+studio.sources.pexels INFO pexels: pexels_27535847.mp4 (1080p) — algarve coast faro cliffs turquoise
+studio.sources.pexels INFO pexels: pexels_36749578.mp4 (1080p) — algarve coast faro cliffs turquoise
+studio.sources.pexels INFO pexels: pexels_36749588.mp4 (1080p) — algarve coast faro cliffs turquoise
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/36749568/15575057_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_36749568.mp4 (1080p) — algarve coast faro cliffs turquoise
+studio.sources.pexels INFO pexels: pexels_36749575.mp4 (1080p) — algarve coast faro cliffs turquoise
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/29906026/12837005_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_29906026.mp4 (1080p) — algarve coast faro cliffs turquoise
+pyscenedetect INFO Detecting scenes...
+[05:24:41] pexels EXIT=124 for: algarve coast faro cliffs turquoise
+[05:24:41 +13802s] pixabay: algarve coast faro cliffs turquoise
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=algarve+coast+faro+cliffs+turquoise&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_14088.mp4 — algarve coast faro cliffs turquoise
+studio.sources.pixabay INFO pixabay: pixabay_13772.mp4 — algarve coast faro cliffs turquoise
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2018/03/17/15055-260649461_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_15055.mp4 — algarve coast faro cliffs turquoise
+studio.sources.pixabay INFO pixabay: pixabay_236083.mp4 — algarve coast faro cliffs turquoise
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2025/04/29/275633_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_275633.mp4 — algarve coast faro cliffs turquoise
+[05:34:41] pixabay EXIT=124 for: algarve coast faro cliffs turquoise
+[05:34:41 +14402s] pexels : lisbon tram twenty eight yellow climbing
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=lisbon+tram+twenty+eight+yellow+climbing&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_32018396.mp4 (1080p) — lisbon tram twenty eight yellow climbing
+studio.sources.pexels INFO pexels: pexels_4333050.mp4 (1080p) — lisbon tram twenty eight yellow climbing
+studio.sources.pexels INFO pexels: pexels_4132968.mp4 (1080p) — lisbon tram twenty eight yellow climbing
+studio.sources.pexels INFO pexels: pexels_4333056.mp4 (1080p) — lisbon tram twenty eight yellow climbing
+studio.sources.pexels INFO pexels: pexels_32018391.mp4 (1080p) — lisbon tram twenty eight yellow climbing
+studio.sources.pexels INFO pexels: pexels_31366912.mp4 (1080p) — lisbon tram twenty eight yellow climbing
+studio.sources.pexels INFO pexels: pexels_35661847.mp4 (1080p) — lisbon tram twenty eight yellow climbing
+studio.sources.pexels INFO pexels: pexels_31366733.mp4 (1080p) — lisbon tram twenty eight yellow climbing
+pyscenedetect INFO Detecting scenes...
+Using a slow image processor as `use_fast` is unset and a slow processor was saved with this model. `use_fast=True` will be the default behavior in v4.52, even if the model was saved with a slow processor. This will result in minor differences in outputs. You'll still be able to use a slow processor with `use_fast=False`.
+[05:44:41] pexels EXIT=124 for: lisbon tram twenty eight yellow climbing
+[05:44:41 +15002s] pixabay: lisbon tram twenty eight yellow climbing
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=lisbon+tram+twenty+eight+yellow+climbing&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_260895.mp4 — lisbon tram twenty eight yellow climbing
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2015/11/27/1409-147170113_medium.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_1409.mp4 — lisbon tram twenty eight yellow climbing
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2023/07/30/173836-850026278_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_173836.mp4 — lisbon tram twenty eight yellow climbing
+[05:54:41] pixabay EXIT=124 for: lisbon tram twenty eight yellow climbing
+[05:54:41 +15602s] pexels : lisbon alfama narrow coloured houses
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=lisbon+alfama+narrow+coloured+houses&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_28222957.mp4 (1080p) — lisbon alfama narrow coloured houses
+studio.sources.pexels INFO pexels: pexels_35258811.mp4 (1080p) — lisbon alfama narrow coloured houses
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/6180870/6180870-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_6180870.mp4 (1080p) — lisbon alfama narrow coloured houses
+studio.sources.pexels INFO pexels: pexels_27404883.mp4 (1080p) — lisbon alfama narrow coloured houses
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/6180910/6180910-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_6180910.mp4 (1080p) — lisbon alfama narrow coloured houses
+studio.sources.pexels INFO pexels: pexels_31366912.mp4 (1080p) — lisbon alfama narrow coloured houses
+studio.sources.pexels INFO pexels: pexels_31366911.mp4 (1080p) — lisbon alfama narrow coloured houses
+studio.sources.pexels INFO pexels: pexels_14260653.mp4 (1080p) — lisbon alfama narrow coloured houses
+pyscenedetect INFO Detecting scenes...
+[06:04:42] pexels EXIT=124 for: lisbon alfama narrow coloured houses
+[06:04:42 +16203s] pixabay: lisbon alfama narrow coloured houses
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=lisbon+alfama+narrow+coloured+houses&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_260895.mp4 — lisbon alfama narrow coloured houses
+studio.sources.pixabay INFO pixabay: pixabay_187403.mp4 — lisbon alfama narrow coloured houses
+studio.sources.pixabay INFO pixabay: pixabay_187401.mp4 — lisbon alfama narrow coloured houses
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2015/10/27/1200-143842692_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_1200.mp4 — lisbon alfama narrow coloured houses
+studio.sources.pixabay INFO pixabay: pixabay_140322.mp4 — lisbon alfama narrow coloured houses
+studio.sources.pixabay INFO pixabay: pixabay_230060.mp4 — lisbon alfama narrow coloured houses
+studio.sources.pixabay INFO pixabay: pixabay_140346.mp4 — lisbon alfama narrow coloured houses
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2017/12/10/13306-246909929_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_13306.mp4 — lisbon alfama narrow coloured houses
+pyscenedetect INFO Detecting scenes...
+[06:14:42] pixabay EXIT=124 for: lisbon alfama narrow coloured houses
+[06:14:42 +16803s] pexels : lisbon miradouro portas do sol viewpoint
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=lisbon+miradouro+portas+do+sol+viewpoint&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_31366744.mp4 (1080p) — lisbon miradouro portas do sol viewpoint
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/31366750/13385265_1920_1080_50fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_31366750.mp4 (1080p) — lisbon miradouro portas do sol viewpoint
+studio.sources.pexels INFO pexels: pexels_31366903.mp4 (1080p) — lisbon miradouro portas do sol viewpoint
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/31366742/13385174_1920_1080_50fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_31366742.mp4 (1080p) — lisbon miradouro portas do sol viewpoint
+studio.sources.pexels INFO pexels: pexels_31366743.mp4 (1080p) — lisbon miradouro portas do sol viewpoint
+studio.sources.pexels INFO pexels: pexels_31366989.mp4 (1080p) — lisbon miradouro portas do sol viewpoint
+[06:24:42] pexels EXIT=124 for: lisbon miradouro portas do sol viewpoint
+[06:24:42 +17403s] pixabay: lisbon miradouro portas do sol viewpoint
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=lisbon+miradouro+portas+do+sol+viewpoint&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2026/01/10/327025_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_327025.mp4 — lisbon miradouro portas do sol viewpoint
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2023/09/10/179950-862981933_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_179950.mp4 — lisbon miradouro portas do sol viewpoint
+studio.sources.pixabay INFO pixabay: pixabay_22609.mp4 — lisbon miradouro portas do sol viewpoint
+studio.sources.pixabay INFO pixabay: pixabay_260895.mp4 — lisbon miradouro portas do sol viewpoint
+studio.sources.pixabay INFO pixabay: pixabay_91.mp4 — lisbon miradouro portas do sol viewpoint
+studio.sources.pixabay INFO pixabay: pixabay_135877.mp4 — lisbon miradouro portas do sol viewpoint
+studio.sources.pixabay INFO pixabay: pixabay_187863.mp4 — lisbon miradouro portas do sol viewpoint
+[06:34:42] pixabay EXIT=124 for: lisbon miradouro portas do sol viewpoint
+[06:34:42 +18003s] pexels : lisbon belem tower tagus river sunset
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=lisbon+belem+tower+tagus+river+sunset&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/5087350/5087350-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_5087350.mp4 (1080p) — lisbon belem tower tagus river sunset
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/35698422/15129605_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_35698422.mp4 (1080p) — lisbon belem tower tagus river sunset
+studio.sources.pexels INFO pexels: pexels_35497597.mp4 (1080p) — lisbon belem tower tagus river sunset
+[06:44:42] pexels EXIT=124 for: lisbon belem tower tagus river sunset
+[06:44:42 +18603s] pixabay: lisbon belem tower tagus river sunset
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=lisbon+belem+tower+tagus+river+sunset&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_258958.mp4 — lisbon belem tower tagus river sunset
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2026/07/18/364783_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_364783.mp4 — lisbon belem tower tagus river sunset
+studio.sources.pixabay INFO pixabay: pixabay_260895.mp4 — lisbon belem tower tagus river sunset
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2023/03/28/156471-812592010_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_156471.mp4 — lisbon belem tower tagus river sunset
+studio.sources.pixabay INFO pixabay: pixabay_314.mp4 — lisbon belem tower tagus river sunset
+studio.sources.pixabay INFO pixabay: pixabay_215421.mp4 — lisbon belem tower tagus river sunset
+[06:54:42] pixabay EXIT=124 for: lisbon belem tower tagus river sunset
+[06:54:42 +19203s] pexels : lisbon time out market food hall
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=lisbon+time+out+market+food+hall&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_27825845.mp4 (1080p) — lisbon time out market food hall
+studio.sources.pexels INFO pexels: pexels_29450151.mp4 (1080p) — lisbon time out market food hall
+studio.sources.pexels INFO pexels: pexels_34804768.mp4 (1080p) — lisbon time out market food hall
+studio.sources.pexels INFO pexels: pexels_34809773.mp4 (1080p) — lisbon time out market food hall
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/36748021/15574268_1920_1080_50fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_36748021.mp4 (1080p) — lisbon time out market food hall
+studio.sources.pexels INFO pexels: pexels_853928.mp4 (1080p) — lisbon time out market food hall
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/28925811/12519058_1920_1080_60fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_28925811.mp4 (1080p) — lisbon time out market food hall
+studio.sources.pexels INFO pexels: pexels_29449985.mp4 (1080p) — lisbon time out market food hall
+pyscenedetect INFO Detecting scenes...
+[07:04:42] pexels EXIT=124 for: lisbon time out market food hall
+[07:04:42 +19803s] pixabay: lisbon time out market food hall
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=lisbon+time+out+market+food+hall&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_22761.mp4 — lisbon time out market food hall
+studio.sources.pixabay INFO pixabay: pixabay_260895.mp4 — lisbon time out market food hall
+studio.sources.pixabay INFO pixabay: pixabay_6358.mp4 — lisbon time out market food hall
+studio.sources.pixabay INFO pixabay: pixabay_7549.mp4 — lisbon time out market food hall
+studio.sources.pixabay INFO pixabay: pixabay_190332.mp4 — lisbon time out market food hall
+studio.sources.pixabay INFO pixabay: pixabay_3068.mp4 — lisbon time out market food hall
+studio.sources.pixabay INFO pixabay: pixabay_34855.mp4 — lisbon time out market food hall
+studio.sources.pixabay INFO pixabay: pixabay_36419.mp4 — lisbon time out market food hall
+ingeridos: 0/8 ficheiros, 0 shots, custo $0.000 — total na biblioteca: 734 shots
+[07:05:45 +19866s] pexels : lisbon sao jorge castle panoramic view
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=lisbon+sao+jorge+castle+panoramic+view&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_35258811.mp4 (1080p) — lisbon sao jorge castle panoramic view
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/30322206/12998595_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_30322206.mp4 (1080p) — lisbon sao jorge castle panoramic view
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/32018389/13646569_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_32018389.mp4 (1080p) — lisbon sao jorge castle panoramic view
+studio.sources.pexels INFO pexels: pexels_12890902.mp4 (1080p) — lisbon sao jorge castle panoramic view
+studio.sources.pexels INFO pexels: pexels_29539555.mp4 (1080p) — lisbon sao jorge castle panoramic view
+studio.sources.pexels INFO pexels: pexels_4823566.mp4 (1080p) — lisbon sao jorge castle panoramic view
+[07:15:45] pexels EXIT=124 for: lisbon sao jorge castle panoramic view
+[07:15:45 +20466s] pixabay: lisbon sao jorge castle panoramic view
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=lisbon+sao+jorge+castle+panoramic+view&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_250395.mp4 — lisbon sao jorge castle panoramic view
+studio.sources.pixabay INFO pixabay: pixabay_260895.mp4 — lisbon sao jorge castle panoramic view
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2017/01/07/7127-336300875_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_7127.mp4 — lisbon sao jorge castle panoramic view
+studio.sources.pixabay INFO pixabay: pixabay_175876.mp4 — lisbon sao jorge castle panoramic view
+studio.sources.pixabay INFO pixabay: pixabay_326739.mp4 — lisbon sao jorge castle panoramic view
+studio.sources.pixabay INFO pixabay: pixabay_182082.mp4 — lisbon sao jorge castle panoramic view
+studio.sources.pixabay INFO pixabay: pixabay_227233.mp4 — lisbon sao jorge castle panoramic view
+studio.sources.pixabay INFO pixabay: pixabay_344373.mp4 — lisbon sao jorge castle panoramic view
+pyscenedetect INFO Detecting scenes...
+Using a slow image processor as `use_fast` is unset and a slow processor was saved with this model. `use_fast=True` will be the default behavior in v4.52, even if the model was saved with a slow processor. This will result in minor differences in outputs. You'll still be able to use a slow processor with `use_fast=False`.
+[07:25:45] pixabay EXIT=124 for: lisbon sao jorge castle panoramic view
+[07:25:45 +21066s] pexels : lisbon lx factory street art graffiti
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=lisbon+lx+factory+street+art+graffiti&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_13939576.mp4 (1080p) — lisbon lx factory street art graffiti
+studio.sources.pexels INFO pexels: pexels_32018396.mp4 (1080p) — lisbon lx factory street art graffiti
+studio.sources.pexels INFO pexels: pexels_37317162.mp4 (1080p) — lisbon lx factory street art graffiti
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/17037805/17037805-hd_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_17037805.mp4 (1080p) — lisbon lx factory street art graffiti
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/11279751/11279751-hd_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_11279751.mp4 (1080p) — lisbon lx factory street art graffiti
+[07:35:45] pexels EXIT=124 for: lisbon lx factory street art graffiti
+[quinta 06 ago 2026 07:35:45 WEST] DEADLINE exceeded (21666s); graceful exit

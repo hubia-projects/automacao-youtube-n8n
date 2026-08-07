@@ -310,6 +310,32 @@ def cmd_costs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_monitor(args: argparse.Namespace) -> int:
+    """Arranca o dashboard HTTP que espelha run.json + log em tempo real.
+    Stdlib puro (sem deps). Ctrl-C para sair."""
+    import importlib.util
+    from http.server import ThreadingHTTPServer
+    from pathlib import Path
+
+    here = Path(__file__).resolve().parent
+    monitor_path = here.parent / "scripts" / "monitor_server.py"
+    spec = importlib.util.spec_from_file_location("_studio_monitor", monitor_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    if args.data_root is not None:
+        mod.DATA_ROOT = args.data_root
+    if str(args.log) != "/tmp/pfv-run.log":
+        mod.DEFAULT_LOG = args.log
+    addr = (args.bind, args.port)
+    print(f"studio-monitor: http://{args.bind}:{args.port}/  "
+          f"data={mod.DATA_ROOT}  log={mod.DEFAULT_LOG}")
+    try:
+        ThreadingHTTPServer(addr, mod.Handler).serve_forever()
+    except KeyboardInterrupt:
+        print("\nstudio-monitor: a sair.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s %(message)s")
     parser = argparse.ArgumentParser(prog="studio")
@@ -369,6 +395,16 @@ def main(argv: list[str] | None = None) -> int:
     p_wa.add_argument("--once", action="store_true", help="uma passagem e sai")
     p_wa.add_argument("--retry-failed", action="store_true")
     p_wa.set_defaults(func=cmd_watch)
+
+    p_mo = sub.add_parser("monitor", help="dashboard HTTP que espelha runs ativos")
+    p_mo.add_argument("--port", type=int, default=8765)
+    p_mo.add_argument("--bind", default="127.0.0.1",
+                      help="default 127.0.0.1; use 0.0.0.0 para aceder de fora")
+    p_mo.add_argument("--data-root", type=Path, default=None,
+                      help="default STUDIO_DATA_ROOT (ou repo/data)")
+    p_mo.add_argument("--log", type=Path, default=Path("/tmp/pfv-run.log"),
+                      help="log file a fazer tail+live")
+    p_mo.set_defaults(func=cmd_monitor)
 
     p_co = sub.add_parser("costs", help="custos por run (ledgers)")
     p_co.set_defaults(func=cmd_costs)

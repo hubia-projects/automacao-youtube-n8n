@@ -1,0 +1,9 @@
+[quinta 06 ago 2026 01:28:30 WEST] === LAUNCH start ts=20260806-012830 ===
+[quinta 06 ago 2026 01:28:30 WEST] queries: tema1=32 tema2=30 tema3=35 total=97
+[quinta 06 ago 2026 01:28:31 WEST] launching tema1 → /home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/logs/overnight-tema1-20260806-012830.log
+[quinta 06 ago 2026 01:28:31 WEST]   pid=2496659
+[quinta 06 ago 2026 01:28:31 WEST] launching tema2 → /home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/logs/overnight-tema2-20260806-012830.log
+[quinta 06 ago 2026 01:28:31 WEST]   pid=2496669
+[quinta 06 ago 2026 01:28:31 WEST] launching tema3 → /home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/logs/overnight-tema3-20260806-012830.log
+[quinta 06 ago 2026 01:28:31 WEST]   pid=2496684
+[quinta 06 ago 2026 01:28:31 WEST] === LAUNCH done. PIDs: tema1 2496659 tema2 2496669 tema3 2496684  ===

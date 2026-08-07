@@ -1,0 +1,311 @@
+[quinta 06 ago 2026 01:34:39 WEST] === START theme=tema2 LOG=/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/logs/overnight-tema2-20260806-013438.log pid=2546059 ===
+[01:34:39 +0s] pexels : monsanto granite boulder houses portugal
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=monsanto+granite+boulder+houses+portugal&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/3635341/3635341-hd_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_3635341.mp4 (1080p) — monsanto granite boulder houses portugal
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/28557967/12422319_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_28557967.mp4 (1080p) — monsanto granite boulder houses portugal
+[01:44:39] pexels EXIT=124 for: monsanto granite boulder houses portugal
+[01:44:39 +600s] pixabay: monsanto granite boulder houses portugal
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=monsanto+granite+boulder+houses+portugal&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_14088.mp4 — monsanto granite boulder houses portugal
+studio.sources.pixabay INFO pixabay: pixabay_260895.mp4 — monsanto granite boulder houses portugal
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2023/04/28/160767-822213540_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_160767.mp4 — monsanto granite boulder houses portugal
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/08/10/127446-738829414_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_127446.mp4 — monsanto granite boulder houses portugal
+[01:54:39] pixabay EXIT=124 for: monsanto granite boulder houses portugal
+[01:54:39 +1200s] pexels : monsanto village hilltop stones castle ruins
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=monsanto+village+hilltop+stones+castle+ruins&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/30578054/13096016_1920_1080_60fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_30578054.mp4 (1080p) — monsanto village hilltop stones castle ruins
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/17801495/17801495-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_17801495.mp4 (1080p) — monsanto village hilltop stones castle ruins
+[02:04:39] pexels EXIT=124 for: monsanto village hilltop stones castle ruins
+[02:04:39 +1800s] pixabay: monsanto village hilltop stones castle ruins
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=monsanto+village+hilltop+stones+castle+ruins&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2020/01/25/31556-387675159_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_31556.mp4 — monsanto village hilltop stones castle ruins
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2025/01/03/250395_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_250395.mp4 — monsanto village hilltop stones castle ruins
+[02:14:39] pixabay EXIT=124 for: monsanto village hilltop stones castle ruins
+[02:14:39 +2400s] pexels : marvao castle walled village top view
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=marvao+castle+walled+village+top+view&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/28529424/12409885_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_28529424.mp4 (1080p) — marvao castle walled village top view
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/28529423/12409937_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_28529423.mp4 (1080p) — marvao castle walled village top view
+[02:24:39] pexels EXIT=124 for: marvao castle walled village top view
+[02:24:39 +3000s] pixabay: marvao castle walled village top view
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=marvao+castle+walled+village+top+view&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_250395.mp4 — marvao castle walled village top view
+studio.sources.pixabay INFO pixabay: pixabay_31556.mp4 — marvao castle walled village top view
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/10/09/134112-758552431_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_134112.mp4 — marvao castle walled village top view
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2023/08/13/175876-854230219_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_175876.mp4 — marvao castle walled village top view
+[02:34:39] pixabay EXIT=124 for: marvao castle walled village top view
+[02:34:39 +3600s] pexels : marvao houses clamped rock castle walls
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=marvao+houses+clamped+rock+castle+walls&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_28529423.mp4 (1080p) — marvao houses clamped rock castle walls
+studio.sources.pexels INFO pexels: pexels_28529424.mp4 (1080p) — marvao houses clamped rock castle walls
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/28529425/12409895_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_28529425.mp4 (1080p) — marvao houses clamped rock castle walls
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/28529422/12409907_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_28529422.mp4 (1080p) — marvao houses clamped rock castle walls
+[02:44:39] pexels EXIT=124 for: marvao houses clamped rock castle walls
+[02:44:39 +4200s] pixabay: marvao houses clamped rock castle walls
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=marvao+houses+clamped+rock+castle+walls&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_250395.mp4 — marvao houses clamped rock castle walls
+studio.sources.pixabay INFO pixabay: pixabay_175876.mp4 — marvao houses clamped rock castle walls
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2026/01/09/326739_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_326739.mp4 — marvao houses clamped rock castle walls
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2024/05/23/213398_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_213398.mp4 — marvao houses clamped rock castle walls
+[02:54:40] pixabay EXIT=124 for: marvao houses clamped rock castle walls
+[02:54:40 +4801s] pexels : piodao schist slate roof village
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=piodao+schist+slate+roof+village&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/29135772/12586209_1920_1080_60fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_29135772.mp4 (1080p) — piodao schist slate roof village
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/28543826/12417908_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_28543826.mp4 (1080p) — piodao schist slate roof village
+[03:04:40] pexels EXIT=124 for: piodao schist slate roof village
+[03:04:40 +5401s] pixabay: piodao schist slate roof village
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=piodao+schist+slate+roof+village&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2023/07/22/172757-847869810_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_172757.mp4 — piodao schist slate roof village
+studio.sources.pixabay INFO pixabay: pixabay_334302.mp4 — piodao schist slate roof village
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2024/05/31/214661_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_214661.mp4 — piodao schist slate roof village
+[03:14:40] pixabay EXIT=124 for: piodao schist slate roof village
+[03:14:40 +6001s] pexels : piodao nazare mountains terraced houses
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=piodao+nazare+mountains+terraced+houses&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/7846036/7846036-hd_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_7846036.mp4 (1080p) — piodao nazare mountains terraced houses
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/28557958/12422110_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_28557958.mp4 (1080p) — piodao nazare mountains terraced houses
+studio.sources.pexels INFO pexels: pexels_15059952.mp4 (1080p) — piodao nazare mountains terraced houses
+[03:24:40] pexels EXIT=124 for: piodao nazare mountains terraced houses
+[03:24:40 +6601s] pixabay: piodao nazare mountains terraced houses
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=piodao+nazare+mountains+terraced+houses&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2026/07/15/364184_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_364184.mp4 — piodao nazare mountains terraced houses
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2023/08/30/178427-859483731_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_178427.mp4 — piodao nazare mountains terraced houses
+[03:34:40] pixabay EXIT=124 for: piodao nazare mountains terraced houses
+[03:34:40 +7201s] pexels : sortelha ancient wall fortress village
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=sortelha+ancient+wall+fortress+village&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_20118001.mp4 (1080p) — sortelha ancient wall fortress village
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/13291841/13291841-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_13291841.mp4 (1080p) — sortelha ancient wall fortress village
+studio.sources.pexels INFO pexels: pexels_28529423.mp4 (1080p) — sortelha ancient wall fortress village
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/9722332/9722332-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_9722332.mp4 (1080p) — sortelha ancient wall fortress village
+[03:44:40] pexels EXIT=124 for: sortelha ancient wall fortress village
+[03:44:40 +7801s] pixabay: sortelha ancient wall fortress village
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=sortelha+ancient+wall+fortress+village&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_53835.mp4 — sortelha ancient wall fortress village
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2024/02/03/199127-909835479_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_199127.mp4 — sortelha ancient wall fortress village
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2023/10/10/184480-873483952_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_184480.mp4 — sortelha ancient wall fortress village
+studio.sources.pixabay INFO pixabay: pixabay_53833.mp4 — sortelha ancient wall fortress village
+[03:54:40] pixabay EXIT=124 for: sortelha ancient wall fortress village
+[03:54:40 +8401s] pexels : sortelha medieval stone village
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=sortelha+medieval+stone+village&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/32435582/13833747_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_32435582.mp4 (1080p) — sortelha medieval stone village
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/28543810/12417864_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_28543810.mp4 (1080p) — sortelha medieval stone village
+studio.sources.pexels INFO pexels: pexels_28543809.mp4 (1080p) — sortelha medieval stone village
+studio.sources.pexels INFO pexels: pexels_28529422.mp4 (1080p) — sortelha medieval stone village
+[04:04:40] pexels EXIT=124 for: sortelha medieval stone village
+[04:04:40 +9001s] pixabay: sortelha medieval stone village
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=sortelha+medieval+stone+village&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_53833.mp4 — sortelha medieval stone village
+studio.sources.pixabay INFO pixabay: pixabay_53835.mp4 — sortelha medieval stone village
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2020/06/15/42126-431423125_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_42126.mp4 — sortelha medieval stone village
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2024/08/30/228847_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_228847.mp4 — sortelha medieval stone village
+[04:14:40] pixabay EXIT=124 for: sortelha medieval stone village
+[04:14:40 +9601s] pexels : monsaraz hilltop castle alentejo
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=monsaraz+hilltop+castle+alentejo&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/28529397/12409760_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_28529397.mp4 (1080p) — monsaraz hilltop castle alentejo
+studio.sources.pexels INFO pexels: pexels_28529425.mp4 (1080p) — monsaraz hilltop castle alentejo
+studio.sources.pexels INFO pexels: pexels_28529424.mp4 (1080p) — monsaraz hilltop castle alentejo
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/36479672/15468638_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_36479672.mp4 (1080p) — monsaraz hilltop castle alentejo
+studio.sources.pexels INFO pexels: pexels_28529423.mp4 (1080p) — monsaraz hilltop castle alentejo
+studio.sources.pexels INFO pexels: pexels_30518131.mp4 (1080p) — monsaraz hilltop castle alentejo
+[04:24:40] pexels EXIT=124 for: monsaraz hilltop castle alentejo
+[04:24:40 +10201s] pixabay: monsaraz hilltop castle alentejo
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=monsaraz+hilltop+castle+alentejo&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_250395.mp4 — monsaraz hilltop castle alentejo
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2024/08/18/227233_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_227233.mp4 — monsaraz hilltop castle alentejo
+studio.sources.pixabay INFO pixabay: pixabay_175876.mp4 — monsaraz hilltop castle alentejo
+studio.sources.pixabay INFO pixabay: pixabay_326739.mp4 — monsaraz hilltop castle alentejo
+studio.sources.pixabay INFO pixabay: pixabay_31556.mp4 — monsaraz hilltop castle alentejo
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2025/09/26/306552_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_306552.mp4 — monsaraz hilltop castle alentejo
+[04:34:41] pixabay EXIT=124 for: monsaraz hilltop castle alentejo
+[04:34:41 +10802s] pexels : monsaraz village whitewashed houses
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=monsaraz+village+whitewashed+houses&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/34335676/14545643_1920_1080_60fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_34335676.mp4 (1080p) — monsaraz village whitewashed houses
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/6192604/6192604-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_6192604.mp4 (1080p) — monsaraz village whitewashed houses
+[04:44:41] pexels EXIT=124 for: monsaraz village whitewashed houses
+[04:44:41 +11402s] pixabay: monsaraz village whitewashed houses
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=monsaraz+village+whitewashed+houses&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2017/07/16/10685-226624850_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_10685.mp4 — monsaraz village whitewashed houses
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2023/03/27/156373-812591896_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_156373.mp4 — monsaraz village whitewashed houses
+[04:54:41] pixabay EXIT=124 for: monsaraz village whitewashed houses
+[04:54:41 +12002s] pexels : almeida fortress pentagon wars village
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=almeida+fortress+pentagon+wars+village&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/10413790/10413790-hd_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_10413790.mp4 (1080p) — almeida fortress pentagon wars village
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/7579783/7579783-hd_1920_1080_24fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_7579783.mp4 (1080p) — almeida fortress pentagon wars village
+[05:04:41] pexels EXIT=124 for: almeida fortress pentagon wars village
+[05:04:41 +12602s] pixabay: almeida fortress pentagon wars village
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=almeida+fortress+pentagon+wars+village&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_53835.mp4 — almeida fortress pentagon wars village
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/08/17/128162-740873213_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_128162.mp4 — almeida fortress pentagon wars village
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/11/07/138115-768324070_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_138115.mp4 — almeida fortress pentagon wars village
+studio.sources.pixabay INFO pixabay: pixabay_184480.mp4 — almeida fortress pentagon wars village
+studio.sources.pixabay INFO pixabay: pixabay_334302.mp4 — almeida fortress pentagon wars village
+studio.sources.pixabay INFO pixabay: pixabay_10685.mp4 — almeida fortress pentagon wars village
+[05:14:41] pixabay EXIT=124 for: almeida fortress pentagon wars village
+[05:14:41 +13202s] pexels : almeida walled village cobblestone street
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=almeida+walled+village+cobblestone+street&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/35442033/15015427_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_35442033.mp4 (1080p) — almeida walled village cobblestone street
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/3657440/3657440-hd_1920_1080_24fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_3657440.mp4 (1080p) — almeida walled village cobblestone street
+[05:24:41] pexels EXIT=124 for: almeida walled village cobblestone street
+[05:24:41 +13802s] pixabay: almeida walled village cobblestone street
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=almeida+walled+village+cobblestone+street&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_191724.mp4 — almeida walled village cobblestone street
+studio.sources.pixabay INFO pixabay: pixabay_38590.mp4 — almeida walled village cobblestone street
+studio.sources.pixabay INFO pixabay: pixabay_152798.mp4 — almeida walled village cobblestone street
+studio.sources.pixabay INFO pixabay: pixabay_43562.mp4 — almeida walled village cobblestone street
+studio.sources.pixabay INFO pixabay: pixabay_204326.mp4 — almeida walled village cobblestone street
+studio.sources.pixabay INFO pixabay: pixabay_334302.mp4 — almeida walled village cobblestone street
+studio.sources.pixabay INFO pixabay: pixabay_216737.mp4 — almeida walled village cobblestone street
+studio.sources.pixabay INFO pixabay: pixabay_7128.mp4 — almeida walled village cobblestone street
+pyscenedetect INFO Detecting scenes...
+Using a slow image processor as `use_fast` is unset and a slow processor was saved with this model. `use_fast=True` will be the default behavior in v4.52, even if the model was saved with a slow processor. This will result in minor differences in outputs. You'll still be able to use a slow processor with `use_fast=False`.
+[05:34:41] pixabay EXIT=124 for: almeida walled village cobblestone street
+[05:34:41 +14402s] pexels : belmonte castle discoverers jewish heritage
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=belmonte+castle+discoverers+jewish+heritage&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/36479675/15468639_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_36479675.mp4 (1080p) — belmonte castle discoverers jewish heritage
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/36420748/15443074_1920_1080_60fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_36420748.mp4 (1080p) — belmonte castle discoverers jewish heritage
+[05:44:41] pexels EXIT=124 for: belmonte castle discoverers jewish heritage
+[05:44:41 +15002s] pixabay: belmonte castle discoverers jewish heritage
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=belmonte+castle+discoverers+jewish+heritage&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_326739.mp4 — belmonte castle discoverers jewish heritage
+studio.sources.pixabay INFO pixabay: pixabay_250395.mp4 — belmonte castle discoverers jewish heritage
+studio.sources.pixabay INFO pixabay: pixabay_175876.mp4 — belmonte castle discoverers jewish heritage
+studio.sources.pixabay INFO pixabay: pixabay_306552.mp4 — belmonte castle discoverers jewish heritage
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/08/17/128158-740873208_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_128158.mp4 — belmonte castle discoverers jewish heritage
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2020/01/12/31188-384523344_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_31188.mp4 — belmonte castle discoverers jewish heritage
+[05:54:41] pixabay EXIT=124 for: belmonte castle discoverers jewish heritage
+[05:54:41 +15602s] pexels : belmonte village mountain portugal
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=belmonte+village+mountain+portugal&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/28543822/12417788_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_28543822.mp4 (1080p) — belmonte village mountain portugal
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/11713471/11713471-hd_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_11713471.mp4 (1080p) — belmonte village mountain portugal
+[06:04:41] pexels EXIT=124 for: belmonte village mountain portugal
+[06:04:41 +16202s] pixabay: belmonte village mountain portugal
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=belmonte+village+mountain+portugal&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/09/14/131304-749647671_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_131304.mp4 — belmonte village mountain portugal
+studio.sources.pixabay INFO pixabay: pixabay_260895.mp4 — belmonte village mountain portugal
+studio.sources.pixabay INFO pixabay: pixabay_160767.mp4 — belmonte village mountain portugal
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2024/03/24/205422-926957395_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_205422.mp4 — belmonte village mountain portugal
+[06:14:42] pixabay EXIT=124 for: belmonte village mountain portugal
+[06:14:42 +16803s] pexels : linhares da beira castle ruins
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=linhares+da+beira+castle+ruins&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_17801495.mp4 (1080p) — linhares da beira castle ruins
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/27255641/12103424_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_27255641.mp4 (1080p) — linhares da beira castle ruins
+studio.sources.pexels INFO pexels: pexels_28543810.mp4 (1080p) — linhares da beira castle ruins
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/28731916/12464299_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_28731916.mp4 (1080p) — linhares da beira castle ruins
+[06:24:42] pexels EXIT=124 for: linhares da beira castle ruins
+[06:24:42 +17403s] pixabay: linhares da beira castle ruins
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=linhares+da+beira+castle+ruins&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_250395.mp4 — linhares da beira castle ruins
+studio.sources.pixabay INFO pixabay: pixabay_175876.mp4 — linhares da beira castle ruins
+studio.sources.pixabay INFO pixabay: pixabay_326739.mp4 — linhares da beira castle ruins
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2020/10/28/53610-475234168_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_53610.mp4 — linhares da beira castle ruins
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/08/31/129704-745151217_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_129704.mp4 — linhares da beira castle ruins
+studio.sources.pixabay INFO pixabay: pixabay_2876.mp4 — linhares da beira castle ruins
+[06:34:42] pixabay EXIT=124 for: linhares da beira castle ruins
+[06:34:42 +18003s] pexels : trancoso medieval gates village walls
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=trancoso+medieval+gates+village+walls&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/19558263/19558263-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_19558263.mp4 (1080p) — trancoso medieval gates village walls
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/7467947/7467947-hd_1920_1080_24fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_7467947.mp4 (1080p) — trancoso medieval gates village walls
+[06:44:42] pexels EXIT=124 for: trancoso medieval gates village walls
+[06:44:42 +18603s] pixabay: trancoso medieval gates village walls
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=trancoso+medieval+gates+village+walls&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_53835.mp4 — trancoso medieval gates village walls
+studio.sources.pixabay INFO pixabay: pixabay_53833.mp4 — trancoso medieval gates village walls
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2018/09/24/18392-291585315_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_18392.mp4 — trancoso medieval gates village walls
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2021/08/25/86343-592491757_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_86343.mp4 — trancoso medieval gates village walls
+studio.sources.pixabay INFO pixabay: pixabay_42126.mp4 — trancoso medieval gates village walls
+[06:54:42] pixabay EXIT=124 for: trancoso medieval gates village walls
+[06:54:42 +19203s] pexels : castelo rodrigo rock fortress medieval
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=castelo+rodrigo+rock+fortress+medieval&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_28529425.mp4 (1080p) — castelo rodrigo rock fortress medieval
+studio.sources.pexels INFO pexels: pexels_28529424.mp4 (1080p) — castelo rodrigo rock fortress medieval
+studio.sources.pexels INFO pexels: pexels_28529423.mp4 (1080p) — castelo rodrigo rock fortress medieval
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/19685541/19685541-hd_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_19685541.mp4 (1080p) — castelo rodrigo rock fortress medieval
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/19685487/19685487-hd_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_19685487.mp4 (1080p) — castelo rodrigo rock fortress medieval
+[07:04:42] pexels EXIT=124 for: castelo rodrigo rock fortress medieval
+[07:04:42 +19803s] pixabay: castelo rodrigo rock fortress medieval
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=castelo+rodrigo+rock+fortress+medieval&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2024/03/01/202537-918431282_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_202537.mp4 — castelo rodrigo rock fortress medieval
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/06/14/120287-720504988_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_120287.mp4 — castelo rodrigo rock fortress medieval
+studio.sources.pixabay INFO pixabay: pixabay_53835.mp4 — castelo rodrigo rock fortress medieval
+[07:14:42] pixabay EXIT=124 for: castelo rodrigo rock fortress medieval
+[07:14:42 +20403s] pexels : idanha a velha roman ruins village
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=idanha+a+velha+roman+ruins+village&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/6520518/6520518-hd_2048_988_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_6520518.mp4 (988p) — idanha a velha roman ruins village
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/30768986/13161899_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_30768986.mp4 (1080p) — idanha a velha roman ruins village
+[07:24:42] pexels EXIT=124 for: idanha a velha roman ruins village
+[07:24:42 +21003s] pixabay: idanha a velha roman ruins village
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=idanha+a+velha+roman+ruins+village&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_131304.mp4 — idanha a velha roman ruins village
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/09/05/130294-746674143_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_130294.mp4 — idanha a velha roman ruins village
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2020/02/11/32248-390923737_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_32248.mp4 — idanha a velha roman ruins village
+studio.sources.pixabay INFO pixabay: pixabay_334302.mp4 — idanha a velha roman ruins village
+[07:34:42] pixabay EXIT=124 for: idanha a velha roman ruins village
+[quinta 06 ago 2026 07:34:42 WEST] DEADLINE exceeded (21603s); graceful exit

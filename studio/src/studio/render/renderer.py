@@ -24,6 +24,14 @@ from studio.render.timeline import Timeline, TimelineEntry
 log = logging.getLogger("studio.render")
 
 FPS = 30
+# Acima disto, o tpad clone é perceptível como "riscado" em narração cont\u00ednua.
+# Assigner divide a cena em mais segmentos (+pensar em BEAT de hook), mas se
+# ainda restar pad \u2014 diagnostica e capa, nunca esconde o problema.
+_PAD_FLOOR_S = 0.4
+# Rate-limit do warning: emite os primeiros casos + sumário final; sem rate,
+# um run de 60 cenas com sub-segmentação sistémica barulha o log.
+_MAX_PAD_WARN_PER_RUN = 3
+_pad_warn_count = 0
 
 
 def _run(args: list[str]) -> None:
@@ -88,14 +96,39 @@ def render_segment(entry: TimelineEntry, w: int, h: int, cache_dir: Path, *,
         vf.append(kb)
     # color de casa: saturação/contraste subtis (LUTs entram quando existirem)
     vf.append("eq=saturation=1.06:contrast=1.02")
+    # Cap anti-"riscado": tpad clone acima de 0.4s parece freeze de frame.
+    # O assigner divide agora as cenas em mais segmentos, mas se ainda restar
+    # pad > 0.4s, fica limitado a 0.4s (indenável pela xfade seguinte a 0.4s)
+    # e regista um warning para detectar sub-segmentação futura do assigner.
     if pad > 0.01:
-        vf.append(f"tpad=stop_mode=clone:stop_duration={pad:.3f}")
+        if pad > _PAD_FLOOR_S:
+            _emit_pad_warning(pad, entry.scene_id)
+        vf.append(f"tpad=stop_mode=clone:stop_duration={min(pad, _PAD_FLOOR_S):.3f}")
 
     _run(["-ss", f"{src_in:.3f}", "-t", f"{min(window, total):.3f}",
           "-i", entry.media_path, "-vf", ",".join(vf), "-t", f"{total:.3f}",
           "-an", "-c:v", "libx264", "-preset", preset,
           "-pix_fmt", "yuv420p", str(out)])
     return out
+
+
+def _emit_pad_warning(pad: float, scene_id: str) -> None:
+    """Rate-limited logging: emite os primeiros casos + sumário final; sem rate,
+    um run de 60 cenas com sub-segmentação sistémica barulha o log."""
+    global _pad_warn_count
+    if _pad_warn_count < _MAX_PAD_WARN_PER_RUN:
+        log.warning("render: pad %.2fs em cena %s capado a %.2fs — "
+                    "assigner sub-segmentou", pad, scene_id, _PAD_FLOOR_S)
+    _pad_warn_count += 1
+
+
+def _flush_pad_warnings() -> None:
+    """Sumário no fim do run, chamado uma vez em render_video()."""
+    global _pad_warn_count
+    if _pad_warn_count > _MAX_PAD_WARN_PER_RUN:
+        log.warning("render: mais %d entradas com pad > %.2fs no run — "
+                    "ver relaxations.assignments.json",
+                    _pad_warn_count - _MAX_PAD_WARN_PER_RUN, _PAD_FLOOR_S)
 
 
 def _concat_reencode(files: list[Path], out: Path, preset: str) -> Path:
@@ -198,7 +231,13 @@ def _audio_filter(measured: dict | None, narr_idx: int, music_idx: int | None) -
 def render_video(timeline: Timeline, out_path: Path, settings: Settings, *,
                  proxy: bool = False, ass_path: Path | None = None,
                  burn_overlay: bool = False) -> Path:
-    """Render completo: vídeo montado + narração (+música) + legendas."""
+    """Render completo: vídeo montado + narração (+música) + legendas.
+
+    Reseta _pad_warn_count a 0 no início: cada chamada (proxy + final no
+    mesmo run, ou runs consecutivos em pytest) tem o seu próprio semáforo,
+    sem contaminação entre execuções do mesmo processo."""
+    global _pad_warn_count
+    _pad_warn_count = 0
     w, h = (854, 480) if proxy else (settings.output_width, settings.output_height)
     preset = "ultrafast" if proxy else settings.render_preset
     cache_dir = out_path.parent / ("segments_proxy" if proxy else "segments_final")
@@ -235,4 +274,5 @@ def render_video(timeline: Timeline, out_path: Path, settings: Settings, *,
           "-c:a", "aac", "-b:a", "192k", "-shortest", str(out_path)])
     log.info("render %s: %s (%.1fs)", "proxy" if proxy else "final",
              out_path.name, _probe_duration(out_path))
+    _flush_pad_warnings()
     return out_path

@@ -1,0 +1,414 @@
+[quinta 06 ago 2026 01:34:39 WEST] === START theme=tema3 LOG=/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/logs/overnight-tema3-20260806-013438.log pid=2546073 ===
+[01:34:39 +0s] pexels : pasteis de nata custard tart close up
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=pasteis+de+nata+custard+tart+close+up&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_34556311.mp4 (1080p) — pasteis de nata custard tart close up
+studio.sources.pexels INFO pexels: pexels_32710175.mp4 (1080p) — pasteis de nata custard tart close up
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/8903549/8903549-hd_2048_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_8903549.mp4 (1080p) — pasteis de nata custard tart close up
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/34484021/14612228_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_34484021.mp4 (1080p) — pasteis de nata custard tart close up
+studio.sources.pexels INFO pexels: pexels_32710206.mp4 (1080p) — pasteis de nata custard tart close up
+studio.sources.pexels INFO pexels: pexels_32710202.mp4 (1080p) — pasteis de nata custard tart close up
+studio.sources.pexels INFO pexels: pexels_32710209.mp4 (1080p) — pasteis de nata custard tart close up
+[01:44:39] pexels EXIT=124 for: pasteis de nata custard tart close up
+[01:44:39 +600s] pixabay: pasteis de nata custard tart close up
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=pasteis+de+nata+custard+tart+close+up&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_189018.mp4 — pasteis de nata custard tart close up
+studio.sources.pixabay INFO pixabay: pixabay_26493.mp4 — pasteis de nata custard tart close up
+studio.sources.pixabay INFO pixabay: pixabay_240531.mp4 — pasteis de nata custard tart close up
+studio.sources.pixabay INFO pixabay: pixabay_30470.mp4 — pasteis de nata custard tart close up
+studio.sources.pixabay INFO pixabay: pixabay_4948.mp4 — pasteis de nata custard tart close up
+studio.sources.pixabay INFO pixabay: pixabay_13100.mp4 — pasteis de nata custard tart close up
+studio.sources.pixabay INFO pixabay: pixabay_199545.mp4 — pasteis de nata custard tart close up
+studio.sources.pixabay INFO pixabay: pixabay_197946.mp4 — pasteis de nata custard tart close up
+ingeridos: 0/8 ficheiros, 0 shots, custo $0.000 — total na biblioteca: 734 shots
+[01:45:42 +663s] pexels : pasteis de belem lisbon bakery counter
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=pasteis+de+belem+lisbon+bakery+counter&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_16549909.mp4 (1080p) — pasteis de belem lisbon bakery counter
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/27739611/12215331_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_27739611.mp4 (1080p) — pasteis de belem lisbon bakery counter
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/13061609/13061609-hd_1920_1080_60fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_13061609.mp4 (1080p) — pasteis de belem lisbon bakery counter
+[01:55:42] pexels EXIT=124 for: pasteis de belem lisbon bakery counter
+[01:55:42 +1263s] pixabay: pasteis de belem lisbon bakery counter
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=pasteis+de+belem+lisbon+bakery+counter&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_260895.mp4 — pasteis de belem lisbon bakery counter
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2017/07/23/10853-226632937_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_10853.mp4 — pasteis de belem lisbon bakery counter
+studio.sources.pixabay INFO pixabay: pixabay_187422.mp4 — pasteis de belem lisbon bakery counter
+studio.sources.pixabay INFO pixabay: pixabay_187403.mp4 — pasteis de belem lisbon bakery counter
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/07/20/124746-732633064_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_124746.mp4 — pasteis de belem lisbon bakery counter
+studio.sources.pixabay INFO pixabay: pixabay_187401.mp4 — pasteis de belem lisbon bakery counter
+[02:05:42] pixabay EXIT=124 for: pasteis de belem lisbon bakery counter
+[02:05:42 +1863s] pexels : francesinha porto sandwich melted cheese
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=francesinha+porto+sandwich+melted+cheese&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_4584746.mp4 (1080p) — francesinha porto sandwich melted cheese
+studio.sources.pexels INFO pexels: pexels_5780030.mp4 (1080p) — francesinha porto sandwich melted cheese
+studio.sources.pexels INFO pexels: pexels_8880957.mp4 (1080p) — francesinha porto sandwich melted cheese
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/7613420/7613420-hd_1920_1080_24fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_7613420.mp4 (1080p) — francesinha porto sandwich melted cheese
+studio.sources.pexels INFO pexels: pexels_8113358.mp4 (1080p) — francesinha porto sandwich melted cheese
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/7315106/7315106-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_7315106.mp4 (1080p) — francesinha porto sandwich melted cheese
+[02:15:42] pexels EXIT=124 for: francesinha porto sandwich melted cheese
+[02:15:42 +2463s] pixabay: francesinha porto sandwich melted cheese
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=francesinha+porto+sandwich+melted+cheese&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_344380.mp4 — francesinha porto sandwich melted cheese
+studio.sources.pixabay INFO pixabay: pixabay_150343.mp4 — francesinha porto sandwich melted cheese
+studio.sources.pixabay INFO pixabay: pixabay_45080.mp4 — francesinha porto sandwich melted cheese
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2015/08/09/176-135788455_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_176.mp4 — francesinha porto sandwich melted cheese
+studio.sources.pixabay INFO pixabay: pixabay_227128.mp4 — francesinha porto sandwich melted cheese
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2023/02/12/150333-798230384_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_150333.mp4 — francesinha porto sandwich melted cheese
+studio.sources.pixabay INFO pixabay: pixabay_71743.mp4 — francesinha porto sandwich melted cheese
+[02:25:42] pixabay EXIT=124 for: francesinha porto sandwich melted cheese
+[02:25:42 +3063s] pexels : bacalhau a bras salted cod scrambled egg
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=bacalhau+a+bras+salted+cod+scrambled+egg&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/4823187/4823187-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_4823187.mp4 (1080p) — bacalhau a bras salted cod scrambled egg
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/7696836/7696836-hd_2048_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_7696836.mp4 (1080p) — bacalhau a bras salted cod scrambled egg
+[02:35:42] pexels EXIT=124 for: bacalhau a bras salted cod scrambled egg
+[02:35:42 +3663s] pixabay: bacalhau a bras salted cod scrambled egg
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=bacalhau+a+bras+salted+cod+scrambled+egg&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2016/09/06/4972-181688489_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_4972.mp4 — bacalhau a bras salted cod scrambled egg
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2025/07/12/290890_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_290890.mp4 — bacalhau a bras salted cod scrambled egg
+[02:45:42] pixabay EXIT=124 for: bacalhau a bras salted cod scrambled egg
+[02:45:42 +4263s] pexels : bacalhau com natas cod cream bake
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=bacalhau+com+natas+cod+cream+bake&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/3191862/3191862-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_3191862.mp4 (1080p) — bacalhau com natas cod cream bake
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/20315764/20315764-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_20315764.mp4 (1080p) — bacalhau com natas cod cream bake
+[02:55:42] pexels EXIT=124 for: bacalhau com natas cod cream bake
+[02:55:42 +4863s] pixabay: bacalhau com natas cod cream bake
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=bacalhau+com+natas+cod+cream+bake&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2017/02/26/7951-205810607_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_7951.mp4 — bacalhau com natas cod cream bake
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2017/01/28/7558-201447783_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_7558.mp4 — bacalhau com natas cod cream bake
+[03:05:43] pixabay EXIT=124 for: bacalhau com natas cod cream bake
+[03:05:43 +5464s] pexels : alheira sausage mirandela grilled plate
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=alheira+sausage+mirandela+grilled+plate&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/6951464/6951464-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_6951464.mp4 (1080p) — alheira sausage mirandela grilled plate
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/6948277/6948277-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_6948277.mp4 (1080p) — alheira sausage mirandela grilled plate
+[03:15:43] pexels EXIT=124 for: alheira sausage mirandela grilled plate
+[03:15:43 +6064s] pixabay: alheira sausage mirandela grilled plate
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=alheira+sausage+mirandela+grilled+plate&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2021/07/26/82789-580050832_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_82789.mp4 — alheira sausage mirandela grilled plate
+studio.sources.pixabay INFO pixabay: pixabay_82725.mp4 — alheira sausage mirandela grilled plate
+studio.sources.pixabay INFO pixabay: pixabay_82787.mp4 — alheira sausage mirandela grilled plate
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2021/07/26/82790-580050831_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_82790.mp4 — alheira sausage mirandela grilled plate
+[03:25:43] pixabay EXIT=124 for: alheira sausage mirandela grilled plate
+[03:25:43 +6664s] pexels : bifana pork sandwich lisbon street vendor
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=bifana+pork+sandwich+lisbon+street+vendor&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_5920142.mp4 (1080p) — bifana pork sandwich lisbon street vendor
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/36024332/15276891_1920_1080_24fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_36024332.mp4 (1080p) — bifana pork sandwich lisbon street vendor
+studio.sources.pexels INFO pexels: pexels_5920139.mp4 (1080p) — bifana pork sandwich lisbon street vendor
+studio.sources.pexels INFO pexels: pexels_5920132.mp4 (1080p) — bifana pork sandwich lisbon street vendor
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/5920250/5920250-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_5920250.mp4 (1080p) — bifana pork sandwich lisbon street vendor
+[03:35:43] pexels EXIT=124 for: bifana pork sandwich lisbon street vendor
+[03:35:43 +7264s] pixabay: bifana pork sandwich lisbon street vendor
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=bifana+pork+sandwich+lisbon+street+vendor&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_260895.mp4 — bifana pork sandwich lisbon street vendor
+studio.sources.pixabay INFO pixabay: pixabay_82787.mp4 — bifana pork sandwich lisbon street vendor
+studio.sources.pixabay INFO pixabay: pixabay_82786.mp4 — bifana pork sandwich lisbon street vendor
+studio.sources.pixabay INFO pixabay: pixabay_11615.mp4 — bifana pork sandwich lisbon street vendor
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2020/06/15/42089-431423046_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_42089.mp4 — bifana pork sandwich lisbon street vendor
+studio.sources.pixabay INFO pixabay: pixabay_11616.mp4 — bifana pork sandwich lisbon street vendor
+studio.sources.pixabay INFO pixabay: pixabay_11620.mp4 — bifana pork sandwich lisbon street vendor
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2020/06/23/42932-434316667_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_42932.mp4 — bifana pork sandwich lisbon street vendor
+pyscenedetect INFO Detecting scenes...
+[03:45:43] pixabay EXIT=124 for: bifana pork sandwich lisbon street vendor
+[03:45:43 +7864s] pexels : grilled sardines algarve summer barbecue
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=grilled+sardines+algarve+summer+barbecue&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_4155508.mp4 (1080p) — grilled sardines algarve summer barbecue
+studio.sources.pexels INFO pexels: pexels_6543351.mp4 (988p) — grilled sardines algarve summer barbecue
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/18153408/18153408-hd_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_18153408.mp4 (1080p) — grilled sardines algarve summer barbecue
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/9756755/9756755-hd_1920_1080_24fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_9756755.mp4 (1080p) — grilled sardines algarve summer barbecue
+[03:55:43] pexels EXIT=124 for: grilled sardines algarve summer barbecue
+[03:55:43 +8464s] pixabay: grilled sardines algarve summer barbecue
+Traceback (most recent call last):
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 250, in handle_request
+    resp = self._pool.handle_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 256, in handle_request
+    raise exc from None
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 236, in handle_request
+    response = connection.handle_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 103, in handle_request
+    return self._connection.handle_request(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpcore/_sync/http11.py", line 136, in handle_request
+    raise exc
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpcore/_sync/http11.py", line 106, in handle_request
+    ) = self._receive_response_headers(**kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpcore/_sync/http11.py", line 177, in _receive_response_headers
+    event = self._receive_event(timeout=timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpcore/_sync/http11.py", line 217, in _receive_event
+    data = self._network_stream.read(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpcore/_backends/sync.py", line 126, in read
+    with map_exceptions(exc_map):
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hubia/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ReadTimeout: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/bin/studio", line 10, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/src/studio/cli.py", line 384, in main
+    return args.func(args)
+           ^^^^^^^^^^^^^^^
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/src/studio/cli.py", line 150, in cmd_ingest
+    for path, lic in sweep(args.query, args.count, settings, downloads):
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/src/studio/library/sources/pixabay.py", line 22, in sweep
+    resp = httpx.get(
+           ^^^^^^^^^^
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpx/_api.py", line 195, in get
+    return request(
+           ^^^^^^^^
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpx/_api.py", line 109, in request
+    return client.request(
+           ^^^^^^^^^^^^^^^
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpx/_client.py", line 825, in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpx/_client.py", line 914, in send
+    response = self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpx/_client.py", line 942, in _send_handling_auth
+    response = self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpx/_client.py", line 979, in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpx/_client.py", line 1014, in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 249, in handle_request
+    with map_httpcore_exceptions():
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hubia/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/studio/.venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ReadTimeout: The read operation timed out
+[03:57:14] pixabay EXIT=1 for: grilled sardines algarve summer barbecue
+[03:57:14 +8555s] pexels : sardinhas espeto beach plate Portugal
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=sardinhas+espeto+beach+plate+Portugal&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/20630971/20630971-hd_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_20630971.mp4 (1080p) — sardinhas espeto beach plate Portugal
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/29651378/12757086_1920_1080_60fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_29651378.mp4 (1080p) — sardinhas espeto beach plate Portugal
+[04:07:14] pexels EXIT=124 for: sardinhas espeto beach plate Portugal
+[04:07:14 +9155s] pixabay: sardinhas espeto beach plate Portugal
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=sardinhas+espeto+beach+plate+Portugal&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_160767.mp4 — sardinhas espeto beach plate Portugal
+studio.sources.pixabay INFO pixabay: pixabay_260895.mp4 — sardinhas espeto beach plate Portugal
+studio.sources.pixabay INFO pixabay: pixabay_13772.mp4 — sardinhas espeto beach plate Portugal
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2024/03/05/203124-919802528_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_203124.mp4 — sardinhas espeto beach plate Portugal
+studio.sources.pixabay INFO pixabay: pixabay_14088.mp4 — sardinhas espeto beach plate Portugal
+studio.sources.pixabay INFO pixabay: pixabay_344380.mp4 — sardinhas espeto beach plate Portugal
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2020/05/12/38876-419956442_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_38876.mp4 — sardinhas espeto beach plate Portugal
+studio.sources.pixabay INFO pixabay: pixabay_45080.mp4 — sardinhas espeto beach plate Portugal
+pyscenedetect INFO Detecting scenes...
+[04:17:14] pixabay EXIT=124 for: sardinhas espeto beach plate Portugal
+[04:17:14 +9755s] pexels : arroz de marisco seafood rice pan
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=arroz+de+marisco+seafood+rice+pan&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_27675568.mp4 (1080p) — arroz de marisco seafood rice pan
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/27824806/12235207_1920_1080_60fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_27824806.mp4 (1080p) — arroz de marisco seafood rice pan
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/34894500/14782850_1920_1080_24fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_34894500.mp4 (1080p) — arroz de marisco seafood rice pan
+[04:27:14] pexels EXIT=124 for: arroz de marisco seafood rice pan
+[04:27:14 +10355s] pixabay: arroz de marisco seafood rice pan
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=arroz+de+marisco+seafood+rice+pan&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_283431.mp4 — arroz de marisco seafood rice pan
+studio.sources.pixabay INFO pixabay: pixabay_3625.mp4 — arroz de marisco seafood rice pan
+studio.sources.pixabay INFO pixabay: pixabay_240531.mp4 — arroz de marisco seafood rice pan
+studio.sources.pixabay INFO pixabay: pixabay_307864.mp4 — arroz de marisco seafood rice pan
+studio.sources.pixabay INFO pixabay: pixabay_246385.mp4 — arroz de marisco seafood rice pan
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2017/08/30/11713-231759032_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_11713.mp4 — arroz de marisco seafood rice pan
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2026/07/28/367098_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_367098.mp4 — arroz de marisco seafood rice pan
+studio.sources.pixabay INFO pixabay: pixabay_45150.mp4 — arroz de marisco seafood rice pan
+pyscenedetect INFO Detecting scenes...
+[04:37:15] pixabay EXIT=124 for: arroz de marisco seafood rice pan
+[04:37:15 +10956s] pexels : cataplana seafood copper pot algarve
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=cataplana+seafood+copper+pot+algarve&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/5898242/5898242-hd_2048_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_5898242.mp4 (1080p) — cataplana seafood copper pot algarve
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/3408135/3408135-hd_1980_1080_24fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_3408135.mp4 (1080p) — cataplana seafood copper pot algarve
+[04:47:15] pexels EXIT=124 for: cataplana seafood copper pot algarve
+[04:47:15 +11556s] pixabay: cataplana seafood copper pot algarve
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=cataplana+seafood+copper+pot+algarve&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_14088.mp4 — cataplana seafood copper pot algarve
+studio.sources.pixabay INFO pixabay: pixabay_13772.mp4 — cataplana seafood copper pot algarve
+studio.sources.pixabay INFO pixabay: pixabay_267.mp4 — cataplana seafood copper pot algarve
+studio.sources.pixabay INFO pixabay: pixabay_11618.mp4 — cataplana seafood copper pot algarve
+studio.sources.pixabay INFO pixabay: pixabay_46989.mp4 — cataplana seafood copper pot algarve
+studio.sources.pixabay INFO pixabay: pixabay_92717.mp4 — cataplana seafood copper pot algarve
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2024/08/18/227137_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_227137.mp4 — cataplana seafood copper pot algarve
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2024/08/18/227134_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_227134.mp4 — cataplana seafood copper pot algarve
+pyscenedetect INFO Detecting scenes...
+[04:57:15] pixabay EXIT=124 for: cataplana seafood copper pot algarve
+[04:57:15 +12156s] pexels : polvo a lagareiro octopus portuguese oven
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=polvo+a+lagareiro+octopus+portuguese+oven&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/10802656/10802656-hd_1920_1080_24fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_10802656.mp4 (1080p) — polvo a lagareiro octopus portuguese oven
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/6176587/6176587-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_6176587.mp4 (1080p) — polvo a lagareiro octopus portuguese oven
+[05:07:15] pexels EXIT=124 for: polvo a lagareiro octopus portuguese oven
+[05:07:15 +12756s] pixabay: polvo a lagareiro octopus portuguese oven
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=polvo+a+lagareiro+octopus+portuguese+oven&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_2336.mp4 — polvo a lagareiro octopus portuguese oven
+studio.sources.pixabay INFO pixabay: pixabay_344380.mp4 — polvo a lagareiro octopus portuguese oven
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2018/07/08/17176-278954641_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_17176.mp4 — polvo a lagareiro octopus portuguese oven
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2018/02/05/14133-254487725_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_14133.mp4 — polvo a lagareiro octopus portuguese oven
+studio.sources.pixabay INFO pixabay: pixabay_205890.mp4 — polvo a lagareiro octopus portuguese oven
+studio.sources.pixabay INFO pixabay: pixabay_140322.mp4 — polvo a lagareiro octopus portuguese oven
+[05:17:15] pixabay EXIT=124 for: polvo a lagareiro octopus portuguese oven
+[05:17:15 +13356s] pexels : pastel de bacalhau cod cake fried
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=pastel+de+bacalhau+cod+cake+fried&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/856144/856144-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_856144.mp4 (1080p) — pastel de bacalhau cod cake fried
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/5758069/5758069-hd_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_5758069.mp4 (1080p) — pastel de bacalhau cod cake fried
+[05:27:15] pexels EXIT=124 for: pastel de bacalhau cod cake fried
+[05:27:15 +13956s] pixabay: pastel de bacalhau cod cake fried
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=pastel+de+bacalhau+cod+cake+fried&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_4948.mp4 — pastel de bacalhau cod cake fried
+studio.sources.pixabay INFO pixabay: pixabay_367098.mp4 — pastel de bacalhau cod cake fried
+studio.sources.pixabay INFO pixabay: pixabay_214512.mp4 — pastel de bacalhau cod cake fried
+studio.sources.pixabay INFO pixabay: pixabay_45150.mp4 — pastel de bacalhau cod cake fried
+studio.sources.pixabay INFO pixabay: pixabay_11610.mp4 — pastel de bacalhau cod cake fried
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2021/10/21/92726-637669259_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_92726.mp4 — pastel de bacalhau cod cake fried
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2024/08/18/227131_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_227131.mp4 — pastel de bacalhau cod cake fried
+[05:37:15] pixabay EXIT=124 for: pastel de bacalhau cod cake fried
+[05:37:15 +14556s] pexels : caldo verde soup kale potato traditional
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=caldo+verde+soup+kale+potato+traditional&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/20032821/20032821-hd_2048_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_20032821.mp4 (1080p) — caldo verde soup kale potato traditional
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/9789860/9789860-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_9789860.mp4 (1080p) — caldo verde soup kale potato traditional
+[05:47:15] pexels EXIT=124 for: caldo verde soup kale potato traditional
+[05:47:15 +15156s] pixabay: caldo verde soup kale potato traditional
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=caldo+verde+soup+kale+potato+traditional&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_334716.mp4 — caldo verde soup kale potato traditional
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2019/09/27/27282-363287610_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_27282.mp4 — caldo verde soup kale potato traditional
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/07/02/122852-726391959_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_122852.mp4 — caldo verde soup kale potato traditional
+[05:57:15] pixabay EXIT=124 for: caldo verde soup kale potato traditional
+[05:57:15 +15756s] pexels : cozido a portuguesa assorted boiled meat
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=cozido+a+portuguesa+assorted+boiled+meat&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/4362882/4362882-hd_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_4362882.mp4 (1080p) — cozido a portuguesa assorted boiled meat
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/5036096/5036096-hd_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_5036096.mp4 (1080p) — cozido a portuguesa assorted boiled meat
+[06:07:15] pexels EXIT=124 for: cozido a portuguesa assorted boiled meat
+[06:07:15 +16356s] pixabay: cozido a portuguesa assorted boiled meat
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=cozido+a+portuguesa+assorted+boiled+meat&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2018/02/21/14419-257068804_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_14419.mp4 — cozido a portuguesa assorted boiled meat
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2018/02/05/14127-254487714_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_14127.mp4 — cozido a portuguesa assorted boiled meat
+[06:17:16] pixabay EXIT=124 for: cozido a portuguesa assorted boiled meat
+[06:17:16 +16957s] pexels : acorda alentejana bread garlic soup
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=acorda+alentejana+bread+garlic+soup&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/5644949/5644949-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_5644949.mp4 (1080p) — acorda alentejana bread garlic soup
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/10431986/10431986-hd_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_10431986.mp4 (1080p) — acorda alentejana bread garlic soup
+[06:27:16] pexels EXIT=124 for: acorda alentejana bread garlic soup
+[06:27:16 +17557s] pixabay: acorda alentejana bread garlic soup
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=acorda+alentejana+bread+garlic+soup&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_63066.mp4 — acorda alentejana bread garlic soup
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2020/07/26/45655-443528315_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_45655.mp4 — acorda alentejana bread garlic soup
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/12/13/142754-780943398_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_142754.mp4 — acorda alentejana bread garlic soup
+[06:37:16] pixabay EXIT=124 for: acorda alentejana bread garlic soup
+[06:37:16 +18157s] pexels : alentejo porco preto black pig roast
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=alentejo+porco+preto+black+pig+roast&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/29604283/12740750_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_29604283.mp4 (1080p) — alentejo porco preto black pig roast
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/29604316/12740754_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_29604316.mp4 (1080p) — alentejo porco preto black pig roast
+[06:47:16] pexels EXIT=124 for: alentejo porco preto black pig roast
+[06:47:16 +18757s] pixabay: alentejo porco preto black pig roast
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=alentejo+porco+preto+black+pig+roast&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_11620.mp4 — alentejo porco preto black pig roast
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2021/04/26/72323-541904817_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_72323.mp4 — alentejo porco preto black pig roast
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2026/06/23/360310_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_360310.mp4 — alentejo porco preto black pig roast
+[06:57:16] pixabay EXIT=124 for: alentejo porco preto black pig roast
+[06:57:16 +19357s] pexels : vitela roasted veal minho prato
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=vitela+roasted+veal+minho+prato&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/33098126/14108047_1920_1080_60fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_33098126.mp4 (1080p) — vitela roasted veal minho prato
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/36723665/15564283_1920_1080_30fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_36723665.mp4 (1080p) — vitela roasted veal minho prato
+[07:07:16] pexels EXIT=124 for: vitela roasted veal minho prato
+[07:07:16 +19957s] pixabay: vitela roasted veal minho prato
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=vitela+roasted+veal+minho+prato&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_11620.mp4 — vitela roasted veal minho prato
+studio.sources.pixabay INFO pixabay: pixabay_45358.mp4 — vitela roasted veal minho prato
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/08/17/128186-740906939_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_128186.mp4 — vitela roasted veal minho prato
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2023/03/06/153456-805688480_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_153456.mp4 — vitela roasted veal minho prato
+[07:17:16] pixabay EXIT=124 for: vitela roasted veal minho prato
+[07:17:16 +20557s] pexels : douro wine harvest grapes hands picking
+httpx INFO HTTP Request: GET https://api.pexels.com/videos/search?query=douro+wine+harvest+grapes+hands+picking&per_page=8&orientation=landscape "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/9947672/9947672-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_9947672.mp4 (1080p) — douro wine harvest grapes hands picking
+httpx INFO HTTP Request: GET https://videos.pexels.com/video-files/9947675/9947675-hd_1920_1080_25fps.mp4 "HTTP/1.1 200 OK"
+studio.sources.pexels INFO pexels: pexels_9947675.mp4 (1080p) — douro wine harvest grapes hands picking
+[07:27:16] pexels EXIT=124 for: douro wine harvest grapes hands picking
+[07:27:16 +21157s] pixabay: douro wine harvest grapes hands picking
+httpx INFO HTTP Request: GET https://pixabay.com/api/videos/?key=55636416-1c3896a4b20402e4cb4abcb44&q=douro+wine+harvest+grapes+hands+picking&per_page=8&safesearch=true "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2022/09/26/132583-754103130_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_132583.mp4 — douro wine harvest grapes hands picking
+httpx INFO HTTP Request: GET https://cdn.pixabay.com/video/2015/08/08/131-135736829_large.mp4 "HTTP/1.1 200 OK"
+studio.sources.pixabay INFO pixabay: pixabay_131.mp4 — douro wine harvest grapes hands picking
+[07:37:16] pixabay EXIT=124 for: douro wine harvest grapes hands picking
+[quinta 06 ago 2026 07:37:16 WEST] DEADLINE exceeded (21757s); graceful exit

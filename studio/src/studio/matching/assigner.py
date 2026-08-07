@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 import math
 
@@ -22,6 +23,10 @@ from studio.matching.briefs import VisualBrief
 from studio.script.scenes import Scene
 
 log = logging.getLogger("studio.assigner")
+
+# SPRINT B: limite para pre-flight top-up batch (não usar mais de 4 sweeps
+# em paralelo — combina com o _DOWNLOAD_MAX_WORKERS dentro de sweep).
+_PREFLIGHT_MAX_WORKERS = 4
 
 # bandas de duração de shot por beat narrativo (segundos)
 BEAT_BANDS: dict[str, tuple[float, float]] = {
@@ -149,11 +154,89 @@ def _jit_topup(brief: VisualBrief, db: LibraryDB, embedder: Embedder,
     return added
 
 
-def _score(cand: dict, used_files: dict[str, int]) -> float:
-    return (cand["similarity"]
-            + 0.02 * cand["quality"]
-            - 0.15 * cand.get("usage_count", 0)          # cooldown entre vídeos
-            - 0.10 * used_files.get(cand["media_sha"], 0))  # variedade de fonte
+def _preflight_topups(missing_queries: set[str], db: LibraryDB,
+                      embedder: Embedder, settings: Settings) -> int:
+    """SPRINT B Fase 2: top-ups em batch com pre-flight dedupe.
+
+    Em vez de cada cena fazer o seu próprio `_jit_topup` sequencialmente
+    (que se traduz em ~15-20 sweeps × ~30-100s cada = horas), agrupamos
+    AS QUERIES ÚNICAS em falta, lançamos sweeps em paralelo (apenas
+    I/O de rede, GIL-livre), e fazemos a INGESTÃO SEQUENCIALMENTE a
+    seguir (GPU SigLIP + LanceDB não são thread-safe).
+
+    Devolve o nº total de topups despoletados (para contabilidade no
+    AssignmentResult.topups_triggered).
+    """
+    if settings.mock_mode or not settings.pexels_api_key or not missing_queries:
+        return 0
+
+    from studio.library.ingest import ingest_file
+    from studio.library.sources.pexels import sweep
+
+    dest = settings.library_root / "downloads"
+    workers = min(_PREFLIGHT_MAX_WORKERS, len(missing_queries))
+    log.info("pre-flight: top-up em batch para %d entidades: %s (workers=%d)",
+             len(missing_queries), sorted(missing_queries), workers)
+
+    # Downloads paralelos por query (sweep() já é paralelo internamente — Fase 1)
+    all_paths_lics: list[tuple[Path, dict, str]] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = {ex.submit(sweep, q, 3, settings, dest): q for q in missing_queries}
+        for fut in concurrent.futures.as_completed(futs):
+            q = futs[fut]
+            try:
+                results = fut.result()  # list[(Path, lic)] NA ORDEM
+            except Exception as exc:
+                log.warning("pre-flight sweep '%s' falhou: %s", q, exc)
+                continue
+            for p, lic in results:
+                all_paths_lics.append((p, lic, q))
+            log.info("pre-flight: '%s' devolveu %d vídeos", q, len(results))
+
+    # Ingestão SEQUENCIAL — protege SigLIP CUDA (4 GB VRAM) e LanceDB.
+    # O dedupe SHA em ingest_file torna isto idempotente (re-entradas viram
+    # skipped_duplicate sem inserir nada).
+    log.info("pre-flight: a ingerir %d ficheiros sequencialmente...", len(all_paths_lics))
+    for path, lic, q in all_paths_lics:
+        try:
+            ingest_file(path, lic, db, settings, embedder)
+        except Exception as exc:
+            log.warning("pre-flight ingest de '%s' (%s) falhou: %s",
+                        path.name, q, exc)
+    return len(missing_queries)  # contagem = queries tentadas (não ficheiros)
+
+
+def _score(cand: dict, used_files: dict[str, int],
+          entity_terms: list[str] | None = None) -> float:
+    score = (cand["similarity"]
+             + 0.02 * cand["quality"]
+             - 0.15 * cand.get("usage_count", 0)          # cooldown entre vídeos
+             - 0.10 * used_files.get(cand["media_sha"], 0))  # variedade de fonte
+    # Entity-match bonus A1+A2: shot cuja metadata nomeia a entity pedida
+    # pela cena fica claramente acima de genéricos compatíveis com o SigLIP
+    # (ex: Livraria Lelo interior ranqueia acima de "Portuguese bookstore
+    # interior genérico"). Sem match → penalty explícita para o assigner não
+    # escolher um genérico silenciosamente.
+    # Entity-match bonus A1+A2 (mutuamente exclusivos pós code-reviewer):
+    # A entity em landmarks_csv vale +0.20 (mais raro/preciso — Land Rover);
+    # só em places_csv vale +0.15; sem match → -0.10 explícita.
+    # Antes era cumulativo (+0.30) — demasiado para shots com dupla etiqueta
+    # ("Casa da Música" aparece em ambos os campos no seed PT).
+    if entity_terms and any(e.strip() for e in entity_terms):
+        places = (cand.get("places_csv", "") or "").lower()
+        landmarks = (cand.get("landmarks_csv", "") or "").lower()
+        in_place = any(e.lower() in places for e in entity_terms)
+        in_land = any(e.lower() in landmarks for e in entity_terms)
+        if in_land:
+            score += 0.20
+        elif in_place:
+            score += 0.15
+        else:
+            # Penalty explícita A1: cena com entity estrita (Livraria Lelo,
+            # Francesinha) não pode cair num genérico compatível com SigLIP
+            # — antes ficava silenciosamente em 0.06 vs 0.0.
+            score -= 0.10
+    return score
 
 
 def assign_shots(scenes: list[Scene], briefs: list[VisualBrief], db: LibraryDB,
@@ -174,13 +257,31 @@ def assign_shots(scenes: list[Scene], briefs: list[VisualBrief], db: LibraryDB,
 
     relaxations: dict[str, str] = {}
 
+    # === SPRINT B Fase 2 — PRE-FLIGHT TOP-UP BATCH ========================
+    # Antes de iterar cenas, recolhe TODAS as `required_entity` em falta e
+    # despoleta UMA ronda de sweeps únicos em paralelo (Fase 1 já paraleliza
+    # os downloads dentro de cada sweep). Isso transforma o padrão "6 cenas
+    # pedem 'Livraria Lello' → 6× search + 6× download" em "1× search +
+    # download em paralelo". Poupa-se ~6× em vídeos com muitas entidades
+    # repetidas e mantém determinismo (vocab refresh 1× no fim).
+    missing_q: set[str] = set()
+    for scene in scenes:
+        b = brief_by_scene.get(scene.scene_id)
+        if b and b.required_entity and not resolve_entity(b.required_entity, vocab):
+            missing_q.add(b.required_entity)
+    if missing_q:
+        topups += _preflight_topups(missing_q, db, embedder, settings)
+        vocab = entity_vocab(db)  # refresh 1× — todas as cenas partem deste vocab
+    # =========================================================================
+
     for scene in scenes:
         brief = brief_by_scene[scene.scene_id]
         band_min, band_max = BEAT_BANDS.get(scene.beat, (3.0, 5.0))
         # geografia da cena: exclusão de região (vídeo todo) + exclusão de
-        # cidade (só esta cena, quando ela nomeia Lisboa OU Porto especificamente)
+        # cidade (também do TÓPICO do vídeo — cenas sem nomear cidade não
+        # fogem do âncora principal, ex: tema "Porto" não aceita shots Lisboa)
         scene_exclude = exclude_places + _city_exclude_terms(
-            scene.text, brief.visual_subject_en)
+            scene.text, brief.visual_subject_en, topic)
 
         # entidade nomeada pela narração: TEM de aparecer nos metadados do
         # shot. Se a biblioteca não a tem, top-up dirigido (Pexels pela
@@ -207,6 +308,9 @@ def assign_shots(scenes: list[Scene], briefs: list[VisualBrief], db: LibraryDB,
             ("drop_people", primary_have, 4, False, entity_terms),
             ("quality_3", primary_have, 3, False, entity_terms),
             ("entity_quality_2", primary_have, 2, False, entity_terms),
+            # ENTIDADE > CATEGORIA: Livraria Lelo tem de entrar antes de
+            # desistirmos da entidade (causa do mismatch de ontem)
+            ("entity_drop_must_have", [], 3, False, entity_terms),
             ("drop_must_have", [], 3, False, []),
             ("reuse", primary_have or [], 3, True, []),
         ] if entity_terms else [
@@ -276,9 +380,15 @@ def assign_shots(scenes: list[Scene], briefs: list[VisualBrief], db: LibraryDB,
         active_have, active_q = must_have, min_q  # combinação vencedora da escada
 
         # preencher a cena com segmentos dentro da banda do beat
+        # n_segmentos: para hook/transition forçamos band_min (anti-"riscado"
+        # do intro); outros beats mantêm band_max (não over-segmente cenas
+        # longas como payoff 20s que não provocam freeze).
         remaining = scene.t_out - scene.t_in
         cursor = scene.t_in
-        n_target = max(1, math.ceil(remaining / band_max))
+        if scene.beat in ("hook", "transition"):
+            n_target = max(1, math.ceil(remaining / band_min))
+        else:
+            n_target = max(1, math.ceil(remaining / band_max))
         seg = 0
         while remaining > MIN_SEGMENT_S:
             if not pool:
@@ -295,7 +405,7 @@ def assign_shots(scenes: list[Scene], briefs: list[VisualBrief], db: LibraryDB,
                 if not pool:
                     unfilled.append(scene.scene_id)
                     break
-            pool.sort(key=lambda c: _score(c, used_files), reverse=True)
+            pool.sort(key=lambda c: _score(c, used_files, active_entities), reverse=True)
             cand = pool.pop(0)
             shot_len = cand["t_out"] - cand["t_in"]
             ideal = remaining / max(n_target - seg, 1)

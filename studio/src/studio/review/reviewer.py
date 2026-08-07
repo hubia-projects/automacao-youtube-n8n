@@ -19,7 +19,11 @@ import httpx
 from pydantic import ValidationError
 
 from studio.config import Settings
-from studio.llm.gemini import log_call
+
+# _retry_delay vem do gemini: reusa a função de backoff com jitter (anti
+# thundering-herd). Sem import circular entre reviewer e gemini (gemini não
+# importa reviewer).
+from studio.llm.gemini import _retry_delay, log_call
 from studio.review.rubric import Fix, GlobalReview, ReviewReport, SceneReview
 
 log = logging.getLogger("studio.reviewer")
@@ -27,7 +31,18 @@ log = logging.getLogger("studio.reviewer")
 UPLOAD_URL = "https://generativelanguage.googleapis.com/upload/v1beta/files"
 FILES_URL = "https://generativelanguage.googleapis.com/v1beta/{name}"
 GEN_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-_USD_IN, _USD_OUT = 1.25 / 1e6, 10.0 / 1e6  # pro
+# Fase 1A: Flash primary (15× cheaper JSON, vídeo continuity ≈ Pro em tarefas
+# estruturadas). Pricing separado para cálculo correcto de cost_usd quando
+# fallback Pro é activado. Override via STUDIO_REVIEW_USE_FLASH=0 para
+# benchmark A/B em produção.
+import os as _os
+_USD_IN_FLASH, _USD_OUT_FLASH = 0.075 / 1e6, 0.30 / 1e6  # 1.5 Flash
+_USD_IN_PRO,   _USD_OUT_PRO   = 1.25  / 1e6, 10.0 / 1e6  # 1.5 Pro
+_USE_FLASH_REVIEW = _os.environ.get("STUDIO_REVIEW_USE_FLASH", "1") == "1"
+
+def _review_pricing(model: str) -> tuple[float, float]:
+    return (_USD_IN_FLASH, _USD_OUT_FLASH) if "flash" in model.lower() else \
+           (_USD_IN_PRO,   _USD_OUT_PRO)
 
 # Gemini Pro em JSON mode às vezes devolve respostas truncadas (max_output_tokens
 # acima de 11k chars para o nosso prompt). Até `MAX_REVIEW_PARSE_RETRIES` retries
@@ -38,8 +53,11 @@ MAX_REVIEW_PARSE_RETRIES = 3
 # upload multipart + generateContent com vídeo demoram minutos — falhas de
 # rede transitórias (DNS, timeout) não devem obrigar a um `studio resume`
 # manual; retry curto absorve isso sem repetir chamadas já pagas
-_TRANSIENT = (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout,
+_TRANSIENT = (httpx.ConnectError, httpx.TimeoutException,
              httpx.RemoteProtocolError)
+# Códigos HTTP que justificam retry automático. 4xx != 429 são bugs do nosso
+# payload (vão propagar com log do body para diagnóstico).
+_TRANSIENT_HTTP = frozenset({429, 500, 502, 503, 504})
 
 
 def _parse_review_text(text: str) -> dict:
@@ -84,17 +102,53 @@ def _try_parse_review(text: str) -> ReviewReport:
 
 
 def _post_with_retry(url: str, *, attempts: int = 3, **kwargs) -> httpx.Response:
+    """POST c/ retry em 429/5xx e erros transientes de rede (com jitter).
+
+    NÃO retenta em 4xx != 429 — bug do nosso payload; propaga com log do body
+    para diagnóstico.
+    """
     last_exc: Exception | None = None
-    for i in range(attempts):
+    for attempt in range(1, attempts + 1):
         try:
-            return httpx.post(url, **kwargs)
+            resp = httpx.post(url, **kwargs)
+            try:
+                resp.raise_for_status()
+                return resp
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code not in _TRANSIENT_HTTP:
+                    # 4xx != 429: bug do payload. Loga body para diagnóstico.
+                    log.error(
+                        "reviewer: HTTP %d (não-retryable) em %s — body[:500]=%s",
+                        exc.response.status_code, url,
+                        exc.response.text[:500],
+                    )
+                    raise
+                if attempt == attempts:
+                    raise
+                retry_after_raw = exc.response.headers.get("Retry-After")
+                retry_after = (
+                    float(retry_after_raw)
+                    if retry_after_raw and retry_after_raw.isdigit()
+                    else None
+                )
+                delay = retry_after if retry_after is not None else _retry_delay(attempt)
+                log.warning(
+                    "reviewer: HTTP %d em %s (tentativa %d/%d), a aguardar %.1fs",
+                    exc.response.status_code, url, attempt, attempts, delay,
+                )
+                time.sleep(delay)
+                last_exc = exc
         except _TRANSIENT as exc:
             last_exc = exc
-            log.warning("rede transitória (tentativa %d/%d) em %s: %s",
-                       i + 1, attempts, url, exc)
-            if i < attempts - 1:
-                time.sleep(5)
-    raise last_exc  # type: ignore[misc]
+            if attempt == attempts:
+                raise
+            delay = _retry_delay(attempt)
+            log.warning(
+                "reviewer: %s em %s (tentativa %d/%d), a aguardar %.1fs",
+                type(exc).__name__, url, attempt, attempts, delay,
+            )
+            time.sleep(delay)
+    raise last_exc if last_exc else RuntimeError("retry exausto")
 
 
 def _mock_review(run_dir: Path) -> ReviewReport:
@@ -135,9 +189,12 @@ def _upload_video(path: Path, settings: Settings) -> str:
         "metadata": (None, meta, "application/json"),
         "file": (path.name, path.read_bytes(), "video/mp4"),
     }
+    # Upload multipart na Files API NÃO é idempotente: se o cliente perde a
+    # resposta após o servidor receber o ficheiro completo, o retry envia UM
+    # NOVO upload (=cobranca extra de storage). Limitar a 2 tentativas.
     resp = _post_with_retry(UPLOAD_URL, params={"key": settings.gemini_api_key,
                                                 "uploadType": "multipart"},
-                            files=files, timeout=300)
+                            files=files, timeout=300, attempts=2)
     resp.raise_for_status()
     info = resp.json()["file"]
     name, uri = info["name"], info["uri"]
@@ -169,7 +226,10 @@ def review_rough_cut(proxy_path: Path, run_dir: Path,
         .read_text("utf-8").replace("{scenes}", scenes).replace("{briefs}", briefs)
 
     uri = _upload_video(proxy_path, settings)
-    url = GEN_URL.format(model=settings.model_pro)
+    # Fase 1A: preferir Flash; Pro como fallback só se env var desligada
+    # (STUDIO_REVIEW_USE_FLASH=0) ou se settings.review_use_flash=False.
+    model_used = settings.model_flash if _USE_FLASH_REVIEW else settings.model_pro
+    url = GEN_URL.format(model=model_used)
     payload = {"contents": [{"parts": [
         {"file_data": {"file_uri": uri, "mime_type": "video/mp4"}},
         {"text": prompt},

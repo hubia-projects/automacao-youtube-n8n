@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     # --- Modo de execução ---
     # mock_mode: nenhum serviço externo é contactado; gates auto-aprovam.
     mock_mode: bool = Field(default=False, alias="STUDIO_MOCK")
+    # auto_approve_gates: gate humano prossegue sem Telegram, mas mantém
+    # todos os serviços externos reais (Gemini, review, render). Tunado
+    # para runs conduzidos por agente / cron — override no shell via
+    # `STUDIO_AUTO_APPROVE_GATES=1 uv run studio ...`. NÃO colocar
+    # permanentemente no .env (voltar a humano quando voltar a operar).
+    auto_approve_gates: bool = Field(default=False, alias="STUDIO_AUTO_APPROVE_GATES")
 
     # --- Caminhos ---
     data_root: Path = Field(default=REPO_ROOT / "data", alias="STUDIO_DATA_ROOT")

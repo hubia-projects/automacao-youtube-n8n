@@ -1,0 +1,7 @@
+[rehydrate] library_root=/home/hubia/Secretária/Hubia/Projetos/youtube-video-pipeline/automacao-youtube-n8n/data/library
+[rehydrate] shots antes: 734
+[rehydrate] mp4 encontrados: 1075
+[rehydrate] distribuição por prefixo: {'pexels': 640, 'pixabay': 435}
+[   1/1075] [dup] src=pexels       0.1s  shots:+0  pexels_1003933.mp4 (ETA ~1min)
+[  10/1075] [dup] src=pexels       0.0s  shots:+0  pexels_10329455.mp4 (ETA ~1min)
+09:08:19 INFO pyscenedetect: Detecting scenes...

@@ -43,7 +43,6 @@ def request_gate(
     levanta GatePending. Em chamadas seguintes (resume) faz um poll único
     ao Telegram; sem resposta → GatePending outra vez."""
     options = options or ["approve", "reject"]
-    client = TelegramClient(settings)
 
     existing = state.gates.get(gate)
     if existing and not str(existing).startswith("pending:"):
@@ -51,6 +50,33 @@ def request_gate(
         if existing == "reject":
             raise GateRejected(gate)
         return existing
+
+    # Bypass operacional: agente/cron a conduzir o pipeline esmaga gate
+    # pending sem contactar Telegram. Mantém serviços externos reais
+    # (Gemini, FFmpeg, Lancedb, review) — ortogonal a mock_mode (que
+    # mockaria *tudo*; aqui só os gates são auto-aprovados). Quando Ambos
+    # auto_approve_gates=True E mock_mode=True, o bypass é redundante mas
+    # inócuo. Inserido após o `existing check` para preservar idempotência:
+    # decisões humanas anteriores (reject) NÃO são sobrescritas, mas
+    # `pending:<message_id>` é limpo → destrava loops infinitos do watch.
+    if settings.auto_approve_gates:
+        # Safety net: emitir WARNING se o operador combinar autonomia
+        # com privacidade pública. NÃO bloqueamos (operador pediu
+        # autonomia), mas o aviso aparece em qualquer coletor de logs
+        # e vai ao analytics. Default em .env é "private"; este aviso
+        # só dispara se alguém combinar as duas flags.
+        if gate == "final" and settings.youtube_default_privacy == "public":
+            log.warning(
+                "!!! PUBLIC UPLOAD com auto_approve_gates=True: vídeo vai "
+                "ser publicado como público sem aprovação humana. Para "
+                "voltar a privado, define YOUTUBE_DEFAULT_PRIVACY=private."
+            )
+        log.info("gate %s auto-aprovado via bypass (video_id=%s, topic=%r)",
+                 gate, state.video_id, state.topic)
+        state.gates[gate] = options[0]
+        return options[0] 
+
+    client = TelegramClient(settings)
 
     if client.mock:
         state.gates[gate] = options[0]

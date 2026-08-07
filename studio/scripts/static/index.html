@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <title>Studio Monitor</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                   "Helvetica Neue", Arial, sans-serif;
+      background: #0e1117; color: #e6edf3;
+      font-size: 14px; line-height: 1.5;
+    }
+    .container { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+    h1 {
+      font-size: 16px; font-weight: 600; margin: 0 0 14px;
+      color: #79c0ff; letter-spacing: 0.2px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .live-dot {
+      width: 9px; height: 9px; border-radius: 50%; background: #2ea043;
+      display: inline-block; box-shadow: 0 0 8px rgba(46,160,67,0.7);
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.4 } }
+    .meta {
+      display: flex; flex-wrap: wrap; gap: 18px;
+      margin-bottom: 18px; font-size: 12px; color: #8b949e;
+    }
+    .meta strong { color: #e6edf3; font-weight: 600; }
+    .meta .label { color: #6e7681; }
+    .bigstatus {
+      padding: 16px 18px; border-radius: 8px; margin-bottom: 16px;
+      font-size: 15px; font-weight: 600; line-height: 1.4;
+    }
+    .bigstatus.running  { background: rgba(158,106,3,0.18);  border-left: 4px solid #d29922; color: #fde2a4; }
+    .bigstatus.done     { background: rgba(31,111,61,0.20);  border-left: 4px solid #2ea043; color: #d2f4dc; }
+    .bigstatus.failed   { background: rgba(138,31,46,0.20);  border-left: 4px solid #f85149; color: #ffd0d8; }
+    .bigstatus.waiting  { background: rgba(74,74,74,0.30);   border-left: 4px solid #8b949e; color: #e6edf3; }
+    .bigstatus.idle     { background: rgba(40,44,52,0.50);   border-left: 4px solid #30363d; color: #8b949e; }
+    .stage {
+      background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+      padding: 11px 14px; margin-bottom: 6px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .stage .name { flex: 0 0 140px; font-family: ui-monospace,"SF Mono",Menlo,monospace; font-size: 11px; color: #8b949e; }
+    .badge {
+      font-size: 10px; padding: 3px 8px; border-radius: 10px;
+      font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+      flex: 0 0 auto; min-width: 110px; text-align: center;
+    }
+    .badge-done { background: #1f6f3d; color: #d2f4dc; }
+    .badge-running { background: #9e6a03; color: #fde2a4; animation: pulse 1.5s ease-in-out infinite; }
+    .badge-failed { background: #8a1f2e; color: #ffd0d8; }
+    .badge-waiting_approval { background: #30363d; color: #e6edf3; border: 1px dashed #6e7681; }
+    .badge-pending { background: transparent; color: #4a5058; border: 1px solid #30363d; }
+    .stage .label { flex: 1 1 auto; font-size: 13px; }
+    .stage .meta { font-size: 11px; color: #8b949e; flex: 0 0 auto; font-family: ui-monospace,monospace; }
+    .stage.done { background: #0d1f14; }
+    .stage.failed { background: #211016; }
+    .stage.running { background: #1f1a0a; border-color: #d29922; }
+    .log-section { margin-top: 24px; }
+    .log-section h2 { font-size: 12px; color: #8b949e; margin: 0 0 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; }
+    .log {
+      background: #06090d; border: 1px solid #30363d; border-radius: 6px;
+      padding: 10px 12px; font-family: ui-monospace,"SF Mono",Menlo,monospace;
+      font-size: 11px; line-height: 1.5; max-height: 320px;
+      overflow-y: auto; white-space: pre-wrap;
+    }
+    .log .l { padding: 1px 0; }
+    .log .l.info  { color: #79c0ff; }
+    .log .l.warn  { color: #fde2a4; }
+    .log .l.error { color: #ffd0d8; }
+    .log .l.gate  { color: #d2f4dc; font-weight: 600; }
+    .log .l.stage { color: #e6edf3; }
+    .footer {
+      margin-top: 22px; font-size: 11px; color: #6e7681;
+      text-align: center;
+    }
+    .err {
+      padding: 12px 14px; background: #211016; border: 1px solid #8a1f2e;
+      border-radius: 6px; color: #ffd0d8; font-size: 13px; margin-bottom: 16px;
+    }
+    .log-meta {
+      display: flex; gap: 16px; font-size: 11px; color: #8b949e;
+      margin-bottom: 6px; align-items: center;
+    }
+    .log-meta strong { color: #e6edf3; font-family: ui-monospace, monospace; }
+    .log-meta .fresh { color: #2ea043; }
+    .log-meta .stale { color: #d29922; }
+    .log-meta .stuck { color: #f85149; }
+    .log.flash { box-shadow: inset 0 0 0 2px rgba(46,160,67,0.7); transition: none; }
+    .log-line { display: flex; gap: 10px; }
+    .log-line .ts { flex: 0 0 90px; color: #6e7681; font-size: 10px; padding-top: 1px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>
+      <span class="live-dot" id="live-dot"></span>
+      <span>Studio Monitor</span>
+      <span style="color:#6e7681; font-weight:400; font-size:12px; margin-left:auto;" id="vid-label"></span>
+    </h1>
+
+    <div class="meta">
+      <div><span class="label">Tópico:</span> <strong id="topic">—</strong></div>
+      <div><span class="label">Custo:</span> <strong id="cost">$0.000</strong></div>
+      <div><span class="label">Budget:</span> <strong id="budget">$15.00</strong></div>
+      <div><span class="label">Started:</span> <strong id="started">—</strong></div>
+      <div style="margin-left:auto;"><span class="label">Atualizado</span> <span id="updated">—</span></div>
+    </div>
+
+    <div id="err" class="err" style="display:none;"></div>
+    <div id="bigstatus" class="bigstatus idle">A iniciar…</div>
+    <div id="stages"></div>
+
+    <div class="log-section">
+      <h2>Log live (tail)</h2>
+      <div class="log-meta">
+        <span>Atualizado às <strong id="log-mtime">—</strong></span>
+        <span>(há <strong id="log-age">—</strong>)</span>
+        <span>Tamanho: <strong id="log-size">0 B</strong></span>
+        <span id="log-stale-banner" style="display:none;" class="stale">⚠ sem linhas novas há &gt; 30s</span>
+      </div>
+      <div class="log" id="log"><div class="l">Aguardando linhas…</div></div>
+    </div>
+
+    <div class="footer">
+      Studio Monitor · <span id="footer-info">STUDIO_MONITOR_PORT=8765</span> · auto-refresh 4s
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    // Resolve video_id da query string (?v=…) OU do path OU default mais recente
+    function resolveVideoId() {
+      const q = new URLSearchParams(location.search);
+      if (q.get("v")) return q.get("v");
+      const m = location.pathname.match(/\/run\/([A-Za-z0-9_\-]+)/);
+      if (m) return m[1];
+      return null;  // null → backend escolhe o último
+    }
+
+    let currentVid = resolveVideoId();
+    let lastLogMtime = null;   // epoch; null na primeira fetch
+    let lastLogLineCount = 0;
+    const REFRESH_MS = 3000;
+
+    function escape(s) {
+      return String(s).replace(/[<>&"']/g, c => (
+        { "<":"&lt;", ">":"&gt;", "&":"&amp;", '"':"&quot;", "'":"&#39;" }[c]
+      ));
+    }
+
+    function bigStatus(stages, gates) {
+      const running = stages.find(s => s.status === "running");
+      if (running) return { cls: "running", text: "▶ " + running.label };
+      const failed = stages.find(s => s.status === "failed");
+      if (failed) {
+        const err = failed.error ? String(failed.error).slice(0, 200) : "ver log";
+        return { cls: "failed", text: "✗ Falhou em " + failed.label + " — " + err };
+      }
+      const w = stages.find(s => s.status === "waiting_approval");
+      if (w) return { cls: "waiting", text: "⏸ À espera de aprovação em " + w.label };
+      const allDone = stages.length > 0 && stages.every(s => s.status === "done");
+      if (allDone) {
+        return { cls: "done", text: "✓ Pipeline completo" +
+          (gates.upload === "approve" || (gates || {})["14_upload"]
+            ? " (publicado YouTube privado)" : "") };
+      }
+      return { cls: "idle", text: "A iniciar…" };
+    }
+
+    function statusBadge(s) {
+      const labels = { done: "CONCLUÍDO", running: "A CORRER", failed: "FALHOU",
+                       waiting_approval: "À ESPERA", pending: "PENDENTE" };
+      return '<span class="badge badge-' + s + '">'
+           + (labels[s] || s.toUpperCase()) + '</span>';
+    }
+
+    function render(data) {
+      document.title = bigStatus(data.stages, data.gates).text + " — Studio";
+      document.getElementById("vid-label").textContent = "run " + data.video_id;
+      document.getElementById("topic").textContent = data.topic || "(sem tópico)";
+      document.getElementById("cost").textContent =
+        "$" + (data.cost_total || 0).toFixed(3);
+      document.getElementById("budget").textContent =
+        "$" + (data.budget || 15).toFixed(2);
+      document.getElementById("started").textContent =
+        data.created_at ? new Date(data.created_at).toLocaleString() : "—";
+
+      const bs = bigStatus(data.stages, data.gates || {});
+      const bsEl = document.getElementById("bigstatus");
+      bsEl.className = "bigstatus " + bs.cls;
+      bsEl.textContent = bs.text;
+
+      const html = data.stages.map(s => {
+        const cells = [];
+        cells.push('<div class="name">' + s.name + '</div>');
+        cells.push(statusBadge(s.status));
+        cells.push('<div class="label">' + s.label + '</div>');
+        let meta = "";
+        if (s.attempts)  meta += "tentativas=" + s.attempts;
+        if (s.cost_usd)   meta += (meta ? " · " : "") + "$" + s.cost_usd.toFixed(3);
+        if (s.error)      meta += (meta ? " · " : "") + "erro";
+        if (meta)         cells.push('<div class="meta">' + escape(meta) + '</div>');
+        return '<div class="stage ' + s.status + '">' + cells.join("") + '</div>';
+      }).join("");
+      document.getElementById("stages").innerHTML = html;
+
+      document.getElementById("updated").textContent = new Date().toLocaleTimeString();
+      document.getElementById("err").style.display = "none";
+    }
+
+    function renderLog(lines, fileMtimeEpoch, serverNowEpoch, sizeBytes) {
+      const el = document.getElementById("log");
+      // Atualizar Timestamp / age / size na linha de meta
+      if (fileMtimeEpoch) {
+        const m = new Date(fileMtimeEpoch * 1000);
+        document.getElementById("log-mtime").textContent = m.toLocaleTimeString();
+      }
+      if (serverNowEpoch && fileMtimeEpoch) {
+        const age = Math.max(0, Math.round(serverNowEpoch - fileMtimeEpoch));
+        const ageEl = document.getElementById("log-age");
+        ageEl.textContent = age + "s";
+        ageEl.className = age < 5 ? "fresh" : (age < 30 ? "" : "stale");
+        const banner = document.getElementById("log-stale-banner");
+        banner.style.display = (age > 30) ? "inline" : "none";
+        banner.className = age > 60 ? "stuck" : "stale";
+      }
+      if (sizeBytes !== undefined) {
+        document.getElementById("log-size").textContent = humanBytes(sizeBytes);
+      }
+
+      // Render das linhas — prefixamos timestamp relativo estimado (HH:MM:SS
+      // do servidor quando a linha entrou: file_mtime - (lines_from_last * avg_rate))
+      // Simplificação: mostramos HH:MM:SS = log.mtime - posição_da_linha × 1s.
+      // Para o user: percepção de "linha 1 = mais antiga, última = HH:MM:SS".
+      if (!lines.length) {
+        el.innerHTML = '<div class="l">(sem linhas ainda)</div>';
+        return;
+      }
+      const m = fileMtimeEpoch ? new Date(fileMtimeEpoch * 1000) : new Date();
+      const total = lines.length;
+      const html = lines.map(function (l, i) {
+        var cls = "l";
+        if (l.indexOf("WARN")  !== -1)       cls = "warn";
+        else if (l.indexOf("ERROR") !== -1)  cls = "error";
+        else if (l.indexOf("gate ") !== -1)  cls = "gate";
+        else if (l.indexOf("run ") !== -1)   cls = "stage";
+        else                                  cls = "info";
+        // atribui timestamp em ordem inversa: última linha = mtime, anterior = mtime - (total-i)*1s (aprox)
+        const tsDate = new Date(m.getTime() - (total - 1 - i) * 1000);
+        const ts = tsDate.toLocaleTimeString();
+        return '<div class="log-line ' + cls + '"><span class="ts">' + escape(ts) + '</span><span class="msg">' + escape(l) + '</span></div>';
+      }).join("");
+      el.innerHTML = html;
+      el.scrollTop = el.scrollHeight;
+
+      // Flash verde se o mtime MUDOU entre fetches (prova real-time)
+      if (lastLogMtime !== null && fileMtimeEpoch && fileMtimeEpoch !== lastLogMtime) {
+        el.classList.add("flash");
+        setTimeout(function () { el.classList.remove("flash"); }, 700);
+      }
+      if (fileMtimeEpoch) lastLogMtime = fileMtimeEpoch;
+    }
+
+    function humanBytes(n) {
+      if (n < 1024) return n + " B";
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+      return (n / 1048576).toFixed(2) + " MB";
+    }
+
+    async function fetchStatus() {
+      try {
+        const url = currentVid ? "/api/runs/" + currentVid : "/api/runs/" +
+                     (await (await fetch("/api/runs")).json()).runs[0]?.video_id;
+        if (!url) {
+          document.getElementById("err").style.display = "block";
+          document.getElementById("err").textContent = "Nenhuma run encontrada em data/runs/.";
+          return;
+        }
+        const r = await fetch(url);
+        if (!r.ok) {
+          if (r.status === 404) {
+            document.getElementById("err").style.display = "block";
+            document.getElementById("err").textContent =
+              "Run " + currentVid + " não encontrado em " +
+              new URL(url, location.origin).pathname;
+          }
+          return;
+        }
+        render(await r.json());
+      } catch (e) {
+        console.warn("status", e);
+      }
+    }
+
+    async function fetchLog() {
+      try {
+        const r = await fetch("/api/log?lines=120");
+        const d = await r.json();
+        if (!d.exists) {
+          document.getElementById("log").innerHTML =
+            '<div class="l">(log em ' + escape(d.path) + ' ainda não existe)</div>';
+          return;
+        }
+        renderLog(d.lines || [], d.file_mtime_epoch, d.server_now_epoch, d.size_bytes);
+      } catch (e) {
+        console.warn("log", e);
+      }
+    }
+
+    fetchStatus(); fetchLog();
+    setInterval(function () { fetchStatus(); fetchLog(); }, REFRESH_MS);
+  })();
+  </script>
+</body>
+</html>

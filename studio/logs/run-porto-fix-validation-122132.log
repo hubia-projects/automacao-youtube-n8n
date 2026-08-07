@@ -1,0 +1,12 @@
+studio.runner INFO run  01_topic (tentativa 1)
+httpx INFO HTTP Request: POST https://api.telegram.org/bot8249304886:AAE6feAJz7s2kRt2nPZsBkvSci_XOm1tNYc/sendMessage "HTTP/1.1 200 OK"
+à espera de aprovação: 01_topic: à espera de aprovação humana (gate: topic) — decide no Telegram e corre `studio resume porto-fix-validation-122132`
+studio.runner INFO run  01_topic (tentativa 2)
+httpx INFO HTTP Request: GET https://api.telegram.org/bot8249304886:AAE6feAJz7s2kRt2nPZsBkvSci_XOm1tNYc/getUpdates?allowed_updates=callback_query "HTTP/1.1 200 OK"
+httpx INFO HTTP Request: POST https://api.telegram.org/bot8249304886:AAE6feAJz7s2kRt2nPZsBkvSci_XOm1tNYc/answerCallbackQuery "HTTP/1.1 400 Bad Request"
+studio.telegram WARNING answerCallbackQuery falhou (não fatal): Client error '400 Bad Request' for url 'https://api.telegram.org/bot8249304886:AAE6feAJz7s2kRt2nPZsBkvSci_XOm1tNYc/answerCallbackQuery'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+httpx INFO HTTP Request: GET https://api.telegram.org/bot8249304886:AAE6feAJz7s2kRt2nPZsBkvSci_XOm1tNYc/getUpdates?offset=203755448 "HTTP/1.1 200 OK"
+studio.runner INFO run  02_research (tentativa 1)
+studio.runner INFO skip 01_topic (done)
+studio.runner INFO run  02_research (tentativa 2)

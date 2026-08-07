@@ -277,7 +277,14 @@ class S11Review:
     MAX_ROUNDS = 2
     # 75 = mínimo aceitável definido pelo operador (2026-07-14); o loop de
     # fixes continua a tentar subir enquanto houver rondas e fixes úteis
+    # 75 = mínimo aceitável definido pelo operador (2026-07-14); o loop de
+    # fixes continua a tentar subir enquanto houver rondas e fixes úteis.
+    # MAX_ROUNDS=3 (era 2) — A1+A2 do assigner (boost +0.20 + landmark +0.10
+    # + penalty -0.10) tipicamente já sobem para ~70 em R1; R2/R3 dão margem
+    # extra para os apply_fixes encontrarem shots alternativos sem gastar
+    # budget em nova re-render do proxy final.
     PASS_SCORE = 75
+    MAX_ROUNDS = 3
 
     def run(self, ctx: RunContext) -> StageResult:
         from studio.render.captions import build_ass
