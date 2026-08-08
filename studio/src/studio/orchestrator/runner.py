@@ -1,13 +1,24 @@
-"""Runner do DAG — ver ADR-0001.
+"""Runner do DAG em ondas — ver ADR-0001 + Fase 3 (Sprint Optimização).
 
-Executa stages em ordem, salta os `done` (outputs existem + estado válido),
-persiste run.json após cada stage. Fail-closed: falha tipada pára o run;
-`studio resume` retoma no primeiro stage não-done.
+Stages agrupam-se em "waves": dentro de cada wave correm em paralelo via
+ThreadPoolExecutor; waves correm sequencialmente. Mutações no RunState
+(touch_stage_start/end, save_state, check_budget) são serializadas via
+state_lock injected no RunContext (ctx.state_lock) — sem lock, duas threads
+em paralelo corrompem run.json.
+
+Backward compat: se passar `stages=[s1,s2,...]` é convertido para waves=[[s1],[s2],...]
+equivalente a sequencial (mesmo comportamento do runner anterior).
+
+Fail-closed: falha em qualquer stage aborta o run; outras waves não correm.
+Re-run: `_outputs_ok(outputs)` no disco é a fonte de verdade; `studio resume`
+salta stages com outputs já escritos (mesmo dentro de uma wave).
 """
 
 from __future__ import annotations
 
+import concurrent.futures
 import logging
+import threading
 from pathlib import Path
 
 from studio.llm.budget import BudgetExceeded, check_budget
@@ -44,68 +55,105 @@ def _outputs_ok(outputs: list[str]) -> bool:
 
 
 class PipelineRunner:
-    def __init__(self, stages: list[Stage]):
-        # Ordem = ordem da lista; prefixos numéricos nos nomes documentam-na.
-        self.stages = stages
+    def __init__(self, waves: list[list[Stage]] | list[Stage]):
+        """Aceita waves=[[s1,s2],[s3]] (DAG paralelo) OU stages=[s1,s2,s3]
+        (legacy sequencial — convertido em waves singleton).
+
+        Distinguimos por estrutura: lista já-encapsulada tem waves[0] como
+        list; legacy tem waves[0] como Stage. isinstance check é robusto
+        mesmo quando waves[0] é MagicMock (legit ou test fixture).
+        """
+        if waves and isinstance(waves[0], list):
+            self.waves: list[list[Stage]] = waves
+        else:
+            # legacy flat list → waves singleton (zero overhead)
+            self.waves = [[s] for s in (waves or [])]
+        # state_lock default: cada Runner cria o seu (testes injectam o seu).
+        self.state_lock = threading.Lock()
+
+    def _run_stage(self, stage: Stage, ctx: RunContext, state: RunState) -> None:
+        """Corpo de uma stage (com lock no state mutations)."""
+        rec = state.stage(stage.name)
+
+        if rec.status == "done" and _outputs_ok(rec.outputs):
+            log.info("skip %s (done)", stage.name)
+            return
+
+        # check_budget + touch_* + save_state protegidos pelo lock partilhado
+        with self.state_lock:
+            check_budget(state)
+            touch_stage_start(state, stage.name)
+            save_state(state, ctx.run_dir)
+        log.info("run  %s (tentativa %d)", stage.name, rec.attempts)
+
+        try:
+            result = stage.run(ctx)
+        except BudgetExceeded:
+            with self.state_lock:
+                touch_stage_end(state, stage.name, "failed", error="budget_exceeded")
+                save_state(state, ctx.run_dir)
+            raise
+        except Exception as exc:
+            with self.state_lock:
+                touch_stage_end(state, stage.name, "failed", error=repr(exc))
+                save_state(state, ctx.run_dir)
+            raise StageFailed(stage.name, repr(exc)) from exc
+
+        outputs = [str(p) for p in result.outputs]
+
+        with self.state_lock:
+            if result.status == "waiting_approval":
+                touch_stage_end(state, stage.name, "waiting_approval",
+                                cost_usd=result.cost_usd, outputs=outputs)
+                save_state(state, ctx.run_dir)
+            elif result.status == "failed" or not _outputs_ok(outputs):
+                error = result.notes or "outputs em falta ou inválidos"
+                touch_stage_end(state, stage.name, "failed",
+                                cost_usd=result.cost_usd, error=error)
+                save_state(state, ctx.run_dir)
+            else:
+                touch_stage_end(state, stage.name, "done",
+                                cost_usd=result.cost_usd, outputs=outputs)
+                save_state(state, ctx.run_dir)
+
+        if result.status == "waiting_approval":
+            raise WaitingApproval(stage.name, result.notes or "gate")
+        if result.status == "failed" or not _outputs_ok(outputs):
+            error = result.notes or "outputs em falta ou inválidos"
+            raise StageFailed(stage.name, error)
 
     def run(self, ctx: RunContext, state: RunState) -> RunState:
         # run_dir absoluto: cron pode acordar num CWD arbitrário, e o _outputs_ok
         # exige paths que existam desde CWD — relativos partem sem aviso.
         ctx.run_dir = Path(ctx.run_dir).resolve()
         ctx.state = state  # único objeto de estado; só o runner grava run.json
+        ctx.state_lock = self.state_lock  # waves paralelas partilham este lock
         # params persistidos no run.json vencem defaults do CLI no resume
         ctx.params = {**ctx.params, **state.params}
-        for stage in self.stages:
-            rec = state.stage(stage.name)
 
-            if rec.status == "done" and _outputs_ok(rec.outputs):
-                log.info("skip %s (done)", stage.name)
+        for wave_idx, wave in enumerate(self.waves, 1):
+            if len(wave) == 1:
+                # Sequencial: zero overhead de ThreadPoolExecutor.
+                self._run_stage(wave[0], ctx, state)
                 continue
-
-            check_budget(state)  # breaker: exceder orçamento pára o run
-
-            touch_stage_start(state, stage.name)
-            save_state(state, ctx.run_dir)
-            log.info("run  %s (tentativa %d)", stage.name, rec.attempts)
-
-            try:
-                result = stage.run(ctx)
-            except BudgetExceeded:
-                touch_stage_end(state, stage.name, "failed", error="budget_exceeded")
-                save_state(state, ctx.run_dir)
-                raise
-            except Exception as exc:  # fail-closed: registar e parar
-                touch_stage_end(state, stage.name, "failed", error=repr(exc))
-                save_state(state, ctx.run_dir)
-                raise StageFailed(stage.name, repr(exc)) from exc
-
-            outputs = [str(p) for p in result.outputs]
-
-            if result.status == "waiting_approval":
-                touch_stage_end(state, stage.name, "waiting_approval",
-                                cost_usd=result.cost_usd, outputs=outputs)
-                save_state(state, ctx.run_dir)
-                raise WaitingApproval(stage.name, result.notes or "gate")
-
-            if result.status == "failed" or not _outputs_ok(outputs):
-                error = result.notes or "outputs em falta ou inválidos"
-                touch_stage_end(state, stage.name, "failed",
-                                cost_usd=result.cost_usd, error=error)
-                save_state(state, ctx.run_dir)
-                raise StageFailed(stage.name, error)
-
-            touch_stage_end(state, stage.name, "done",
-                            cost_usd=result.cost_usd, outputs=outputs)
-            save_state(state, ctx.run_dir)
-
+            # Paralelo: N threads, cada uma chama _run_stage (com lock).
+            log.info("wave %d: %d stages em paralelo — %s",
+                     wave_idx, len(wave), [s.name for s in wave])
+            with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=len(wave)) as ex:
+                futures = {ex.submit(self._run_stage, stage, ctx, state): stage
+                           for stage in wave}
+                # as_completed propaga a primeira excepção: fail-fast na wave.
+                for fut in concurrent.futures.as_completed(futures):
+                    fut.result()  # levanta StageFailed / WaitingApproval / BudgetExceeded
         return state
 
 
-def resume(ctx: RunContext, stages: list[Stage]) -> RunState:
+def resume(ctx: RunContext, waves: list[list[Stage]] | list[Stage]) -> RunState:
     # mesmo motivo que em run(): state_path() é a primeira coisa tocada em
     # disco, e precisa de path absoluto para sobreviver ao CWD do cron.
     ctx.run_dir = Path(ctx.run_dir).resolve()
     if not state_path(ctx.run_dir).exists():
         raise FileNotFoundError(f"run.json não existe em {ctx.run_dir} — usa `studio run`")
     state = load_state(ctx.run_dir)
-    return PipelineRunner(stages).run(ctx, state)
+    return PipelineRunner(waves).run(ctx, state)

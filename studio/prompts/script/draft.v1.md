@@ -8,7 +8,7 @@ PT-BR falado, seguindo este outline à risca:
 RESEARCH PACK (única fonte de factos):
 {research}
 
-BIBLIOTECA VISUAL DISPONÍVEL (única fonte de imagens do vídeo):
+BIBLIOTECA VISUAL DISPONÍVEL (contexto — NÃO whitelist; Fase A):
 {visual_inventory}
 
 Regras de escrita:
@@ -21,11 +21,13 @@ Regras de escrita:
   grandes e específicos ("1755").
 - Nunca uses: "vamos mergulhar", "sem mais delongas", "nesse vídeo você vai",
   "não esqueça de se inscrever", "então bora", "fica até o final".
-- REGRA DE COBERTURA VISUAL (dura): só nomeia especificamente monumentos,
-  locais e pratos presentes na BIBLIOTECA VISUAL acima. Tudo o resto descreve
-  de forma genérica e visualmente filmável ("uma livraria centenária", "um
-  elevador de ferro do século XIX") — nomear algo sem imagem disponível faz o
-  vídeo reprovar na revisão.
+- REGRA DE COBERTURA VISUAL (Fase A — actualizada): o conteúdo
+  editorial decide o que é nomeado com base no RESEARCH_PACK, não na
+  biblioteca visual. Se Livraria Lello é relevante, o guião pode nomeá-la.
+  Se Frencesinha é central, o guião pode nomeá-la. O pipeline detecta
+  ausência de footage e procura antes de renderizar. Continua VEDADO:
+  inventar entidades que não estejam no research_pack, ou com factos
+  contraditórios.
 - O hook é a PRIMEIRA frase, exatamente como no outline (podes polir).
 - Termina com o CTA discreto de uma frase.
 

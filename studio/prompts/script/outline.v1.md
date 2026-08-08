@@ -6,15 +6,17 @@ Duração alvo: {duration_minutes} minutos (~{target_words} palavras narradas).
 RESEARCH PACK (usa estes factos, não inventes outros):
 {research}
 
-BIBLIOTECA VISUAL DISPONÍVEL (única fonte de imagens do vídeo):
+BIBLIOTECA VISUAL DISPONÍVEL (contexto, NÃO whitelist — Fase A):
 {visual_inventory}
 
-REGRA DURA DE COBERTURA VISUAL: este vídeo será montado EXCLUSIVAMENTE com as
-imagens da biblioteca acima. Só podes prometer/nomear especificamente
-monumentos, locais e pratos que apareçam nessa lista. O que não estiver lá
-tem de ficar GENÉRICO no outline ("uma livraria centenária", "um miradouro
-sobre o rio", "um prato típico") — nomear algo fora da lista faz a produção
-falhar na revisão.
+NOVA REGRA EDITORIAL (Fase A — não esconder entidades relevantes):
+o conteúdo editorial é independente da biblioteca. Se o research_pack
+indica que uma entidade é importante (Livraria Lello, Francesinha, Torre
+dos Clérigos, etc), o OUTLINE PODE nomeá-la explicitamente mesmo que ainda
+não haja footage confirmada. O pipeline seguinte vai DETECTAR a falta e
+procurar/ingerir footage específica antes de recorrer a qualquer fallback
+genérico. Não inventes entidades que não estejam no RESEARCH_PACK, mas não
+esconda as que estão.
 
 Cria o OUTLINE do vídeo. Devolve APENAS JSON:
 

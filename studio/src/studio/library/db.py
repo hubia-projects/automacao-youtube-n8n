@@ -7,6 +7,8 @@ filtráveis (booleans/strings) + meta_json com a fidelidade completa.
 from __future__ import annotations
 
 import json
+import logging
+import re
 from pathlib import Path
 
 import numpy as np
@@ -14,7 +16,29 @@ import pyarrow as pa
 
 from studio.library.embed import DIM
 
+log = logging.getLogger("studio.library")
+
 SHOTS_TABLE = "shots"
+
+
+def _build_iter_clause(where: str, include_restricted: bool) -> str:
+    """Fase D testar helper: devolve o clause final usado por iter_rows.
+    - Default include_restricted=False adiciona `(where) AND restricted=false`.
+    - Word-boundary regex evita duplicação se caller já passou `restricted=...`.
+    - Triangulâmico testável sem Instanciar LibraryDB ou LanceDB.
+    - FIX 2 (code-reviewer): fail-loud em combinações inválidas (sem
+      `WHERE` mas pedindo tudo) em vez de mascarar com `1 = 0`.
+    """
+    empty = not where.strip()
+    if empty:
+        if include_restricted:
+            raise ValueError(
+                "_build_iter_clause: include_restricted=True + empty where "
+                "— ill-defined (filtrar nada sem critério explícito)")
+        return "restricted = false"
+    if include_restricted or re.search(r"\brestricted\b", where):
+        return where.strip()
+    return f"({where}) AND restricted = false"
 
 _SCHEMA = pa.schema([
     ("shot_id", pa.string()),
@@ -116,6 +140,20 @@ class LibraryDB:
 
     def mark_revoked(self, media_sha: str) -> None:
         self._table.update(where=f"media_sha = '{media_sha}'", values={"revoked": True})
+
+    def iter_rows(self, where_clause: str, *,
+                  limit: int = 20_000, include_restricted: bool = False) -> list[dict]:
+        """API pública para scans por metadata (Fase C code-reviewer #1+#B).
+        Lógica de adição de `AND restricted = false` extraída para
+        `_build_iter_clause` (testável sem I/O real)."""
+        clause = _build_iter_clause(where_clause, include_restricted)
+        try:
+            return (self._table.search()
+                    .where(clause).limit(limit).to_list())
+        except Exception as exc:
+            log.warning("LibraryDB.iter_rows falhou (where=%r): %s",
+                        where_clause, exc)
+            return []  # Fail-soft: caller decide
 
     def register_usage(self, shot_id: str, run_id: str) -> None:
         rows = (self._table.search().where(f"shot_id = '{shot_id}'").limit(1).to_list())

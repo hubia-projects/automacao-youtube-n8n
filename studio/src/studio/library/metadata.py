@@ -119,3 +119,27 @@ def analyze_shot(keyframes: list[Path], settings: Settings,
             last_err = exc
             log.warning("metadados JSON inválido (temp=%s): %s", temperature, exc)
     raise ShotAnalysisError(f"JSON inválido após retry: {last_err}")
+
+
+# ============== Fase E — Metadata Confidence ==============
+class DetectedEntity(BaseModel):
+    """Resultado estruturado de Vision Gemini Flash sobre keyframes.
+
+    confidence: 0..1 (≥ settings.entity_confirm_min_confidence → confirmado).
+    evidence: lista de strings ("OCR: 'Lello'", "visual: iconic staircase",
+               "metadata: Exif date 2025"). Mínimo 3 evidências para high conf.
+    rejected: True ⇒ confirm_shot_entity() rejeitou (motivo em rejection_reason).
+    """
+    name: str = ""
+    entity_type: str = ""
+    confidence: float = 0.0
+    evidence: list[str] = Field(default_factory=list)
+    rejected: bool = False
+    rejection_reason: str = ""
+    confirmed_by: str = ""  # "gemini-flash" / "metadata-only" / "cache"
+    at: str = ""  # ISO timestamp
+
+    def is_confirmed(self, threshold: float) -> bool:
+        return (not self.rejected
+                and self.confidence >= threshold
+                and bool(self.name))

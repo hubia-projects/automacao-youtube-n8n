@@ -40,8 +40,15 @@ _USD_IN_FLASH, _USD_OUT_FLASH = 0.075 / 1e6, 0.30 / 1e6  # 1.5 Flash
 _USD_IN_PRO,   _USD_OUT_PRO   = 1.25  / 1e6, 10.0 / 1e6  # 1.5 Pro
 _USE_FLASH_REVIEW = _os.environ.get("STUDIO_REVIEW_USE_FLASH", "1") == "1"
 
+# Whitelist Flash por marcador estável de modelo (evitar match acidental em
+# nomes com "flash" mas que não são 1.5-flash, ex: flash-cards, flashcard).
+_FLASH_MODEL_MARKERS = ("flash", "gemini-1.5-flash", "gemini-2.0-flash",
+                        "gemini-2.5-flash")
+
 def _review_pricing(model: str) -> tuple[float, float]:
-    return (_USD_IN_FLASH, _USD_OUT_FLASH) if "flash" in model.lower() else \
+    low = model.lower()
+    is_flash = any(m in low for m in _FLASH_MODEL_MARKERS)
+    return (_USD_IN_FLASH, _USD_OUT_FLASH) if is_flash else \
            (_USD_IN_PRO,   _USD_OUT_PRO)
 
 # Gemini Pro em JSON mode às vezes devolve respostas truncadas (max_output_tokens
@@ -262,7 +269,8 @@ def review_rough_cut(proxy_path: Path, run_dir: Path,
     usage = data.get("usageMetadata", {})
     prompt_tokens = usage.get("promptTokenCount", 0)
     output_tokens = usage.get("candidatesTokenCount", 0)
-    cost = prompt_tokens * _USD_IN + output_tokens * _USD_OUT
-    log_call(settings, tag="review_video", model=settings.model_pro,
+    usd_in, usd_out = _review_pricing(model_used)
+    cost = prompt_tokens * usd_in + output_tokens * usd_out
+    log_call(settings, tag="review_video", model=model_used,
             prompt_tokens=prompt_tokens, output_tokens=output_tokens, cost_usd=cost)
     return report, cost

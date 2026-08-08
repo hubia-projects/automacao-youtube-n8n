@@ -2,11 +2,16 @@
 
 Texto longo é dividido em chunks (~420 chars, fronteira de frase) — port do
 comportamento comprovado do ttsService.js legacy — e concatenado com ffmpeg.
-Mock: silêncio com duração proporcional às palavras (determinístico).
+Fase 1C: chunks são processados em PARALELO via ThreadPoolExecutor
+(max_workers=4 para multivozes local, 3 para ElevenLabs porque o plano
+free-tier tem rate limit ~5 req concurrent). A ordem na concatenação final
+é preservada via indexação ordenada. Mock: tom (não silêncio) com duração
+proporcional.
 """
 
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 import re
 import subprocess
@@ -20,6 +25,8 @@ from studio.config import Settings
 log = logging.getLogger("studio.tts")
 
 CHUNK_CHARS = 420
+TTS_MULTIVOZES_WORKERS = 4
+TTS_ELEVENLABS_WORKERS = 3   # respeita rate-limit do plano free
 
 
 def health(settings: Settings) -> bool:
@@ -63,12 +70,12 @@ def _tts_chunk(text: str, out_path: Path, settings: Settings, attempt_max: int =
             return
         except httpx.HTTPError as exc:
             last = exc
-            log.warning("TTS chunk falhou (tentativa %d/%d): %s", attempt, attempt_max, exc)
+            log.warning("TTS chunk falhou (tentativa %d/%d): %s",
+                        attempt, attempt_max, exc)
     raise RuntimeError(f"TTS falhou após {attempt_max} tentativas: {last}")
 
 
 def _mock_wav(text: str, out_wav: Path, settings: Settings) -> None:
-    # tom (não silêncio): loudness mensurável nos testes de render
     seconds = max(1.0, len(text.split()) * 60.0 / settings.words_per_minute)
     subprocess.run(
         ["ffmpeg", "-y", "-v", "error", "-f", "lavfi",
@@ -107,39 +114,67 @@ def _tts_chunk_elevenlabs(text: str, out_path: Path, settings: Settings) -> None
     out_path.write_bytes(resp.content)
 
 
+def _render_chunk(i: int, chunk: str, td: Path, use_eleven: bool,
+                  settings: Settings) -> Path:
+    """Uma iteração do loop paralelo: gera mp3 para chunk[i] em td/part_iii.mp3."""
+    part = td / f"part_{i:03d}.mp3"
+    if use_eleven:
+        _tts_chunk_elevenlabs(chunk, part, settings)
+    else:
+        try:
+            _tts_chunk(chunk, part, settings)
+        except RuntimeError:
+            if not (settings.elevenlabs_api_key and settings.elevenlabs_voice_id):
+                raise
+            log.warning("multivozes falhou a meio — ElevenLabs")
+            _tts_chunk_elevenlabs(chunk, part, settings)
+    return part
+
+
 def synthesize(text: str, out_wav: Path, settings: Settings) -> float:
     """Gera narração wav (24 kHz mono). Devolve duração em segundos.
-    Cascata: multivozes (com auto-arranque) → ElevenLabs → erro (fail-closed)."""
+    Cascata: multivozes (com auto-arranque) → ElevenLabs → erro (fail-closed).
+    Fase 1C: chunks em paralelo via ThreadPoolExecutor (4 workers multivozes
+    ou 3 ElevenLabs). Ordem preservada por índice na concatenação final.
+    FALLBACK DINÂMICO (code-review fix): se multivozes 503 durante o
+    processamento, use_eleven troca para True e todas as threads seguintes
+    usam ElevenLabs em vez de repetir o 503."""
     out_wav.parent.mkdir(parents=True, exist_ok=True)
     if settings.mock_mode:
         _mock_wav(text, out_wav, settings)
     else:
-        use_eleven = False
+        use_eleven = [False]  # lista mutable para closure entre threads
         if not _ensure_multivozes(settings):
             if settings.elevenlabs_api_key and settings.elevenlabs_voice_id:
                 log.warning("multivozes indisponível — fallback ElevenLabs")
-                use_eleven = True
+                use_eleven[0] = True
             else:
                 raise RuntimeError("multivozes DOWN e sem ELEVENLABS_API_KEY — "
                                    "TTS impossível (fail-closed)")
         with tempfile.TemporaryDirectory() as td:
-            parts = []
-            for i, chunk in enumerate(_chunks(text)):
-                part = Path(td) / f"part_{i:03d}.mp3"
-                if use_eleven:
-                    _tts_chunk_elevenlabs(chunk, part, settings)
-                else:
-                    try:
-                        _tts_chunk(chunk, part, settings)
-                    except RuntimeError:
-                        if not (settings.elevenlabs_api_key
-                                and settings.elevenlabs_voice_id):
-                            raise
-                        log.warning("multivozes falhou a meio — ElevenLabs")
-                        use_eleven = True
-                        _tts_chunk_elevenlabs(chunk, part, settings)
-                parts.append(part)
-            concat_list = Path(td) / "list.txt"
+            td_path = Path(td)
+            chunks = _chunks(text)
+            workers = (TTS_ELEVENLABS_WORKERS if use_eleven[0]
+                       else TTS_MULTIVOZES_WORKERS)
+            def _render(i, c):
+                """Closure que partilha use_eleven[0] entre threads."""
+                try:
+                    return _render_chunk(i, c, td_path, use_eleven[0], settings)
+                except RuntimeError as exc:
+                    if use_eleven[0]:    # já em fallback, propaga
+                        raise
+                    if not (settings.elevenlabs_api_key
+                            and settings.elevenlabs_voice_id):
+                        raise
+                    log.warning("multivozes falhou em chunk %d (%s) — todas "
+                                "as threads seguintes usam ElevenLabs", i, exc)
+                    use_eleven[0] = True
+                    return _render_chunk(i, c, td_path, True, settings)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+                # ex.map preserva ordem dos inputs (yields em série, mesmo
+                # que execução seja paralela).
+                parts = list(ex.map(_render, range(len(chunks)), chunks))
+            concat_list = td_path / "list.txt"
             concat_list.write_text("".join(f"file '{p}'\n" for p in parts))
             subprocess.run(
                 ["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0",

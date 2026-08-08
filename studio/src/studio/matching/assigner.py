@@ -106,6 +106,39 @@ class PoolExhausted(RuntimeError):
         super().__init__(f"pool esgotado para cena {scene_id} — biblioteca precisa de seed/top-up")
 
 
+class SceneStrictCoverageGap(RuntimeError):
+    """Fase F — fail-closed: cena strict (entity visual obrigatória) sem shots
+    confirmados pelo oráculo Vision (DetectedEntity >= threshold).
+
+    Nunca degrada para B-roll genérico: a causa-raiz do score baixo era
+    mostrar "francesinha" quando a narração dizia "Livraria Lello". Uma cena
+    strict só pode ser preenchida com footage cuja identidade foi confirmada.
+    """
+
+    def __init__(self, *, scene_id: str, entity: str, entity_type: str = "",
+                 deficit_seconds: float = 0.0, ranked_plan: str = ""):
+        self.scene_id = scene_id
+        self.entity = entity
+        self.deficit_seconds = deficit_seconds
+        super().__init__(
+            f"SceneStrictCoverageGap: cena {scene_id} exige a entity "
+            f"'{entity}' (type={entity_type or '?'}) confirmada visualmente, "
+            f"mas nenhum shot foi confirmado (deficit={deficit_seconds:.1f}s). "
+            f"Plano ranqueado: {ranked_plan or '(vazio)'}")
+
+
+def _ranked_plan_summary(coverage_plan) -> str:
+    """Resumo legível do coverage_plan (top-5 por prioridade) para a
+    mensagem de SceneStrictCoverageGap — o operador vê o ranking completo
+    sem abrir o JSON do plano."""
+    if coverage_plan is None or not coverage_plan.ranked_entities:
+        return "(plano vazio)"
+    top = coverage_plan.ranked_entities[:5]
+    return "; ".join(
+        f"{e.canonical_name}(prio={e.priority_score:.2f}, "
+        f"deficit={e.deficit_seconds:.1f}s)" for e in top)
+
+
 class SegmentAssignment(BaseModel):
     scene_id: str
     beat: str
@@ -123,6 +156,17 @@ class SegmentAssignment(BaseModel):
     has_food: bool = False
     has_landmark: bool = False
     attribution_text: str = ""
+    # Fase G (FIX-1 CRÍTICO code-reviewer): colunas de CSV do shot
+    # LINKADAS AQUI para que `validate_alignment()` possa comparar entity
+    # sem voltar à BD. Defaults = "" garante retro-compat com runs/lances
+    # da Fase F (não-preenchidos). Preenchido por
+    # `_attach_segment_metadata()` no S08Matching (módulos strict, pydantic-
+    # safe via `model_copy(update=...)`).
+    places_csv: str = ""
+    landmarks_csv: str = ""
+    food_csv: str = ""
+
+    model_config = {"extra": "allow"}
 
 
 class AssignmentResult(BaseModel):
@@ -207,42 +251,81 @@ def _preflight_topups(missing_queries: set[str], db: LibraryDB,
 
 
 def _score(cand: dict, used_files: dict[str, int],
-          entity_terms: list[str] | None = None) -> float:
-    score = (cand["similarity"]
-             + 0.02 * cand["quality"]
-             - 0.15 * cand.get("usage_count", 0)          # cooldown entre vídeos
-             - 0.10 * used_files.get(cand["media_sha"], 0))  # variedade de fonte
-    # Entity-match bonus A1+A2: shot cuja metadata nomeia a entity pedida
-    # pela cena fica claramente acima de genéricos compatíveis com o SigLIP
-    # (ex: Livraria Lelo interior ranqueia acima de "Portuguese bookstore
-    # interior genérico"). Sem match → penalty explícita para o assigner não
-    # escolher um genérico silenciosamente.
-    # Entity-match bonus A1+A2 (mutuamente exclusivos pós code-reviewer):
-    # A entity em landmarks_csv vale +0.20 (mais raro/preciso — Land Rover);
-    # só em places_csv vale +0.15; sem match → -0.10 explícita.
-    # Antes era cumulativo (+0.30) — demasiado para shots com dupla etiqueta
-    # ("Casa da Música" aparece em ambos os campos no seed PT).
+          entity_terms: list[str] | None = None, *,
+          settings: Settings | None = None,
+          confirmed_ids: set[str] | None = None,
+          geography_terms: list[str] | None = None) -> float:
+    """Score de ranking do pool. Fase F: pesos lidos de Settings (SSoT);
+    `confirmed_ids` (shots confirmados por Vision) recebem confirmation_bonus;
+    `geography_terms` (termos de lugar excluídos) aplicam geography_penalty
+    como segunda linha de defesa atrás do filtro duro do search."""
+    if settings is None:
+        w_sim, w_quality = 1.0, 0.02
+        w_usage, w_diversity = 0.15, 0.10
+        w_land, w_place, w_miss = 0.20, 0.15, 0.10
+        w_conf, w_geo = 0.15, 0.30
+    else:
+        w_sim = settings.assign_score_similarity
+        w_quality = settings.assign_score_quality_bonus
+        w_usage = settings.assign_score_usage_cooldown
+        w_diversity = settings.assign_score_source_diversity
+        w_land = settings.assign_score_entity_match_bonus
+        w_place = settings.assign_score_entity_match_place_bonus
+        w_miss = settings.assign_score_entity_miss_penalty
+        w_conf = settings.assign_score_confirmation_bonus
+        w_geo = settings.assign_score_geography_penalty
+
+    score = (w_sim * cand["similarity"]
+             + w_quality * cand["quality"]
+             - w_usage * cand.get("usage_count", 0)          # cooldown entre vídeos
+             - w_diversity * used_files.get(cand["media_sha"], 0))  # variedade de fonte
+    # Entity-match bonus (A1+A2, mutuamente exclusivos pós code-reviewer):
+    # A entity em landmarks_csv vale +0.20 (mais raro/preciso); só em
+    # places_csv vale +0.15; sem match → -0.10 explícita. Nunca cumulativo
+    # (dupla etiqueta "Casa da Música" em ambos os campos no seed PT).
     if entity_terms and any(e.strip() for e in entity_terms):
         places = (cand.get("places_csv", "") or "").lower()
         landmarks = (cand.get("landmarks_csv", "") or "").lower()
         in_place = any(e.lower() in places for e in entity_terms)
         in_land = any(e.lower() in landmarks for e in entity_terms)
         if in_land:
-            score += 0.20
+            score += w_land
         elif in_place:
-            score += 0.15
+            score += w_place
         else:
-            # Penalty explícita A1: cena com entity estrita (Livraria Lelo,
-            # Francesinha) não pode cair num genérico compatível com SigLIP
-            # — antes ficava silenciosamente em 0.06 vs 0.0.
-            score -= 0.10
+            # Penalty explícita A1: cena com entity estrita não pode cair
+            # num genérico compatível com SigLIP.
+            score -= w_miss
+    # Fase F — ground-truth Vision: shot confirmado fica acima de qualquer
+    # genérico, mesmo com similarity ligeiramente inferior.
+    if confirmed_ids and cand["shot_id"] in confirmed_ids:
+        score += w_conf
+    # Fase F — geografia vence entity: metadados citam lugar excluído
+    # (ex: Lisbon num vídeo do Porto) → penalidade explícita.
+    if geography_terms:
+        blob = ((cand.get("places_csv", "") or "") + ","
+                + (cand.get("landmarks_csv", "") or "")).lower()
+        if any(t.strip().lower() in blob for t in geography_terms):
+            score -= w_geo
     return score
 
 
 def assign_shots(scenes: list[Scene], briefs: list[VisualBrief], db: LibraryDB,
                  embedder: Embedder, settings: Settings, run_id: str,
                  excluded_shot_ids: set[str] | None = None,
-                 topic: str = "") -> AssignmentResult:
+                 topic: str = "",
+                 coverage_plan=None,
+                 confirmed_entities: dict[str, list[dict]] | None = None,
+                 ) -> AssignmentResult:
+    """Fase F: `confirmed_entities` = {canonical_lower: [shot rows com
+    `__confirmation` DetectedEntity]} gerado em S08Matching via
+    require_entity_confirmation(strict_only=True). Quando fornecido (não
+    None), cenas strict (brief.strict_entity + required_entity) são
+    fail-closed: pool = busca (geografia + categorias) ∩ confirmados;
+    sem confirmação → SceneStrictCoverageGap. Continuidade: nunca degrada
+    para B-roll a meio da cena strict. None (legacy) = comportamento
+    idêntico pré-Fase F."""
+
     from studio.library.inventory import entity_vocab, resolve_entity
 
     brief_by_scene = {b.scene_id: b for b in briefs}
@@ -264,6 +347,16 @@ def assign_shots(scenes: list[Scene], briefs: list[VisualBrief], db: LibraryDB,
     # pedem 'Livraria Lello' → 6× search + 6× download" em "1× search +
     # download em paralelo". Poupa-se ~6× em vídeos com muitas entidades
     # repetidas e mantém determinismo (vocab refresh 1× no fim).
+    # Fase D FIX-1: pre-construir deficit_by_entity para W contextual
+    # por cena durante o assign. Quando uma cena cita entity com deficit
+    # estrutural no plano E o pool fica vazio depois de top-up JIT,
+    # o warning deixa o operador ver o sinal (não muda lógica do match).
+    _deficit_by_entity: dict[str, float] = {}
+    if coverage_plan is not None:
+        for _ec in coverage_plan.ranked_entities:
+            if _ec.deficit_seconds > 0 and _ec.canonical_name:
+                _deficit_by_entity[_ec.canonical_name.strip().lower()] = (
+                    _ec.deficit_seconds)
     missing_q: set[str] = set()
     for scene in scenes:
         b = brief_by_scene.get(scene.scene_id)
@@ -274,6 +367,25 @@ def assign_shots(scenes: list[Scene], briefs: list[VisualBrief], db: LibraryDB,
         vocab = entity_vocab(db)  # refresh 1× — todas as cenas partem deste vocab
     # =========================================================================
 
+    # FIX 3 (code-reviewer Fase D): info log ANTES do loop para cada
+    # cena cuja required_entity tem deficit estrutural no plano. Operador
+    # vê no dashboard mesmo quando _preflight_topups fecha o gap.
+    # FIX-3 W: construir dict lookup 1× para evitar double lookup no loop.
+    _per_scene_deficit: dict[str, float] = {}
+    if coverage_plan is not None:
+        for scene in scenes:
+            _b = brief_by_scene.get(scene.scene_id)
+            if _b and _b.required_entity:
+                _key = _b.required_entity.strip().lower()
+                _per_scene_deficit[scene.scene_id] = (
+                    _deficit_by_entity.get(_key, 0.0))
+                if _per_scene_deficit[scene.scene_id] > 0:
+                    log.info("assigner: cena %s entidade '%s' tinha "
+                             "deficit=%.1fs no plano (Phase G alignment "
+                             "validator vai validar pós-match)",
+                             scene.scene_id, _b.required_entity,
+                             _per_scene_deficit[scene.scene_id])
+
     for scene in scenes:
         brief = brief_by_scene[scene.scene_id]
         band_min, band_max = BEAT_BANDS.get(scene.beat, (3.0, 5.0))
@@ -283,11 +395,29 @@ def assign_shots(scenes: list[Scene], briefs: list[VisualBrief], db: LibraryDB,
         scene_exclude = exclude_places + _city_exclude_terms(
             scene.text, brief.visual_subject_en, topic)
 
+        # Fase F — Strict Matching: cena strict (entity visual obrigatória)
+        # só aceita shots CONFIRMADOS pelo oráculo Vision (DetectedEntity).
+        # confirmed_ids = ground-truth resolvido em S08Matching.
+        entity_key = (brief.required_entity or "").strip().lower()
+        is_strict = bool(brief.strict_entity and brief.required_entity
+                         and confirmed_entities is not None)
+        confirmed_ids: set[str] = set()
+        if is_strict:
+            confirmed_ids = {c["shot_id"]
+                             for c in confirmed_entities.get(entity_key, [])}
+            if not confirmed_ids:
+                # fail-closed: sem confirmação visual não há matching.
+                raise SceneStrictCoverageGap(
+                    scene_id=scene.scene_id, entity=brief.required_entity,
+                    entity_type=brief.required_entity_type,
+                    deficit_seconds=_deficit_by_entity.get(entity_key, 0.0),
+                    ranked_plan=_ranked_plan_summary(coverage_plan))
+
         # entidade nomeada pela narração: TEM de aparecer nos metadados do
         # shot. Se a biblioteca não a tem, top-up dirigido (Pexels pela
         # entidade); se continuar sem ela, degrada para genérico REGISTADO.
         entity_terms: list[str] = []
-        if brief.required_entity:
+        if brief.required_entity and not is_strict:
             entity_terms = resolve_entity(brief.required_entity, vocab)
             if not entity_terms and not settings.mock_mode:
                 topups += 1
@@ -298,6 +428,19 @@ def assign_shots(scenes: list[Scene], briefs: list[VisualBrief], db: LibraryDB,
             if not entity_terms:
                 relaxations[scene.scene_id] = \
                     f"entity_unavailable:{brief.required_entity}"
+                # Fase D FIX-1: warning contextual quando coverage_plan já
+                # indicava deficit estrutural — operador vê o sinal claro.
+                # FIX-3 W: usa cache _per_scene_deficit (sem double lookup).
+                _d = _per_scene_deficit.get(scene.scene_id, 0.0)
+                if _d and _d > 0:
+                    log.warning("assigner: cena %s requerida '%s' mas "
+                                "coverage_plan apontava deficit=%.1fs — "
+                                "top-up JIT não fechou", scene.scene_id,
+                                brief.required_entity, _d)
+        elif brief.required_entity:
+            # strict: o termo de busca é o canonical (lower) — os shots
+            # confirmados carregam-no no CSV por construção do confirmation.
+            entity_terms = [entity_key]
 
         # escada de relaxamento: must_not (a guarda anti-mismatch) nunca cede;
         # a entidade cai apenas no degrau drop_must_have (registada);
@@ -335,49 +478,74 @@ def assign_shots(scenes: list[Scene], briefs: list[VisualBrief], db: LibraryDB,
                     if c["shot_id"] not in used_shots
                     and used_files.get(c["media_sha"], 0) < MAX_USES_PER_FILE]
 
-        pool, level, active_reuse, active_entities = [], "base", False, entity_terms
-        for level, must_have, min_q, allow_reuse, lvl_entities in ladder:
-            pool = _pool(must_have, min_q, allow_reuse, lvl_entities)
-            if not pool and level == "base":
-                topups += 1
-                if _jit_topup(brief, db, embedder, settings) > 0:
-                    pool = _pool(must_have, min_q, allow_reuse, lvl_entities)
-            if pool:
-                active_reuse = allow_reuse
-                active_entities = lvl_entities
-                if entity_terms and not lvl_entities:
-                    # entidade caiu na escada — degradação nomeada
-                    relaxations[scene.scene_id] = \
-                        f"entity_dropped:{brief.required_entity}"
-                break
-        if not pool and settings.veo_enabled and topups <= settings.veo_max_per_video:
-            # ÚLTIMO recurso: gerar o clip (Veo). Entra pela ingestão normal
-            # com license=owned + ai_generated no meta (disclosure YouTube).
-            try:
-                from studio.library.ingest import ingest_file
-                from studio.library.veo import generate_clip
+        if is_strict:
+            # Fase F — sem escada de relaxamento: pool = busca (geografia +
+            # categorias + canonical) ∩ confirmados. O filtro geográfico
+            # (exclude_places) continua a valer — geografia vence entity.
+            pool = [c for c in search_shots(
+                        db, embedder, brief.visual_subject_en,
+                        must_have=brief.must_have, must_not=brief.must_not,
+                        min_quality=4, k=POOL_K,
+                        exclude_places=scene_exclude,
+                        entity_terms=entity_terms)
+                    if c["shot_id"] in confirmed_ids
+                    and c["shot_id"] not in used_shots]
+            level = "strict_confirmed"
+            active_reuse = False
+            active_entities = entity_terms
+            if not pool:
+                # confirmados existem mas nenhum passa geografia/categorias
+                # → fail-closed (não desce para genérico)
+                raise SceneStrictCoverageGap(
+                    scene_id=scene.scene_id, entity=brief.required_entity,
+                    entity_type=brief.required_entity_type,
+                    deficit_seconds=_deficit_by_entity.get(entity_key, 0.0),
+                    ranked_plan=_ranked_plan_summary(coverage_plan))
+            active_have, active_q = brief.must_have, 4
+        else:
+            pool, level, active_reuse, active_entities = [], "base", False, entity_terms
+            for level, must_have, min_q, allow_reuse, lvl_entities in ladder:
+                pool = _pool(must_have, min_q, allow_reuse, lvl_entities)
+                if not pool and level == "base":
+                    topups += 1
+                    if _jit_topup(brief, db, embedder, settings) > 0:
+                        pool = _pool(must_have, min_q, allow_reuse, lvl_entities)
+                if pool:
+                    active_reuse = allow_reuse
+                    active_entities = lvl_entities
+                    if entity_terms and not lvl_entities:
+                        # entidade caiu na escada — degradação nomeada
+                        relaxations[scene.scene_id] = \
+                            f"entity_dropped:{brief.required_entity}"
+                    break
+            if not pool and settings.veo_enabled and topups <= settings.veo_max_per_video:
+                # ÚLTIMO recurso: gerar o clip (Veo). Entra pela ingestão normal
+                # com license=owned + ai_generated no meta (disclosure YouTube).
+                try:
+                    from studio.library.ingest import ingest_file
+                    from studio.library.veo import generate_clip
 
-                dest = settings.library_root / "generated" / f"veo_{scene.scene_id}.mp4"
-                clip, _cost = generate_clip(
-                    f"{brief.visual_subject_en}, cinematic b-roll, no people faces",
-                    dest, settings)
-                ingest_file(clip, {"source": "owned", "source_url": "",
-                                   "license": "owned", "author": "veo-ai",
-                                   "verified_by": "manual"},
-                            db, settings, embedder)
-                pool = _pool([], 0, False)
-                level = "veo_generated"
-            except Exception as exc:
-                log.warning("Veo fallback falhou (%s): %s", scene.scene_id, exc)
-        if not pool:
-            unfilled.append(scene.scene_id)
-            continue
-        if level != "base":
-            prior_note = relaxations.get(scene.scene_id)
-            relaxations[scene.scene_id] = (f"{prior_note}+{level}"
-                                           if prior_note else level)
-            log.info("cena %s preenchida com relaxamento %s", scene.scene_id, level)
-        active_have, active_q = must_have, min_q  # combinação vencedora da escada
+                    dest = settings.library_root / "generated" / f"veo_{scene.scene_id}.mp4"
+                    clip, _cost = generate_clip(
+                        f"{brief.visual_subject_en}, cinematic b-roll, no people faces",
+                        dest, settings)
+                    ingest_file(clip, {"source": "owned", "source_url": "",
+                                       "license": "owned", "author": "veo-ai",
+                                       "verified_by": "manual"},
+                                db, settings, embedder)
+                    pool = _pool([], 0, False)
+                    level = "veo_generated"
+                except Exception as exc:
+                    log.warning("Veo fallback falhou (%s): %s", scene.scene_id, exc)
+            if not pool:
+                unfilled.append(scene.scene_id)
+                continue
+            if level != "base":
+                prior_note = relaxations.get(scene.scene_id)
+                relaxations[scene.scene_id] = (f"{prior_note}+{level}"
+                                               if prior_note else level)
+                log.info("cena %s preenchida com relaxamento %s", scene.scene_id, level)
+            active_have, active_q = must_have, min_q  # combinação vencedora da escada
 
         # preencher a cena com segmentos dentro da banda do beat
         # n_segmentos: para hook/transition forçamos band_min (anti-"riscado"
@@ -392,6 +560,14 @@ def assign_shots(scenes: list[Scene], briefs: list[VisualBrief], db: LibraryDB,
         seg = 0
         while remaining > MIN_SEGMENT_S:
             if not pool:
+                if is_strict:
+                    # continuidade strict: pool confirmado esgotou a meio da
+                    # cena → fail-closed, NUNCA completa com B-roll
+                    raise SceneStrictCoverageGap(
+                        scene_id=scene.scene_id, entity=brief.required_entity,
+                        entity_type=brief.required_entity_type,
+                        deficit_seconds=_deficit_by_entity.get(entity_key, 0.0),
+                        ranked_plan=_ranked_plan_summary(coverage_plan))
                 pool = _pool(active_have, active_q, active_reuse, active_entities)
                 if not pool and active_entities:
                     # entidade esgotou a meio da cena → completa com genérico
@@ -405,7 +581,10 @@ def assign_shots(scenes: list[Scene], briefs: list[VisualBrief], db: LibraryDB,
                 if not pool:
                     unfilled.append(scene.scene_id)
                     break
-            pool.sort(key=lambda c: _score(c, used_files, active_entities), reverse=True)
+            pool.sort(key=lambda c: _score(
+                c, used_files, active_entities, settings=settings,
+                confirmed_ids=confirmed_ids if is_strict else None,
+                geography_terms=scene_exclude), reverse=True)
             cand = pool.pop(0)
             shot_len = cand["t_out"] - cand["t_in"]
             ideal = remaining / max(n_target - seg, 1)
