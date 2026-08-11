@@ -371,9 +371,18 @@ def scan_batch(
 ) -> tuple[list[DiscoveryRecord], dict]:
     """Scan em batch com SigLIP image batch (aproveita auto-tune).
 
+    P2 (Porto Final Readiness 2026-08-11) — cache skip: se discovery_index
+    já contém row para media_path COM mesmo siglip_model_id E mesmo
+    discovery_version, retorna o record cacheado SEM ffprobe, SEM
+    frame_extract, SEM SigLIP. counters stats incrementado:
+        - cached_hits: int    (paths reutilizados sem re-trabalho)
+        - reembed_count: int  (paths que precisariam de SigLIP; 0 se cache
+                                completo, N quando cache miss)
+
     Returns:
         (records, stats) onde stats = {
             "scanned": int, "invalid": int, "skipped_cached": int,
+            "cached_hits": int, "reembed_count": int,
             "ffprobe_s": float, "frame_extract_s": float,
             "siglip_s": float, "wall": float
         }
@@ -384,6 +393,7 @@ def scan_batch(
     records: list[DiscoveryRecord] = []
     stats = {
         "scanned": 0, "invalid": 0, "skipped_cached": 0,
+        "cached_hits": 0, "reembed_count": 0,
         "ffprobe_s": 0.0, "frame_extract_s": 0.0,
         "siglip_s": 0.0, "wall": 0.0,
     }
@@ -391,10 +401,66 @@ def scan_batch(
         stats["wall"] = time.perf_counter() - t_wall
         return records, stats
 
-    # Phase 1: ffprobe em paralelo dos paths
+    # === Phase 0 (P2 CACHE FIX): separar paths já cached vs a scanear ===
+    cached_records: list[DiscoveryRecord] = []
+    to_scan: list[Path] = list(paths)
+    if discovery_index is not None:
+        try:
+            all_rows = discovery_index.list_for_workset_match(None)
+            cached_by_path = {
+                row["media_path"]: row for row in all_rows
+                if row.get("media_path")
+                and row.get("siglip_model_id") == siglip_model_id
+                and int(row.get("discovery_version", -1)) == DISCOVERY_VERSION
+            }
+        except Exception as exc:
+            log.debug("scan_batch Phase 0 cache lookup falhou: %s — full rescan",
+                      exc.__class__.__name__)
+            cached_by_path = {}
+        still_to_scan: list[Path] = []
+        for p in to_scan:
+            sp = str(p)
+            row = cached_by_path.get(sp)
+            if row is None:
+                still_to_scan.append(p)
+                continue
+            try:
+                rec = DiscoveryRecord(
+                    media_path=row["media_path"],
+                    source_id=row.get("source_id", Path(sp).stem),
+                    media_sha=row.get("media_sha", ""),
+                    duration=float(row.get("duration", 0.0) or 0.0),
+                    width=int(row.get("width", 0) or 0),
+                    height=int(row.get("height", 0) or 0),
+                    codec=str(row.get("codec", "") or ""),
+                    file_size=int(row.get("file_size", 0) or 0),
+                    siglip_model_id=row.get("siglip_model_id", siglip_model_id),
+                    discovery_version=int(row.get("discovery_version",
+                                                    DISCOVERY_VERSION)),
+                    preview_vec=list(json.loads(row.get("preview_json", "[]"))),
+                    status=row.get("status", S_DISCOVERED_GLOBAL),
+                    scanned_at=row.get("scanned_at", ""),
+                )
+                cached_records.append(rec)
+                if on_record is not None:
+                    try:
+                        on_record(rec)
+                    except Exception as exc:
+                        log.debug("on_record(cached) falhou: %s", 
+                                  exc.__class__.__name__)
+                stats["cached_hits"] += 1
+            except Exception as exc:
+                # cache row malformed → fall back to full scan
+                log.debug("scan_batch cache row malformed %s: %s — defer to scan",
+                          sp, exc.__class__.__name__)
+                still_to_scan.append(p)
+        to_scan = still_to_scan
+    stats["reembed_count"] = 0  # populated below if to_scan triggers SigLIP
+
+    # Phase 1: ffprobe em paralelo dos paths (apenas to_scan)
     probe_meta: dict[Path, dict] = {}
     t0 = time.perf_counter()
-    for p in paths:
+    for p in to_scan:
         meta = _ffprobe(p)
         if not meta:
             stats["invalid"] += 1
@@ -434,7 +500,7 @@ def scan_batch(
                     "skip remaining",
                     vecs.shape, len(frames))
         stats["wall"] = time.perf_counter() - t_wall
-        return records, stats
+        return cached_records + records, stats
 
     # Phase 4: compose records
     for (orig_path, _frame), vec in zip(frames, vecs):
@@ -460,8 +526,14 @@ def scan_batch(
         else:
             records.append(rec)
         stats["scanned"] += 1
+    # P2 (Porto Final Readiness 2026-08-11): reembed_count só conta os
+    # shots que EFFECTIVAMENTE passaram por SigLIP (não os cacheados). Se
+    # todos os paths estão em cache, este stat fica 0 e gate DISCOVERY_CACHE
+    # REAL_PASS pode ser YES. CORREÇÃO code-reviewer: era len(records)+
+    # len(cached_records), o que inflava o número sem trabalho real.
+    stats["reembed_count"] += len(records)
     stats["wall"] = time.perf_counter() - t_wall
-    return records, stats
+    return cached_records + records, stats
 
 
 # === Scheduler ================================================================

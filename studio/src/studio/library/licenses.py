@@ -48,7 +48,7 @@ class LicenseRecord(BaseModel):
     attribution_required: bool = False
     attribution_text: str = ""
     share_alike: bool = False
-    verified_by: Literal["api", "manual"] = "api"
+    verified_by: Literal["api", "manual", "provider"] = "api"
 
 
 def validate_license(raw: dict | LicenseRecord) -> LicenseRecord:
