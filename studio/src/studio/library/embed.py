@@ -268,10 +268,18 @@ class SiglipEmbedder:
         import torch
 
         # §P4 ESTABILIDADE: se caller passou structured context, usa-o.
+        # §P5 (2026-08-11 Porto Alignment) CRITICAL FIX: chave tem que
+        # incluir SHA256(normalized_text_en). Sem isto, prompt A
+        # ("Livraria Lello") e prompt B ("ornate bookstore") com mesmo
+        # requirement_id+prompt_version batem CACHE HIT — visual prompt
+        # bank ficaria silenciosamente poisonado pela canonical entity.
+        import hashlib
         if any([requirement_id, workflow_id, model_id]):
+            text_norm = (text_en or "").strip().lower()
+            text_hash = hashlib.sha256(text_norm.encode("utf-8")).hexdigest()[:12]
             key = (
                 f"{workflow_id or 'wf'}|{requirement_id or 'r'}|"
-                f"{prompt_version}|{model_id or MODEL_ID}"
+                f"{prompt_version}|{model_id or MODEL_ID}|{text_hash}"
             )
         else:
             # §P3 legacy: case-insensitive + strip.

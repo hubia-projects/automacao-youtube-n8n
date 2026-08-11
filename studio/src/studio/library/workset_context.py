@@ -69,6 +69,10 @@ class RequirementSpec:
 
     Defaults são safety net: em JSON bem formado nunca são necessários.
     Settings NÃO entram aqui (Settings só é usado na CRIAÇÃO).
+
+    visual_prompts_en (schema_version >= 1.1) — vector bank de descrições
+    visuais em inglês para alinhar SigLIP text-tower (EN pre-training) com
+    footages do Porto. read-mostly. Empty tuple se JSON não tiver (legado).
     """
     requirement_id: str
     canonical_entity: str
@@ -82,6 +86,7 @@ class RequirementSpec:
     aliases: tuple[str, ...] = ()
     location: str = ""
     narration_seconds: float = 0.0    # computed (out - in) — convenience
+    visual_prompts_en: tuple[str, ...] = ()
 
     @property
     def entity_id(self) -> str:
@@ -94,6 +99,11 @@ class WorksetContext:
 
     Embeddings SigLIP cacheados aqui UMA VEZ por run (SIGLIP_TEXT_CACHE).
     NÃO recomputar em chamadas downstream (ingest_asset, assigner, etc.).
+
+    §P5 (2026-08-11): visual_prompt_embeddings — dict[canonical -> list of
+    np.ndarray (cada um 768-dim normalizado)]. Lista de embeddings para
+    MULTI-PROMPT RETRIEVAL (max cosine). requirement_embeddings mantém-se
+    como o embed canónico (single vector) para retro-compat.
     """
     mode: str
     workset_id: str
@@ -104,6 +114,7 @@ class WorksetContext:
     requirements: list[RequirementSpec] = field(default_factory=list)
     requirement_prompts: dict[str, str] = field(default_factory=dict)
     requirement_embeddings: dict[str, np.ndarray] = field(default_factory=dict)
+    visual_prompt_embeddings: dict[str, list] = field(default_factory=dict)
     siglip_model_id: str = ""
     coverage_plan: Optional[dict] = None    # lazy; populated by assigner
 
@@ -145,6 +156,14 @@ def _coerce_requirement(raw: dict, idx: int) -> Optional[RequirementSpec]:
     t_in = float(raw.get("narration_t_in", 0.0) or 0.0)
     t_out = float(raw.get("narration_t_out", 0.0) or 0.0)
     nar_s = max(0.0, t_out - t_in)
+    # §P5 (Porto Alignment 2026-08-11): parse visual_prompts_en se existir.
+    raw_prompts = raw.get("visual_prompts_en") or []
+    if not isinstance(raw_prompts, list):
+        log.warning("workset: requirement '%s' visual_prompts_en NÃO é list — skip",
+                    canonical)
+        raw_prompts = []
+    visual_prompts = tuple(p.strip() for p in raw_prompts
+                            if isinstance(p, str) and p.strip())
     return RequirementSpec(
         requirement_id=str(raw.get("requirement_id") or f"R{idx:02d}-{_slug(canonical)[:8]}"),
         canonical_entity=canonical,
@@ -158,6 +177,7 @@ def _coerce_requirement(raw: dict, idx: int) -> Optional[RequirementSpec]:
         narration_seconds=nar_s,
         aliases=tuple(a for a in (raw.get("aliases") or []) if a),
         location=str(raw.get("location", "") or ""),
+        visual_prompts_en=visual_prompts,
     )
 
 
@@ -342,6 +362,11 @@ def load_workset_context(
 
         # Compute embeddings ONCE per run (P1.2 fix). Reusable por todos os
         # callers downstream (ingest_asset, acquisition, discovery).
+        # §P5 (Porto Alignment 2026-08-11): MULTI-PROMPT visual prompt bank
+        # embeddings também calculadas aqui (1 cache hit por visual prompt
+        # singleton, distinct hash garante).
+        prompt_version = "visual-v2" if any(
+            r.visual_prompts_en for r in requirements) else "v1"
         if embedder is not None:
             for canon, text_en in requirement_prompts.items():
                 try:
@@ -350,7 +375,7 @@ def load_workset_context(
                     ctx.requirement_embeddings[canon] = embedder.embed_text(
                         text_en,
                         requirement_id=req_id,
-                        prompt_version="v1",
+                        prompt_version=prompt_version,
                         workflow_id=workflow_id,
                         model_id=siglip_model_id,
                     )
@@ -359,6 +384,31 @@ def load_workset_context(
                         "workset_context: embedding SIGLIP falhou para "
                         "'%s': %s — caller gere fallback",
                         canon, exc.__class__.__name__)
+            # Visual prompt bank embeddings — uma vez por visual prompt
+            # (cache key inclui SHA256(text) pós-fix §P5).
+            for req in requirements:
+                canon = req.canonical_entity
+                visual_prompts = list(req.visual_prompts_en or [])
+                if not visual_prompts:
+                    ctx.visual_prompt_embeddings[canon] = []
+                    continue
+                embs: list[np.ndarray] = []
+                for vp_text in visual_prompts:
+                    try:
+                        v = embedder.embed_text(
+                            vp_text,
+                            requirement_id=req.requirement_id,
+                            prompt_version=prompt_version,
+                            workflow_id=workflow_id,
+                            model_id=siglip_model_id,
+                        )
+                        embs.append(v)
+                    except Exception as exc:
+                        log.warning(
+                            "workset_context: visual_prompt embedding falhou "
+                            "'%s' para '%s': %s",
+                            vp_text[:32], canon, exc.__class__.__name__)
+                ctx.visual_prompt_embeddings[canon] = embs
         validate_workset(ctx)
         return ctx
 
