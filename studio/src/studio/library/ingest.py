@@ -259,14 +259,26 @@ def ingest_file(
 
         # --- Phase B2: SigLIP triage (HOT path real §P5 2026-08-11) ---
         # Embeddings textuais cacheadas uma vez por run no reconcile.
+        # §P4 (TEST 5C): cache key estruturada estável — caller passa
+        # workflow_id+req_id+prompt_v+model_id para dedup cross-call.
         req_text_embeds: dict[str, np.ndarray] = {}
         if requirement_prompts:
             t_triage = time.perf_counter()
+            # Captura contexto uma vez por asset/call. Cached em SiglipEmbedder.
+            _wf = (getattr(settings, "video_id", None) or "wf")
+            _md = (getattr(settings, "whisper_model", None) or "siglip-base")
+            _pv = "v1"
             for canon, text_en in requirement_prompts.items():
                 if not text_en:
                     continue
                 try:
-                    req_text_embeds[canon] = embedder.embed_text(text_en)
+                    req_text_embeds[canon] = embedder.embed_text(
+                        text_en,
+                        requirement_id=canon,
+                        prompt_version=_pv,
+                        workflow_id=_wf,
+                        model_id=_md,
+                    )
                 except Exception as exc:
                     log.debug("ingest.embed_text('%s') falhou (%s) — skip prompt",
                               canon, exc.__class__.__name__)

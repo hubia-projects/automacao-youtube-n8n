@@ -35,6 +35,12 @@ import numpy as np
 MODEL_ID = "google/siglip-base-patch16-384"
 DIM = 768
 
+# Lazy import do Profiler para evitar cycle (perf não importa nada do embed).
+# §P3 cold-start vs steady-state: 3 categorias distintas no Profiler:
+#   - siglip_model_load  → emitido em _load() (uma vez por processo)
+#   - siglip_text_embed  → emitido em embed_text() (uma vez por requirement)
+#   - siglip_image_embed → emitido em embed_images() (N vezes por asset)
+
 log = logging.getLogger("studio.embed")
 
 
@@ -89,11 +95,18 @@ class SiglipEmbedder:
         self._oom_count = 0            # nº de OOM apanhados (antes do CPU fallback final)
         self._ema_per_item_ms: float | None = None
         self._max_observed_batch = self._batch_starts
+        # §P3 text-embed cache: chama embed_text() uma vez por texto distinto
+        # por processo. Cumpre SIGLIP_TEXT_CACHE_ONCE=True (era 6×N antes).
+        # Reset em reset_auto_tune(). Thread-safety: GIL (CPython) protege dict.
+        self._text_cache: dict[str, np.ndarray] = {}
+        self._text_cache_hits = 0
+        self._text_cache_misses = 0
 
     def _load(self):
         if self._model is not None:
             return
         import os
+        import time
 
         import torch
         from transformers import AutoModel, AutoProcessor
@@ -101,6 +114,7 @@ class SiglipEmbedder:
         self._device = (self._device
                         or os.environ.get("STUDIO_EMBED_DEVICE")
                         or ("cuda" if torch.cuda.is_available() else "cpu"))
+        t_load = time.perf_counter()
         self._processor = AutoProcessor.from_pretrained(MODEL_ID)
         model = AutoModel.from_pretrained(MODEL_ID)
         if self._device == "cuda":
@@ -114,6 +128,10 @@ class SiglipEmbedder:
                 torch.cuda.empty_cache()
                 self._device = "cpu"
         self._model = model.to(self._device).eval()
+        # §P3 cold-start medido: emitido uma vez por processo.
+        from studio.perf import Profiler
+        Profiler.record("siglip_model_load",
+                        time.perf_counter() - t_load, items=1)
 
     def _run_with_oom_fallback(self, fn):
         """Fallback legacy: OOM → move modelo para CPU e re-corre.
@@ -166,11 +184,18 @@ class SiglipEmbedder:
 
         # Fast path: batch já pequeno, ou auto-tune desligado.
         if not self._dynamic or n <= self._batch_starts:
-            return self._infer_single_via_cpu_fallback(list(paths))
+            t0 = time.perf_counter()
+            try:
+                return self._infer_single_via_cpu_fallback(list(paths))
+            finally:
+                from studio.perf import Profiler
+                Profiler.record("siglip_image_embed",
+                                time.perf_counter() - t0, items=n)
 
         # Auto-tune: itera chunks adaptativamente.
         self._load()
         out_parts: list[np.ndarray] = []
+        t_total = time.perf_counter()
         cursor = 0
         while cursor < n:
             bs = min(self._current_batch, n - cursor)
@@ -206,15 +231,63 @@ class SiglipEmbedder:
             cursor += bs   # todos os itens cobertos (halve-retry completou)
             self._chunks_since_last_oom += 1   # clean chunk → loss-recovery++
             self._maybe_upsize()
+        # §P3 categorização: total image-embed do run (N images em chunks).
+        from studio.perf import Profiler
+        Profiler.record("siglip_image_embed",
+                        time.perf_counter() - t_total, items=n)
         if not out_parts:
             return np.zeros((0, DIM), dtype=np.float32)
         return np.concatenate(out_parts, axis=0)
 
-    def embed_text(self, text_en: str) -> np.ndarray:
-        # Mantém semântica original: OOM → CPU fallback nunca halve (texto
-        # é 1 item, halve não faz sentido).
+    def embed_text(
+        self,
+        text_en: str,
+        *,
+        requirement_id: str | None = None,
+        prompt_version: str = "v1",
+        workflow_id: str | None = None,
+        model_id: str | None = None,
+    ) -> np.ndarray:
+        """Embed textual SigLIP (English). Cache estável por processo.
+
+        §P3 categorização: este call conta como "siglip_text_embed"
+        (NÃO "siglip_model_load" — o load é uma só cache, sem reload).
+        §P3 CACHE (2026-08-11): chave = text_en normalizado. 1× por texto
+        distinto por processo. SIGLIP_TEXT_CACHE_ONCE = True (era 6×N).
+        §P4 (TEST 5C 2026-08-11) chave ESTÁVEL quando kwargs fornecidos:
+            key = f"{workflow_id}|{requirement_id}|{prompt_version}|{model_id}"
+        Vantagem: dois callers que passem o mesmo (requirement_id, prompt_v,
+        workflow_id, model_id) partilham cache mesmo com text_en diferente.
+        Caso kwargs ausentes: cai na chave legacy (text_en.lower().strip()).
+
+        Mantém semântica original: OOM → CPU fallback nunca halve (texto
+        é 1 item, halve não faz sentido) — cache hit NUNCA chama CPU.
+        """
+        import time
+
         import torch
 
+        # §P4 ESTABILIDADE: se caller passou structured context, usa-o.
+        if any([requirement_id, workflow_id, model_id]):
+            key = (
+                f"{workflow_id or 'wf'}|{requirement_id or 'r'}|"
+                f"{prompt_version}|{model_id or MODEL_ID}"
+            )
+        else:
+            # §P3 legacy: case-insensitive + strip.
+            raw = text_en if text_en is not None else ""
+            key = raw.strip().lower()
+        if not key:
+            # text vazio/None: vetor zero (mesmo contrato que versão antiga);
+            # NÃO cacheamos (chave falsa).
+            return np.zeros(DIM, dtype=np.float32)
+        cached = self._text_cache.get(key)
+        if cached is not None:
+            self._text_cache_hits += 1
+            # cache hit não emite Profiler.record (custo ~0).
+            return cached
+
+        self._text_cache_misses += 1
         self._load()
 
         def _run():
@@ -226,7 +299,16 @@ class SiglipEmbedder:
                 feats = self._model.get_text_features(**inputs)
             return _normalize(feats.cpu().numpy().astype(np.float32))[0]
 
-        return self._run_with_oom_fallback(_run)
+        t = time.perf_counter()
+        try:
+            vec = self._run_with_oom_fallback(_run)
+        finally:
+            from studio.perf import Profiler
+            Profiler.record("siglip_text_embed",
+                            time.perf_counter() - t, items=1)
+        # grava cache para futuras chamadas (mesmo text_en no mesmo processo).
+        self._text_cache[key] = vec
+        return vec
 
     # ------------------------------------------------------------------
     # API observability (consumida em test_siglip_batching.py + dashboards):
@@ -250,6 +332,13 @@ class SiglipEmbedder:
     @property
     def max_observed_batch(self) -> int:
         return self._max_observed_batch
+
+    @property
+    def text_cache_stats(self) -> dict[str, int]:
+        """§P3 observability. hits / misses / size do cache."""
+        return {"hits": self._text_cache_hits,
+                "misses": self._text_cache_misses,
+                "size": len(self._text_cache)}
 
     @property
     def chunks_since_last_oom(self) -> int:
@@ -284,6 +373,10 @@ class SiglipEmbedder:
         self._oom_count = 0
         self._ema_per_item_ms = None
         self._max_observed_batch = self._batch_starts
+        # §P3 text cache também é resetável (testes isoláveis).
+        self._text_cache.clear()
+        self._text_cache_hits = 0
+        self._text_cache_misses = 0
 
     # ------------------------------------------------------------------
     # Internals (auto-tune + backpressure):
