@@ -299,6 +299,28 @@ class Settings(BaseSettings):
     # a re-fetch (mantém-se rejeitado se Vision voltar a rejeitar).
     negative_cache_ttl_days: int = Field(
         default=90, alias="STUDIO_NEGATIVE_CACHE_TTL_DAYS")
+    # ---- Fase 2 — Gemini metadata batching + SigLIP triage (2026-08-11) -----
+    # 4 = nº de shots enviados numa única chamada Gemini Flash Vision.
+    # Subir = menos HTTP roundtrips mas maior payload parcial parse risk.
+    # Descer = mais overhead HTTP mas parsing mais robusto.
+    library_gemini_batch_size: int = Field(
+        default=4, alias="STUDIO_LIBRARY_GEMINI_BATCH_SIZE")
+    # 2 = nº máx de chamadas Gemini em paralelo por processo. Plano free
+    # Gemini AI Studio throttling: subir >3 levaria a 429 mais frequente.
+    library_gemini_concurrency: int = Field(
+        default=2, alias="STUDIO_LIBRARY_GEMINI_CONCURRENCY")
+    # 5 = nº máx de retries em 429 antes de desistir (mantido em
+    # analyze_shots_batch handler). Backoff exponencial 2s, 4s, 8s, 16s, 32s.
+    library_gemini_max_retries: int = Field(
+        default=5, alias="STUDIO_LIBRARY_GEMINI_MAX_RETRIES")
+    # 0.30 = cosine similarity threshold para classificar shot como
+    # HIGH_RELEVANCE (candidato Gemini batch). 0.18 = POSSIBLE_RELEVANCE
+    # (candidato Gemini batch com prioridade baixa). <0.18 -> GLOBAL_ONLY
+    # (não chama Gemini; metadata cheap + needs_enrichment=True).
+    library_triage_high_threshold: float = Field(
+        default=0.30, alias="STUDIO_LIBRARY_TRIAGE_HIGH_THRESHOLD")
+    library_triage_possible_threshold: float = Field(
+        default=0.18, alias="STUDIO_LIBRARY_TRIAGE_POSSIBLE_THRESHOLD")
     # True = buckets.py update_topic_hit NÃO copia MP4 para bucket/shots/.
     # Cada MP4 vive UMA única vez em media/<sha>.<ext>; o workset guarda
     # apenas referências (shot_id + media_sha) em topic_topics.json e

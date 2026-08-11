@@ -431,17 +431,32 @@ def main() -> int:
     if video_id and topics:
         init_bucket(video_id, script_theme=bucket_theme, topics=topics)
 
-    # Carrega CoveragePlan se existe workset (§B: gate autoritativo).
-    # Apenas quando workflow_data está presente (produção) — admin mode
-    # não precisa de plan.
+    # UPSTREAM-CHANGE 2026-08-11 §F: workset visual_requirements.json é a
+    # FONTE CANÓNICA de requirements. Workflow.target_topics[*] mantido
+    # para retro-compat mas funciona como hint/override (apenas nomes).
+    # Resolve em ordem: workset > workflow.target_topics > vazio.
     if workflow_data:
-        try:
-            from studio.matching.coverage_plan import build_coverage_plan
+        spans_source = "workflow.target_topics"  # legacy
+        spans = []
+        work_vr = _load_workset_visual_requirements(args.workflow)
+        if work_vr and work_vr.get("requirements"):
+            spans_source = "workset/visual_requirements.json"
+            log.info("workset visual_requirements canonical para %s: %d entities",
+                     args.workflow, len(work_vr["requirements"]))
+            for req in work_vr["requirements"]:
+                from studio.script.entities import EntitySpan
+                spans.append(EntitySpan(
+                    canonical_name=req.get("canonical_entity", ""),
+                    entity_type=req.get("entity_type", "place"),
+                    t_in=float(req.get("narration_t_in", 0.0)),
+                    t_out=float(req.get("narration_t_out", 0.0)),
+                    importance=1.0,
+                    strict_visual=bool(req.get("strict", False)),
+                    location_context=req.get("location", "") or "",
+                ))
+        else:
+            # fallback legacy: workflow.target_topics (sem t_in/t_out)
             from studio.script.entities import EntitySpan
-            # converter target_topics do workflow em EntitySpans sintéticos
-            # (Plan base extrai-se de scripts reais; em reasson de órfãos o
-            # planner usa os topics do workflow como approximation)
-            spans = []
             for t in workflow_data.get("target_topics", []):
                 spans.append(EntitySpan(
                     canonical_name=t.get("name", ""),
@@ -452,17 +467,22 @@ def main() -> int:
                     strict_visual=bool(t.get("strict", False)),
                     location_context=t.get("location", ""),
                 ))
+        try:
+            from studio.matching.coverage_plan import build_coverage_plan
             if spans:
                 plan = build_coverage_plan(
                     spans, db, settings,
                     topic=workflow_data.get("theme", ""),
                 )
                 state["_coverage_plan"] = plan
-                state["_confirmed_index"] = {}   # populated lazily
+                state["_confirmed_index"] = {}
+                state["_visual_requirements_source"] = spans_source
                 _save_state(state)
                 log.info(
-                    "coverage_plan carregado: %d entities (workflow='%s')",
-                    len(plan.ranked_entities), args.workflow)
+                    "coverage_plan carregado: %d entities (source=%s, "
+                    "workflow='%s')", len(plan.ranked_entities), spans_source,
+                    args.workflow,
+                )
         except Exception as exc:
             log.warning(
                 "coverage_plan load falhou (não fatal) — "
@@ -584,7 +604,13 @@ def main() -> int:
                                 plan, db, settings,
                                 confirmed_index=state.get(
                                     "_confirmed_index", {}) or None,
-                                remeasure=False,
+                                # UPSTREAM-CHANGE 2026-08-11 (code-reviewer #4):
+                                # remeasure=True é obrigatório aqui porque
+                                # `_per_shot_durations` é PrivateAttr e não
+                                # serializa em plan.model_dump_json(). Sem
+                                # remeasure, strict_available_seconds fica 0
+                                # em qualquer restart a partir de state.json.
+                                remeasure=True,
                             )
                             # UPSTREAM-FIX (code-reviewer #2): cap do
                             # _coverage_progress a últimas 50 entries
@@ -727,6 +753,36 @@ def _log_finished_event(n_ok: int, n_skip: int, n_fail: int,
             }) + "\n")
     except OSError as exc:
         log.warning("ingest_log write falhou: %s", exc)
+
+
+def _load_workset_visual_requirements(workflow_id: str) -> Optional[dict]:
+    """UPSTREAM-CHANGE 2026-08-11 §F: resolver visual_requirements.json do
+    workset como FONTE CANÓNICA. Hierarchy de paths tentados:
+      1. data/library/worksets/<workflow_id>/visual_requirements.json
+      2. data/library/worksets/<workflow_id>.json (legado standalone)
+    Retorna None se nemhum path existir OU JSON inválido.
+
+    O schema canonical:
+      {"requirements": [{"canonical_entity", "entity_type",
+                         "strict", "required_seconds", "target_seconds",
+                         "min_distinct_shots", "narration_t_in", ...}]}
+    """
+    candidates = [
+        _DATA_ROOT / "library" / "worksets" / workflow_id
+                  / "visual_requirements.json",
+        _DATA_ROOT / "library" / "worksets" / f"{workflow_id}.json",
+    ]
+    for p in candidates:
+        if not p.exists():
+            continue
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and "requirements" in data:
+                return data
+        except (OSError, json.JSONDecodeError) as exc:
+            log.warning("_load_workset_visual_requirements: %s ilegível (%s)",
+                        p, exc.__class__.__name__)
+    return None
 
 
 if __name__ == "__main__":

@@ -39,7 +39,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 from studio.config import Settings
 from studio.library.db import LibraryDB
@@ -69,7 +69,8 @@ class EntityCoverage(BaseModel):
     """Shots distintos mínimos para cobrir target_seconds."""
     min_distinct_shots: int
     """Segundos úteis disponíveis na biblioteca (considera t_out-t_in e
-    revocações)."""
+    revocações). Todos os shots semanticamente compatíveis — INCLUI
+    genéricos para strict entities."""
     available_seconds: float = 0.0
     """Shots distintos (media_sha únicos) que carregam a entity."""
     available_distinct_shots: int = 0
@@ -78,9 +79,23 @@ class EntityCoverage(BaseModel):
     OVERLAP com confirmed_index (em vez de só checar `len(confirmed)>0`,
     que aceita qualquer shot_id)."""
     available_shot_ids: set[str] = Field(default_factory=set)
+    """UPSTREAM-FIX 2026-08-11 §P1: subconjunto dos available_shot_ids que
+    foram CONFIRMADOS pelo Vision/DetectedEntity para esta entity.
+    Vazio até o gate de coverage correr contra confirmed_index. Para
+    entities strict, APENAS estes shots contam para secs/distinct."""
+    strict_shot_ids: set[str] = Field(default_factory=set)
+    """UPSTREAM-FIX 2026-08-11 §P1: soma da duração (t_out-t_in) apenas
+    dos shot_ids em strict_shot_ids. Para entities strict, falhar este
+    número < target significa PARTIAL/UNCONFIRMED mesmo que shots
+    semanticamente compatíveis existam em quantidade."""
+    strict_available_seconds: float = 0.0
+    """UPSTREAM-FIX 2026-08-11 §P1: len(strict_shot_ids)."""
+    strict_available_distinct_shots: int = 0
     """Ficheiros físicos (media_sha únicos)."""
     available_files: int = 0
-    """déficit = max(target_seconds - available_seconds, 0)."""
+    """déficit = max(target_seconds - available_seconds, 0).
+    NOTA: para strict entities, esta coluna é SEMÂNTICA (não inclui
+    strict_available_seconds separados). Ver strict_available_seconds."""
     deficit_seconds: float = 0.0
     """strict_visual ⇒ entity NÃO pode cair para genérico em cobertura
     insuficiente; top-up é obrigatório."""
@@ -98,6 +113,11 @@ class EntityCoverage(BaseModel):
     em queries rejeitadas para esta entity — orienta decisões de
     cobertura manual)."""
     negative_cache_age_seconds: float = 0.0
+    """Runtime-only cache (PrivateAttr). Não serializa para JSON.
+    Mapa shot_id -> duração efectiva (t_out capped per media_sha).
+    Populado por measure_coverage e usado em is_workset_ready para
+    calcular strict_available_seconds a partir de strict_shot_ids."""
+    _per_shot_durations: dict[str, float] = PrivateAttr(default_factory=dict)
 
 
 class CoveragePlan(BaseModel):
@@ -230,6 +250,7 @@ def measure_coverage(
     dist_shots: set[str] = set()
     dist_files: set[str] = set()
     media_max_out: dict[str, float] = {}  # cap real duração por media_sha
+    per_shot_dur: dict[str, float] = {}
     for r in rows:
         secs += max(0.0, float(r.get("t_out", 0.0)) - float(r.get("t_in", 0.0)))
         if r.get("shot_id"):
@@ -248,8 +269,10 @@ def measure_coverage(
     # UPSTREAM-FIX 2026-08-11: persiste o SET de shot_ids para validação
     # overlap em is_workset_ready() (code-reviewer #3). Sem este set,
     # gate aceita qualquer shot_id no confirmed_index, mesmo que esse
-    # shot NÃO corresponda entity medida.
+    # shot NÃO corresponda entity medida. Também cache por-shot dur
+    # (PrivateAttr) para calcular strict_available_seconds.
     coverage.available_shot_ids = dist_shots
+    coverage._per_shot_durations = per_shot_dur
 
     # Pass 3: negative cache lens — soma das ages das rows provider_cache
     # rejected que mencionam `canonical_name` no reason (heurística:
@@ -525,46 +548,64 @@ def is_workset_ready(
             measure_coverage(ent, db)
         _apply_remeasure_buffer(plan, settings)
 
+    # UPSTREAM-FIX §P1: para strict, populamos strict_shot_ids /
+    # strict_available_seconds / strict_available_distinct_shots fazendo
+    # overlap entre confirmed_index e available_shot_ids. summary_secs
+    # vem do cache privado _per_shot_durations.
+    if confirmed_index is not None:
+        for ent in plan.ranked_entities:
+            if not ent.strict:
+                ent.strict_shot_ids = set()
+                ent.strict_available_seconds = 0.0
+                ent.strict_available_distinct_shots = 0
+                continue
+            canon_low = ent.canonical_name.strip().lower()
+            confirmed = confirmed_index.get(canon_low, [])
+            confirmed_set = {str(s) for s in confirmed}
+            strict_set = confirmed_set & ent.available_shot_ids
+            ent.strict_shot_ids = strict_set
+            ent.strict_available_distinct_shots = len(strict_set)
+            ent.strict_available_seconds = round(
+                sum(ent._per_shot_durations.get(sid, 0.0)
+                    for sid in strict_set), 3
+            )
+
     per_status: dict[str, str] = {}
     strict_uncovered: list[str] = []
 
     for ent in plan.ranked_entities:
-        secs_ok = ent.available_seconds >= ent.target_seconds
-        shots_ok = ent.available_distinct_shots >= ent.min_distinct_shots
-        if secs_ok and shots_ok:
-            if ent.strict:
-                if confirmed_index is None:
-                    # conservador: não confirmar = não cobrir
+        # UPSTREAM-FIX §P1 (2026-08-11, re-aplicado após teste falhar):
+        # strict e non-strict têm ramos TOTALMENTE separados. Spec §P1
+        # diz: para entities strict, o estado é SEMPRE UNCONFIRMED até
+        # strict_overlap >= min_shots E strict_secs >= target. Apenas
+        # NOT_FOUND se nem houver candidatos semânticos disponíveis
+        # (biblioteca realmente vazia para esta entity).
+        if ent.strict:
+            if ent.available_seconds <= 0:
+                per_status[ent.canonical_name] = _RSTATUS_NOT_FOUND
+            elif confirmed_index is None:
+                # sem oráculo Vision: strict é sempre UNCONFIRMED
+                per_status[ent.canonical_name] = _RSTATUS_UNCONFIRMED
+                strict_uncovered.append(ent.canonical_name)
+            else:
+                secs = ent.strict_available_seconds
+                shots = ent.strict_available_distinct_shots
+                if secs >= ent.target_seconds and shots >= ent.min_distinct_shots:
+                    per_status[ent.canonical_name] = _RSTATUS_COVERED
+                else:
+                    # confirmou existe mas insuficiente: UNCONFIRMED
                     per_status[ent.canonical_name] = _RSTATUS_UNCONFIRMED
                     strict_uncovered.append(ent.canonical_name)
-                else:
-                    canon_low = ent.canonical_name.strip().lower()
-                    confirmed = confirmed_index.get(canon_low, [])
-                    if confirmed:
-                        # UPSTREAM-FIX (code-reviewer #3): validação real de
-                        # confirmação — o shot_id confirmado TEM de estar
-                        # nos shots medidos da entity. Sem este overlap,
-                        # gate mente (passaria se confirmed_index apontasse
-                        # para shot de outra entity).
-                        confirmed_set = {str(s) for s in confirmed}
-                        if confirmed_set & ent.available_shot_ids:
-                            per_status[ent.canonical_name] = _RSTATUS_COVERED
-                        else:
-                            # confirmado existe mas NÃO é desta entity
-                            per_status[ent.canonical_name] = _RSTATUS_UNCONFIRMED
-                            strict_uncovered.append(ent.canonical_name)
-                    else:
-                        per_status[ent.canonical_name] = _RSTATUS_UNCONFIRMED
-                        strict_uncovered.append(ent.canonical_name)
-            else:
-                # strict check não aplicável
-                per_status[ent.canonical_name] = _RSTATUS_COVERED
-        elif ent.available_seconds <= 0:
-            per_status[ent.canonical_name] = _RSTATUS_NOT_FOUND
         else:
-            # algum progresso, mas insuficiente — distingamos target>=req para
-            # mostrar onde estámos
-            per_status[ent.canonical_name] = _RSTATUS_PARTIAL
+            # non-strict: matching semântico (SigLIP-compatible)
+            secs = ent.available_seconds
+            shots = ent.available_distinct_shots
+            if secs >= ent.target_seconds and shots >= ent.min_distinct_shots:
+                per_status[ent.canonical_name] = _RSTATUS_COVERED
+            elif secs <= 0:
+                per_status[ent.canonical_name] = _RSTATUS_NOT_FOUND
+            else:
+                per_status[ent.canonical_name] = _RSTATUS_PARTIAL
 
     overall_ready = bool(per_status) and all(
         v == _RSTATUS_COVERED for v in per_status.values()
@@ -608,6 +649,13 @@ def write_workset_readiness(
                               if v == _RSTATUS_PARTIAL),
         "not_found_count": sum(1 for v in per_status.values()
                                 if v == _RSTATUS_NOT_FOUND),
+        # UPSTREAM-CHANGE 2026-08-11 (code-reviewer #2): strict entities
+        # nunca caem em PARTIAL no novo branch; são COVERED ou
+        # UNCONFIRMED. Contamos UNCONFIRMED separado para que o
+        # operador continue a ver o deficit strict sem ser ignorado pelo
+        # "partial_count" legacy.
+        "unconfirmed_count": sum(1 for v in per_status.values()
+                                  if v == _RSTATUS_UNCONFIRMED),
     }
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(out, ensure_ascii=False, indent=2),
