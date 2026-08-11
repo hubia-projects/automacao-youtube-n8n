@@ -36,6 +36,7 @@ import json
 import logging
 import re
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -72,6 +73,11 @@ class EntityCoverage(BaseModel):
     available_seconds: float = 0.0
     """Shots distintos (media_sha únicos) que carregam a entity."""
     available_distinct_shots: int = 0
+    """UPSTREAM-FIX 2026-08-11 (code-reviewer #3): conjunto de shot_ids
+    medidos para esta entity. Crucial para `is_workset_ready` validar
+    OVERLAP com confirmed_index (em vez de só checar `len(confirmed)>0`,
+    que aceita qualquer shot_id)."""
+    available_shot_ids: set[str] = Field(default_factory=set)
     """Ficheiros físicos (media_sha únicos)."""
     available_files: int = 0
     """déficit = max(target_seconds - available_seconds, 0)."""
@@ -239,6 +245,11 @@ def measure_coverage(
     coverage.available_seconds = round(real_secs, 3)
     coverage.available_distinct_shots = len(dist_shots)
     coverage.available_files = len(dist_files)
+    # UPSTREAM-FIX 2026-08-11: persiste o SET de shot_ids para validação
+    # overlap em is_workset_ready() (code-reviewer #3). Sem este set,
+    # gate aceita qualquer shot_id no confirmed_index, mesmo que esse
+    # shot NÃO corresponda entity medida.
+    coverage.available_shot_ids = dist_shots
 
     # Pass 3: negative cache lens — soma das ages das rows provider_cache
     # rejected que mencionam `canonical_name` no reason (heurística:
@@ -429,3 +440,176 @@ def build_coverage_plan(
 def write_plan(plan: CoveragePlan, out_path: Path) -> Path:
     out_path.write_text(plan.model_dump_json(indent=2), "utf-8")
     return out_path
+
+
+# ----------------- readiness gate (ÚNICA FONTE AUTORITATIVA) -----------------
+# Substitui buckets.py:topic_topics.json["is_ready"] como gate de produção.
+# buckets.py continua como tracker binário cheap (>=1 hit por tópico) só para
+# observability operacional; a decisão de STOP ACTIVE VIDEO PREPARATION passa
+# exclusivamente por is_workset_ready() abaixo.
+#
+# UPSTREAM-CHANGE §B 2026-08-11:
+#   - Para uma requirement R estar COVERED precisamos:
+#       R.available_seconds   >= R.target_seconds
+#       AND
+#       R.available_distinct_shots >= R.min_distinct_shots
+#   - Para R.strict=True, ACIMA + pelo menos 1 shot CONFIRMADO pelo Vision
+#     (DetectedEntity.confidence >= entity_confirm_min_confidence) presente em
+#     confirmed_index[canonical_lower].
+#   - Sem isso, requirement fica PARTIAL (counter fail-closed).
+#   - global: READY = SEM TODOS os requirements principais estão COVERED.
+
+# Constantes de status — alinhadas com studio.library.models.CoverageState.
+# (Aqui usamos strings para serializar sem import circular models↔coverage.)
+_RSTATUS_NOT_FOUND = "NOT_FOUND"
+_RSTATUS_PARTIAL = "PARTIAL"
+_RSTATUS_COVERED = "COVERED"
+_RSTATUS_OVER_COVERED = "OVER_COVERED"
+_RSTATUS_UNCONFIRMED = "UNCONFIRMED"
+
+
+def _apply_remeasure_buffer(
+    plan: CoveragePlan, settings: Settings,
+) -> None:
+    """Aplica Settings: coverage_buffer + min_shots_by_duration a entidades
+    sem target/min_distinct_shots (ex.: plano parcial importado)."""
+    for ent in plan.ranked_entities:
+        if ent.target_seconds <= 0:
+            ent.target_seconds = round(
+                ent.required_seconds * settings.coverage_buffer, 3)
+        if ent.min_distinct_shots <= 0:
+            ent.min_distinct_shots = max(
+                1, -(-int(ent.target_seconds)
+                     // int(max(1.0, settings.min_shots_by_duration))))
+        ent.deficit_seconds = round(
+            max(0.0, ent.target_seconds - ent.available_seconds), 3)
+
+
+def is_workset_ready(
+    plan: CoveragePlan,
+    db: LibraryDB,
+    settings: Settings,
+    *,
+    confirmed_index: dict[str, list[str]] | None = None,
+    remeasure: bool = True,
+) -> tuple[bool, dict[str, str], list[str]]:
+    """ÚNICA FONTE AUTORITATIVA de READY (par task 2026-08-11, §B).
+
+    Para cada requirement do plano, calcula:
+      - secs_ok = available_seconds >= target_seconds
+      - shots_ok = available_distinct_shots >= min_distinct_shots
+    - Se ambos passam:
+        * strict + confirmed_index fornecido + shot confirmado presente ⇒ COVERED
+        * strict + sem confirmação (confirmed_index vazio OR None) ⇒ UNCONFIRMED
+          (strict_uncovered += canonical)
+        * não-strict ⇒ COVERED
+    - Senão, available==0 ⇒ NOT_FOUND; senão PARTIAL.
+
+    Args:
+        plan: CoveragePlan (já construído via build_coverage_plan)
+        db: LibraryDB (para remeasure opcional)
+        settings: Settings (coverage_buffer + min_shots_by_duration)
+        confirmed_index: {canonical_lower: [shot_id, ...]} shots confirmados
+            pelo Vision (DetectedEntity.confidence >= threshold). None =
+            "não ainda confirmado" → strict vira PARTIAL conservativamente.
+        remeasure: True = releitura DB (custo I/O) antes do gate.
+
+    Returns:
+        (overall_ready, per_requirement_status, strict_uncovered_list)
+
+    overall_ready = True ↔ TODOS os requirements estão "COVERED".
+    Deve ser a ÚNICA fonte de "STOP ACTIVE VIDEO PREPARATION".
+    """
+    if remeasure:
+        for ent in plan.ranked_entities:
+            measure_coverage(ent, db)
+        _apply_remeasure_buffer(plan, settings)
+
+    per_status: dict[str, str] = {}
+    strict_uncovered: list[str] = []
+
+    for ent in plan.ranked_entities:
+        secs_ok = ent.available_seconds >= ent.target_seconds
+        shots_ok = ent.available_distinct_shots >= ent.min_distinct_shots
+        if secs_ok and shots_ok:
+            if ent.strict:
+                if confirmed_index is None:
+                    # conservador: não confirmar = não cobrir
+                    per_status[ent.canonical_name] = _RSTATUS_UNCONFIRMED
+                    strict_uncovered.append(ent.canonical_name)
+                else:
+                    canon_low = ent.canonical_name.strip().lower()
+                    confirmed = confirmed_index.get(canon_low, [])
+                    if confirmed:
+                        # UPSTREAM-FIX (code-reviewer #3): validação real de
+                        # confirmação — o shot_id confirmado TEM de estar
+                        # nos shots medidos da entity. Sem este overlap,
+                        # gate mente (passaria se confirmed_index apontasse
+                        # para shot de outra entity).
+                        confirmed_set = {str(s) for s in confirmed}
+                        if confirmed_set & ent.available_shot_ids:
+                            per_status[ent.canonical_name] = _RSTATUS_COVERED
+                        else:
+                            # confirmado existe mas NÃO é desta entity
+                            per_status[ent.canonical_name] = _RSTATUS_UNCONFIRMED
+                            strict_uncovered.append(ent.canonical_name)
+                    else:
+                        per_status[ent.canonical_name] = _RSTATUS_UNCONFIRMED
+                        strict_uncovered.append(ent.canonical_name)
+            else:
+                # strict check não aplicável
+                per_status[ent.canonical_name] = _RSTATUS_COVERED
+        elif ent.available_seconds <= 0:
+            per_status[ent.canonical_name] = _RSTATUS_NOT_FOUND
+        else:
+            # algum progresso, mas insuficiente — distingamos target>=req para
+            # mostrar onde estámos
+            per_status[ent.canonical_name] = _RSTATUS_PARTIAL
+
+    overall_ready = bool(per_status) and all(
+        v == _RSTATUS_COVERED for v in per_status.values()
+    )
+    return overall_ready, per_status, strict_uncovered
+
+
+def write_workset_readiness(
+    plan: CoveragePlan,
+    db: LibraryDB,
+    settings: Settings,
+    out_path: Path,
+    *,
+    confirmed_index: dict[str, list[str]] | None = None,
+    remeasure: bool = True,
+) -> tuple[bool, dict[str, str]]:
+    """Conveniência: re-mede + is_workset_ready + escreve coverage.json
+    no path. Caller compara dict com última snapshot para delta."""
+    ready, per_status, strict_uncovered = is_workset_ready(
+        plan, db, settings,
+        confirmed_index=confirmed_index, remeasure=remeasure,
+    )
+    overall_required = sum(e.required_seconds for e in plan.ranked_entities)
+    overall_target = sum(e.target_seconds for e in plan.ranked_entities)
+    overall_available = sum(e.available_seconds for e in plan.ranked_entities)
+    out = {
+        "schema_version": "1.0",
+        "video_id": getattr(plan, "video_id", ""),
+        "computed_at": datetime.now(timezone.utc).isoformat(),
+        "overall_required_seconds": round(overall_required, 3),
+        "overall_target_seconds": round(overall_target, 3),
+        "overall_available_seconds": round(overall_available, 3),
+        "overall_deficit_seconds": round(
+            max(0.0, overall_target - overall_available), 3),
+        "is_workset_ready": ready,
+        "per_requirement_status": per_status,
+        "strict_uncovered": strict_uncovered,
+        "covered_count": sum(1 for v in per_status.values()
+                              if v == _RSTATUS_COVERED),
+        "partial_count": sum(1 for v in per_status.values()
+                              if v == _RSTATUS_PARTIAL),
+        "not_found_count": sum(1 for v in per_status.values()
+                                if v == _RSTATUS_NOT_FOUND),
+    }
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(out, ensure_ascii=False, indent=2),
+                         "utf-8")
+    return ready, per_status

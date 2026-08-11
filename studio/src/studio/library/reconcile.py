@@ -332,6 +332,10 @@ def main() -> int:
                     help="PHASE 1 (topic-driven): carregar workflow de "
                          "data/library/workflows/<id>.json. Sem este flag, "
                          "comportamento legacy (processa tudo indiferenciadamente).")
+    ap.add_argument("--maintenance-library-only", action="store_true",
+                    help="Modo admin: processa biblioteca SEM active video. "
+                         "EXCLUSIVO com --workflow. Para uso de maintenance "
+                         "de inventory (não batch de produção).")
     ap.add_argument("--no-prefilter", action="store_true",
                     help="DEPRECATED: pre-filter já é opt-in via --lazy-filter. "
                          "Este flag fica para retro-compat; não faz nada.")
@@ -340,6 +344,30 @@ def main() -> int:
                          "do ficheiro. Default é OFF (porque 908 órfãos têm "
                          "filenames hash do Pexels, sem keywords do topic).")
     args = ap.parse_args()
+
+    # UPSTREAM-CHANGE 2026-08-11 §D: reconcile de produção exige
+    # EXACTAMENTE um dos dois modos:
+    #   --workflow <id>             → produção, linkage ao active workset
+    #   --maintenance-library-only  → admin, processa sem vídeo (fail-loud)
+    # Sem qualquer um dos dois, ERROR fail-closed (não aceita "reconcile
+    # sem rumo"). Esta regra impede os runs de 5 dias.
+    if not args.workflow and not args.maintenance_library_only:
+        log.error(
+            "reconcile: production reconcile requires EXACTLY one of:\n"
+            "  --workflow <video_id>          (active video production)\n"
+            "  --maintenance-library-only     (admin inventory only)\n"
+            "Refusing to run without an active scope — ver task 2026-08-11 §D."
+        )
+        log.error(
+            "Crie workflow primeiro com: studio workflows create --video-id "
+            "<id> --theme '<text>' --topics 't1,t2,...'.")
+        return 2
+    if args.workflow and args.maintenance_library_only:
+        log.error(
+            "reconcile: --workflow e --maintenance-library-only são "
+            "MUTUAMENTE EXCLUSIVOS. Decida um modo."
+        )
+        return 2
 
     from studio.library.dedup import DedupIndex
     from studio.library.db import LibraryDB
@@ -389,6 +417,9 @@ def main() -> int:
         state["video_id"] = args.video_id
         state["topics"] = [t.strip() for t in (args.topics or "").split(",")
                            if t.strip()]
+        state.setdefault("_coverage_progress", [])
+        state.setdefault("_confirmed_index", {})
+        state.setdefault("_coverage_plan", None)
         _save_state(state)
     video_id = state.get("video_id") or args.video_id
     topics = state.get("topics") or []
@@ -399,6 +430,44 @@ def main() -> int:
         bucket_theme = workflow_data.get("theme", bucket_theme)
     if video_id and topics:
         init_bucket(video_id, script_theme=bucket_theme, topics=topics)
+
+    # Carrega CoveragePlan se existe workset (§B: gate autoritativo).
+    # Apenas quando workflow_data está presente (produção) — admin mode
+    # não precisa de plan.
+    if workflow_data:
+        try:
+            from studio.matching.coverage_plan import build_coverage_plan
+            from studio.script.entities import EntitySpan
+            # converter target_topics do workflow em EntitySpans sintéticos
+            # (Plan base extrai-se de scripts reais; em reasson de órfãos o
+            # planner usa os topics do workflow como approximation)
+            spans = []
+            for t in workflow_data.get("target_topics", []):
+                spans.append(EntitySpan(
+                    canonical_name=t.get("name", ""),
+                    entity_type=t.get("type", "place"),
+                    t_in=0.0,
+                    t_out=0.0,
+                    importance=t.get("importance", 0.5),
+                    strict_visual=bool(t.get("strict", False)),
+                    location_context=t.get("location", ""),
+                ))
+            if spans:
+                plan = build_coverage_plan(
+                    spans, db, settings,
+                    topic=workflow_data.get("theme", ""),
+                )
+                state["_coverage_plan"] = plan
+                state["_confirmed_index"] = {}   # populated lazily
+                _save_state(state)
+                log.info(
+                    "coverage_plan carregado: %d entities (workflow='%s')",
+                    len(plan.ranked_entities), args.workflow)
+        except Exception as exc:
+            log.warning(
+                "coverage_plan load falhou (não fatal) — "
+                "reconcile prossegue sem gate autoritativo: %s",
+                exc.__class__.__name__)
 
     already_done = {d["file"] for d in state["done"]}
     already_failed_files = {f["file"] for f in state["failed"]}
@@ -484,18 +553,73 @@ def main() -> int:
                          i + 1, total_today, sid, cost_usd)
                 if res.get("topic_hit") and video_id:
                     update_topic_hit(video_id, res["topic_hit"], sid, mp4)
+                    # UPSTREAM-CHANGE 2026-08-11 §B: bucket.is_ready era
+                    # o gate de STOP. Agora is_workset_ready() é a única
+                    # fonte autoritativa. Bucket fica como observer cheap.
                     try:
                         from studio.library.buckets import get_progress
                         prog = get_progress(video_id)
                         if prog and prog.get("is_ready"):
-                            log.info("[%d/%d] 🎯 is_ready atingido ('%s'); "
-                                     "a terminar run antes de processar resto.",
-                                     i + 1, total_today, video_id)
-                            _save_state(state)
-                            _log_finished_event(n_ok, n_skip, n_fail, video_id, topics)
-                            return 0
+                            # Bucket indica “topics todos com count>0”,
+                            # mas é sinal de observability (escalar de 0→1
+                            # cobertura de tópicos). FONTE AUTORITATIVA
+                            # vem de is_workset_ready() abaixo.
+                            log.debug(
+                                "[%d/%d] bucket.is_ready atingido (tracker "
+                                "cheap); a confirmar via is_workset_ready "
+                                "…", i + 1, total_today)
                     except Exception as exc:
-                        log.warning("is_ready check falhou: %s", exc)
+                        log.debug("is_ready bucket check skip: %s", exc)
+                    # FONTE AUTORITATIVA — chamada após cada asset DONE
+                    # se o video_id tem um plano carregado. Quando
+                    # ready=True, TERMINA a run antes de continuar a
+                    # processar o pool (regra §B).
+                    try:
+                        if workflow_data and state.get("_coverage_plan"):
+                            from studio.matching.coverage_plan import (
+                                is_workset_ready,
+                            )
+                            plan = state["_coverage_plan"]
+                            ready, per_st, _ = is_workset_ready(
+                                plan, db, settings,
+                                confirmed_index=state.get(
+                                    "_confirmed_index", {}) or None,
+                                remeasure=False,
+                            )
+                            # UPSTREAM-FIX (code-reviewer #2): cap do
+                            # _coverage_progress a últimas 50 entries
+                            # (~10KB cada) para não inchar o state.json
+                            # após 900 assets (9MB).
+                            prog_list = state["_coverage_progress"]
+                            prog_list.append({
+                                "asset": i + 1, "file": mp4.name,
+                                "per_status": per_st, "ready": ready,
+                                "at": _now_iso(),
+                            })
+                            if len(prog_list) > 50:
+                                state["_coverage_progress"] = (
+                                    prog_list[-50:])
+                            # totals agregados — sempre disponíveis
+                            state["_coverage_latest"] = {
+                                "asset": i + 1, "file": mp4.name,
+                                "per_status": per_st, "ready": ready,
+                                "at": state["_coverage_progress"][-1]["at"],
+                            }
+                            if ready:
+                                log.info(
+                                    "[%d/%d] 🎯 is_workset_ready atingido "
+                                    "('%s'); STOP ACTIVE VIDEO PREPARATION. "
+                                    "Restantes ficam PENDING_LIBRARY_ENRICHMENT.",
+                                    i + 1, total_today, video_id)
+                                _save_state(state)
+                                _log_finished_event(n_ok, n_skip, n_fail,
+                                                     video_id, topics)
+                                return 0
+                    except Exception as exc:
+                        # is_workset_ready não pode bloquear reconcile.
+                        # Log debug; bucket.is_ready já dá sinal barato.
+                        log.debug("is_workset_ready check skip: %s (%s)",
+                                  exc.__class__.__name__, str(exc)[:120])
                 # Throttling entre chamadas Gemini (code-review MED).
                 time.sleep(1.5)
             elif (asset_state is not None
