@@ -38,6 +38,52 @@ from studio.library.rate_limit import get_gemini_limiter
 log = logging.getLogger("studio.metadata")
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+
+# === P13 (2026-08-11) — Gemini actual HTTP telemetry (REAL, não logical) ====
+# Singleton que conta cada httpx.post REAL disparado por este módulo,
+# categorizado por 4xx (fail-fast) / 429 (retry-after) / 5xx (bounded) /
+# parse fail (split progressivo). Test 11/12/13 validam.
+class _GeminiTelemetry:
+    actual_http_requests: int = 0
+    actual_http_4xx_failfast: int = 0
+    actual_http_429_retries: int = 0
+    actual_http_5xx_retries: int = 0
+    actual_retries: int = 0
+    actual_parsed_failed: int = 0
+    actual_split_count: int = 0
+    actual_queue_wait_s: float = 0.0
+    actual_rate_limit_wait_s: float = 0.0
+    actual_http_s: float = 0.0
+
+    def as_dict(self) -> dict:
+        return {
+            "actual_http_requests": self.actual_http_requests,
+            "actual_http_4xx_failfast": self.actual_http_4xx_failfast,
+            "actual_http_429_retries": self.actual_http_429_retries,
+            "actual_http_5xx_retries": self.actual_http_5xx_retries,
+            "actual_retries": self.actual_retries,
+            "actual_parsed_failed": self.actual_parsed_failed,
+            "actual_split_count": self.actual_split_count,
+            "actual_queue_wait_s": round(self.actual_queue_wait_s, 3),
+            "actual_rate_limit_wait_s": round(self.actual_rate_limit_wait_s, 3),
+            "actual_http_s": round(self.actual_http_s, 3),
+        }
+
+
+_GEMINI_TELEMETRY: _GeminiTelemetry | None = None
+
+
+def get_gemini_telemetry() -> _GeminiTelemetry:
+    global _GEMINI_TELEMETRY
+    if _GEMINI_TELEMETRY is None:
+        _GEMINI_TELEMETRY = _GeminiTelemetry()
+    return _GEMINI_TELEMETRY
+
+
+def reset_gemini_telemetry() -> None:
+    global _GEMINI_TELEMETRY
+    _GEMINI_TELEMETRY = _GeminiTelemetry()
 # Preços Gemini 2.5 Flash (aprox., para o ledger)
 _USD_IN, _USD_OUT = 0.15 / 1e6, 0.60 / 1e6
 
@@ -259,8 +305,9 @@ def _gemini_batched_with_retry(
                 }
             })
 
-    # 3) HTTP call
+    # 3) HTTP call (P13: telemetry REAL — não logical ceil(N/batch_size))
     t_http = time.perf_counter()
+    _t = get_gemini_telemetry()
     try:
         resp = httpx.post(
             GEMINI_URL.format(model=settings.model_flash),
@@ -274,14 +321,28 @@ def _gemini_batched_with_retry(
             },
             timeout=120,
         )
+        # P13 (2026-08-11): incrementa telemetry com categoria REAL (4xx/429/5xx).
+        _t.actual_http_requests += 1
+        if 400 <= resp.status_code < 500 and resp.status_code != 429:
+            _t.actual_http_4xx_failfast += 1     # 401/403/404 fail-fast policy
+        elif resp.status_code == 429:
+            _t.actual_http_429_retries += 1       # counted in retry loop below
+            _t.actual_retries += 1
+        elif resp.status_code >= 500:
+            _t.actual_http_5xx_retries += 1
+            _t.actual_retries += 1
     except (httpx.HTTPError, httpx.TimeoutException) as exc:
         # Network/timeout → SPLIT (parse/timeout path), NÃO fan-out per-shot.
+        _t.actual_http_requests += 1
+        _t.actual_http_s += time.perf_counter() - t_http
         Profiler.record("gemini_http", time.perf_counter() - t_http, items=len(shots))
         log.warning("_gemini_batched_with_retry: HTTP fail (%s) — split halves",
                     exc.__class__.__name__)
+        _t.actual_split_count += 1
         return _split_on_failure(shots, settings, source_hint, reason=f"http:{exc.__class__.__name__}")
 
     Profiler.record("gemini_http", time.perf_counter() - t_http, items=len(shots))
+    _t.actual_http_s += time.perf_counter() - t_http
 
     # 4) 429 → retry BATCH (NÃO split).
     if resp.status_code == 429:

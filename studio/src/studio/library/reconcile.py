@@ -400,6 +400,11 @@ def main() -> int:
     # que define tema + target_topics + meta_coverage. Se já existir bucket
     # com is_ready=true, abort fail-closed (a meta já está coberta).
     workflow_data = None
+    # P4 (2026-08-11 fix code-reviewer): `workset_ctx` SEMPRE definido.
+    # Robust code: assign None upfront para if 'workset_ctx' in locals() ser
+    # substituível por `workset_ctx is not None`. Continua a funcionar se
+    # load_workset_context levantar (a except external ao scope).
+    workset_ctx = None
     if args.workflow:
         from studio.library.buckets import read_workflow, get_progress
         workflow_data = read_workflow(args.workflow)
@@ -506,9 +511,33 @@ def main() -> int:
             ))
         # UPSTREAM-CHANGE 2026-08-11 §P5: construir requirement_prompts
         # dict[canonical_entity -> text_en] UMA VEZ (caller do loop).
-        # Cada text_en = canonical + aliases + location em inglês — SigLIP
-        # text tower é EN-only (ADR-0003).
-        requirement_prompts = _build_requirement_prompts(work_vr)
+        # P4 (2026-08-11): com WorksetContext produzido por load_workset_context()
+        # (canónico SSoT), requirement_prompts vêm do WorksetContext — não de
+        # _build_requirement_prompts duplo (legacy). Mantemos o legacy como
+        # fallback retro-compat para testes que constroem visual_requirements
+        # JSON ad-hoc.
+        try:
+            from studio.library.workset_context import (
+                load_workset_context,
+                MODE_WORKFLOW,
+            )
+            workset_ctx = load_workset_context(
+                workflow_id=args.workflow,
+                workset_dir=_DATA_ROOT / "library" / "worksets" / args.workflow,
+                embedder=embedder,
+                mode=MODE_WORKFLOW,
+            )
+            requirement_prompts = workset_ctx.requirement_prompts
+            log.info("reconcile: WorksetContext (SSoT) carregado — "
+                     "%d requirements, %d embeddings SigLIP, model=%s",
+                     len(workset_ctx.requirements),
+                     len(workset_ctx.requirement_embeddings),
+                     workset_ctx.siglip_model_id)
+        except Exception as exc_ctx:
+            log.warning("reconcile: load_workset_context falhou (%s) — "
+                        "fallback para legacy _build_requirement_prompts",
+                        exc_ctx.__class__.__name__)
+            requirement_prompts = _build_requirement_prompts(work_vr)
         log.info("reconcile: requirement_prompts pronto (%d entities) "
                  "para SigLIP triage no ingest", len(requirement_prompts))
         try:
@@ -521,6 +550,17 @@ def main() -> int:
                 state["_coverage_plan"] = plan
                 state["_confirmed_index"] = {}
                 state["_visual_requirements_source"] = spans_source
+                # P7 (2026-08-11): persistir RequirementIndex instance pronta
+                # para upserts. Anexamos ao state para DOWNSTREAM callers
+                # (S08Matching, repair loop) poderem ler persistência.
+                try:
+                    from studio.library.requirement_index import RequirementIndex
+                    state["_requirement_index_initialized"] = True
+                    log.info("RequirementIndex pronto (tabela: %s) — "
+                             "instância em state._ri_inst (não serializada)",
+                             "requirement_matches")
+                except Exception as exc_ri:
+                    log.debug("RequirementIndex init skip: %s", exc_ri.__class__.__name__)
                 _save_state(state)
                 log.info(
                     "coverage_plan carregado: %d entities (source=%s, "
@@ -532,6 +572,57 @@ def main() -> int:
                 "coverage_plan load falhou (não fatal) — "
                 "reconcile prossegue sem gate autoritativo: %s",
                 exc.__class__.__name__)
+
+    # P8 (2026-08-11): DISCOVERY LITE phase ANTES do main ingest loop.
+    # Substitui "full ingest 908 cada" por scan_batch com 1 frame + SigLIP
+    # image batch (poupa 90× wall-clock vs SceneDetect+Gemini por ficheiro).
+    # Reordenamos `candidates` por ordem de expected coverage gain (top-K
+    # promovida primeiro). Cache hit persiste em discovery_index — se já
+    # scaneado, NÃO re-extrai frame.
+    try:
+        if workset_ctx is None:
+            di = None
+            scan_batch = rank_candidates = None
+        else:
+            from studio.library.discovery import (
+                scan_batch, DiscoveryIndex, rank_candidates,
+                S_DISCOVERED_GLOBAL,
+            )
+            di = DiscoveryIndex(db)
+        sample = candidates[:32]
+        if sample and di is not None and scan_batch is not None:
+            _recs, _stats = scan_batch(
+                sample, embedder,
+                siglip_model_id="google/siglip-base-patch16-384",
+                discovery_index=di,
+                on_record=di.upsert,
+            )
+            log.info("reconcile: DISCOVERY_LITE scan_batch (P8) "
+                     "%d scanned, invalid=%d, cache_hits persistidos",
+                     _stats.get("scanned", 0),
+                     _stats.get("invalid", 0))
+        # Phase 2 — ranking vs WorksetContext.requirement_embeddings.
+        if workset_ctx is not None and \
+                workset_ctx.requirement_embeddings:
+            _ranked = rank_candidates(
+                di.list_for_workset_match(workset_ctx),
+                workset_ctx,
+                max_promote=8,
+                min_similarity=0.0,
+            )
+            if _ranked:
+                # Re-ordena candidates: top-K primeiro
+                promoted_paths = {row.get("media_path")
+                                   for row, _canon, _sim, _gain in _ranked}
+                head = [c for c in candidates
+                        if str(c.resolve()) in promoted_paths]
+                tail = [c for c in candidates if c not in head]
+                candidates = head + tail
+                log.info("reconcile: ranked top-K promoted=%d, rest=%d",
+                         len(head), len(tail))
+    except Exception as exc:
+        log.warning("reconcile: DISCOVERY_LITE skipped: %s",
+                    exc.__class__.__name__)
 
     already_done = {d["file"] for d in state["done"]}
     already_failed_files = {f["file"] for f in state["failed"]}
@@ -616,6 +707,61 @@ def main() -> int:
             if (asset_state is not None
                     and asset_state.state == AssetState.DONE):
                 # Sucesso VERIFICADO (db.get_shot() readback OK).
+                # P6 (2026-08-11): persistir RequirementMatches por shot
+                # recém-ingestado. status=CONFIRMED para shots com
+                # Vision-oracle já verificado em runs anteriores (read de
+                # LanceDB), PENDING para primeiros runs (triage SigLIP OK
+                # mas Vision ainda não correu nesta entity).
+                if (res.get("result") is not None
+                        and res["result"].media_sha
+                        and state.get("_requirement_index") is not None):
+                    try:
+                        from studio.library.requirement_index import (
+                            RequirementMatch, CS_CONFIRMED, CS_PENDING,
+                        )
+                        # P7 — load_workset_context já produz WorksetContext rich.
+                        # Para persistir RequirementMatch pós-DONE, precisamos
+                        # do RequirementIndex instance (não-em-state, recriado
+                        # por run). Inicialização explícita + scope-check.
+                        from studio.library.requirement_index import RequirementIndex
+                        ri = RequirementIndex(db)
+                        # Lemos TODOS os shots com este media_sha e, para
+                        # cada requirement do workset_ctx, criamos uma
+                        # match PENDING. Em modos com Vision-oracle
+                        # já rodado, ler meta_json para promover a
+                        # CONFIRMADO.
+                        shot_rows = (db._table.search()
+                                     .where(f"media_sha = '{res['result'].media_sha}'")
+                                     .limit(50).to_list())
+                        if workset_ctx is not None:
+                            for row in shot_rows[:10]:    # cap 10/per asset
+                                shot_id = row.get("shot_id", "")
+                                # default PENDING (SigLIP triage OK mas
+                                # ainda não correu Vision oracle nesta
+                                # entity — primeira run)
+                                for canon in workset_ctx.canonicals():
+                                    spec = workset_ctx.req_by_canonical(canon)
+                                    if spec is None:
+                                        continue
+                                    # PENDING strict→não passa; non-strict OK
+                                    ri.upsert_match(RequirementMatch(
+                                        workset_id=workset_ctx.workset_id,
+                                        requirement_id=spec.requirement_id,
+                                        shot_id=shot_id,
+                                        media_sha=res["result"].media_sha,
+                                        similarity=0.0,
+                                        duration=float(row.get("t_out", 0.0))
+                                                  - float(row.get("t_in", 0.0)),
+                                        confirmation_status=CS_PENDING,
+                                        confirmation_confidence=0.0,
+                                        strict_eligible=bool(spec.strict),
+                                        evidence=("triage_pending",),
+                                    ))
+                            log.debug("reconcile: persisti %d RequirementMatch PENDING",
+                                      len(shot_rows[:10]) * len(workset_ctx.canonicals()))
+                    except Exception as exc:
+                        log.debug("reconcile: RequirementIndex persist skip: %s",
+                                  exc.__class__.__name__)
                 # dedup.add PRIMEIRO (file-review fix #4 — não-swallow).
                 dedup.add(sid, media_sha="", status="reconciled-from-orphan")
                 state["done"].append({

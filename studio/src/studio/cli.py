@@ -114,7 +114,13 @@ def _library(settings):
 
 
 def cmd_ingest(args: argparse.Namespace) -> int:
-    from studio.library.ingest import ingest_file
+    # P3 (2026-08-11): migrate cmd_ingest de ingest_file → ingest_asset.
+    # ingest_asset é a ÚNICA porta canónica para colocar media na biblioteca,
+    # com state machine (DONE/FAILED_RETRYABLE/FAILED_PERMANENT), DB write
+    # verification (P6), empty-media defence (A1). production callers
+    # DEVEM usar ingest_asset. ingest_file fica apenas como definição em
+    # library/ingest.py (invocado internamente por ingest_asset).
+    from studio.library.ingest_asset import ingest_asset
 
     settings = get_settings()
     db, embedder = _library(settings)
@@ -125,13 +131,22 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         print(f"shots na biblioteca: {db.count()}")
         return 0
 
+    def _ing(path, lic, src_id=None, vid=None):
+        """Wrapper que extrai só o IngestResult (tuple unpacking)."""
+        r, _state = ingest_asset(
+            path, lic, db, settings, embedder,
+            source_id=src_id or "",
+            video_id=vid,
+        )
+        return r
+
     if args.action == "file":
         if not args.path:
             raise SystemExit("--path obrigatório")
         license_raw = json.loads(args.license) if args.license else {
             "source": "owned", "source_url": "", "license": "owned", "verified_by": "manual",
         }
-        results.append(ingest_file(args.path, license_raw, db, settings, embedder))
+        results.append(_ing(args.path, license_raw, src_id=args.path.name))
 
     elif args.action == "sweep":
         if not args.query:
@@ -148,7 +163,10 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         else:
             raise SystemExit(f"provider desconhecido: {provider}")
         for path, lic in sweep(args.query, args.count, settings, downloads):
-            results.append(ingest_file(path, lic, db, settings, embedder))
+            src_id = ((lic or {}).get("source_url", "")
+                      if isinstance(lic, dict)
+                      else getattr(lic, "source_url", "") or path.name)
+            results.append(_ing(path, lic, src_id=src_id))
 
     elif args.action == "watch":
         from studio.library.sources.watchfolder import scan
@@ -158,7 +176,10 @@ def cmd_ingest(args: argparse.Namespace) -> int:
             if lic is None:
                 print(f"REJEITADO (sem sidecar .license.json): {media.name}")
                 continue
-            results.append(ingest_file(media, lic, db, settings, embedder))
+            src_id = ((lic or {}).get("source_url", "")
+                      if isinstance(lic, dict)
+                      else getattr(lic, "source_url", "") or media.name)
+            results.append(_ing(media, lic, src_id=src_id))
 
     elif args.action == "seed":
         seed_file = Path(args.path or "seed/queries_travel_pt.txt")
@@ -170,7 +191,10 @@ def cmd_ingest(args: argparse.Namespace) -> int:
             for q in queries:
                 try:
                     for p, lic in mod.sweep(q, args.count, settings, downloads):
-                        results.append(ingest_file(p, lic, db, settings, embedder))
+                        src_id = ((lic or {}).get("source_url", "")
+                                  if isinstance(lic, dict)
+                                  else getattr(lic, "source_url", "") or p.name)
+                        results.append(_ing(p, lic, src_id=src_id))
                 except Exception as exc:
                     print(f"[{provider}] '{q}' falhou: {exc}")
 
@@ -180,7 +204,7 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         if not args.url:
             raise SystemExit("--url obrigatório")
         path, lic = download_cc(args.url, settings.library_root, downloads)
-        results.append(ingest_file(path, lic, db, settings, embedder))
+        results.append(_ing(path, lic, src_id=args.url))
 
     ingested = sum(1 for r in results if r.status == "ingested")
     shots = sum(r.shots_added for r in results)

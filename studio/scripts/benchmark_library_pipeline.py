@@ -37,10 +37,25 @@ from typing import Optional
 log = logging.getLogger("studio.benchmark")
 
 
-# --- Paths -----------------------------------------------------------------
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+# --- Paths (P1.1 fix 2026-08-11) -------------------------------------------
+#  scripts/benchmark_library_pipeline.py
+#   parents[0] = .../automacao-youtube-n8n/studio/scripts
+#   parents[1] = .../automacao-youtube-n8n/studio
+#   parents[2] = .../automacao-youtube-n8n   <-- REPO ROOT (era parents[3] = bug)
+#   parents[3] = .../youtube-video-pipeline (parent do repo — WRONG)
+# Audit CONSTANT fix: anteriores corriam B1 com raiz errada e geravam
+# PATH_NOT_FOUND em massa para os 15 targets. Resolução por pais correto.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 _STUDIO_SRC = _REPO_ROOT / "studio" / "src"
 _DATA_ROOT = _REPO_ROOT / "data"
+
+# P1.1 assert: o repo root inválido invalidaria TODOS os testes antes desta
+# linha; queremos fail-loud no arranque, não em B1.
+assert (_REPO_ROOT / "studio" / "src" / "studio").exists(), (
+    f"benchmark: REPO_ROOT inválido ({_REPO_ROOT}). Esperado parents[2] "
+    f"para studio/scripts/benchmark_library_pipeline.py. Se mover o script, "
+    f"fix P1.1."
+)
 
 
 def _now_iso() -> str:
@@ -51,7 +66,13 @@ def _now_iso() -> str:
 # === B1 — Static =============================================================
 
 def b1_py_compile() -> dict:
-    targets = [
+    """P1.2/P1.3 fix 2026-08-11: B1 testa paths REAIS e reportar
+    PATH_NOT_FOUND como falha explícita (não traceback truncado).
+
+    Cada target é validado ANTES do subprocess.run: se o ficheiro não existe
+    no _REPO_ROOT real, sai como 'PATH_NOT_FOUND' com caminho absoluto.
+    """
+    rel_targets = [
         "studio/library/ingest.py",
         "studio/library/ingest_asset.py",
         "studio/library/reconcile.py",
@@ -71,24 +92,31 @@ def b1_py_compile() -> dict:
     failures: list[str] = []
     elapsed_s: float = 0.0
     t0 = time.perf_counter()
-    for target in targets:
-        code = (
-            "import py_compile, sys; "
-            f"py_compile.compile('studio/src/{target}', doraise=True); "
-            "sys.exit(0)"
-        )
-        r = subprocess.run(["python3", "-c", code],
-                           capture_output=True, text=True, cwd=_REPO_ROOT,
-                           timeout=60)
-        if r.returncode != 0:
-            failures.append(f"{target}: {r.stderr.strip()[:200]}")
+    compiled_count = 0
+    for rel in rel_targets:
+        abs_p = _REPO_ROOT / rel
+        if not abs_p.exists():
+            # PATH_NOT_FOUND (P1.2) — fail-loud com path absoluto
+            failures.append(f"PATH_NOT_FOUND: {abs_p}")
+            continue
+        try:
+            import py_compile as _pc
+            _pc.compile(str(abs_p), doraise=True)
+            compiled_count += 1
+        except Exception as exc:
+            failures.append(f"{rel}: {exc.__class__.__name__}: {str(exc)[:200]}")
     elapsed_s = time.perf_counter() - t0
+    # B1 só é ok se (a) nenhum PATH_NOT_FOUND e (b) todos os existentes
+    # compilaram. SyntaxWarning é warning, não bloqueia ok=True mas é
+    # reportado separadamente.
     return {
         "test": "B1_py_compile",
         "ok": len(failures) == 0,
-        "n_targets": len(targets),
+        "n_targets": len(rel_targets),
+        "compiled_count": compiled_count,
         "failures": failures,
         "elapsed_s": round(elapsed_s, 2),
+        "note": "P1.3: 15/15 esperados; warnings SyntaxWarning separados em B1_warnings (não contam como FAIL).",
     }
 
 
@@ -109,58 +137,128 @@ _INGEST_FILE_TOP_LEVEL_WHITELIST = {
 }
 
 
+def _ast_scan_ingest_file_callers(studio_src_root: Path) -> tuple[list[str], str | None]:
+    """P2.2 (2026-08-11): AST scan fallback para detectar callers de
+    `from studio.library.ingest import ingest_file` E uso `ingest_file(...)`.
+
+    Returns:
+        (offenders, error_or_none). error_or_none é setado se AST scan falhou
+        por motivo inesperado (ex: SyntaxError não-recuperável).
+    """
+    import ast
+    offenders: list[str] = []
+    py_files = sorted(studio_src_root.rglob("*.py"))
+    for py in py_files:
+        try:
+            src = py.read_text(encoding="utf-8")
+            tree = ast.parse(src, filename=str(py))
+        except SyntaxError as exc:
+            # file com SyntaxError NÃO deve ser mascarado como "no
+            # offender" — reportamos como SyntaxError-caller porque prova
+            # que o arquivo não passa B1 já. B1 detecta o SyntaxError;
+            # aqui apenas sinalizamos.
+            offenders.append(
+                f"{py.name}: SyntaxError em AST parse ({exc.lineno}: {exc.msg[:80]})")
+            continue
+        except (OSError, UnicodeDecodeError) as exc:
+            offenders.append(f"{py.name}: leitura falhou: {exc}")
+            continue
+        # Detecta import X (linha) + uso de ingest_file
+        imports_ingest_file = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                mod = node.module or ""
+                if mod == "studio.library.ingest":
+                    if any((alias.name or "").startswith("ingest_file")
+                           for alias in node.names):
+                        imports_ingest_file = True
+        # Detecta call sites (Name ou Attribute)
+        call_uses_ingest_file = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                fn = node.func
+                if isinstance(fn, ast.Name) and fn.id == "ingest_file":
+                    call_uses_ingest_file = True
+                elif isinstance(fn, ast.Attribute) and fn.attr == "ingest_file":
+                    call_uses_ingest_file = True
+        if imports_ingest_file or call_uses_ingest_file:
+            offenders.append(str(py.relative_to(studio_src_root.parent)))
+    return offenders, None
+
+
 def b2_architecture_assess() -> dict:
-    """Detecta callers externos de ingest_file e avalia ARCHITECTURE §P2.
+    """Detecta callers externos de ingest_file. P2.1+P2.2: fail-loud se
+    grep falha OU AST falha. Combina ambos para minimizar falsos negativos.
 
     Política: APENAS ingest_asset, test files e este benchmark podem importar
-    ingest_file. Production callers EM PROD devem usar ingest_asset.
+    ingest_file/ingest_file. Production callers DEVEM usar ingest_asset.
     """
-    production_uses: list[str] = []
-    # grep em studio/src (excluindo library/ingest.py e library/ingest_asset.py)
     pattern = r"from\s+studio\.library\.ingest\s+import.*ingest_file"
+    grep_ok = False
+    grep_offenders: list[str] = []
+    grep_rc = -1
     try:
         r = subprocess.run(
             ["grep", "-rEn", "--include=*.py",
              pattern, str(_STUDIO_SRC)],
             capture_output=True, text=True,
         )
+        grep_rc = r.returncode
+        if grep_rc == 0 and r.stdout.strip():
+            for line in r.stdout.splitlines():
+                parts = line.split(":", 1)
+                if len(parts) < 2:
+                    continue
+                file_p = parts[0]
+                try:
+                    rel = str(Path(file_p).relative_to(_STUDIO_SRC)).replace(
+                        "\\", "/")
+                except ValueError:
+                    rel = file_p
+                if any(w == rel or rel.endswith(w) for w in
+                       _INGEST_FILE_TOP_LEVEL_WHITELIST):
+                    continue
+                grep_offenders.append(rel)
+            grep_ok = True
+        elif grep_rc in (1,):  # 1 = grep "no match" (fine)
+            grep_ok = True
+        else:
+            # rc >1 = erro real do grep (raro, mas P2.1 FAIL explícito)
+            grep_ok = False
     except (FileNotFoundError, subprocess.SubprocessError) as exc:
-        return {"test": "B2_architecture", "ok": False,
-                "reason": f"grep_failed:{exc}", "external_callers": []}
-    offenders: list[str] = []
-    lines: list[str] = []
-    if r.stdout:
-        for line in r.stdout.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            # extrai file
-            parts = line.split(":", 1)
-            if len(parts) < 2:
-                continue
-            file_p = parts[0]
-            try:
-                rel = str(Path(file_p).relative_to(_STUDIO_SRC)).replace(
-                    "\\", "/")
-            except ValueError:
-                rel = file_p
-            top = rel
-            # whitelist excludes ingest_asset + tests definition
-            if any(w == rel or rel.endswith(w) for w in
-                   _INGEST_FILE_TOP_LEVEL_WHITELIST):
-                lines.append(line)
-                continue
-            offenders.append(f"{rel}: ingest_file import")
-            lines.append(line)
+        grep_ok = False
+        grep_offenders = [f"grep_failed:{exc}"]
+
+    # P2.2: AST scan sempre (não depende de grep). Mesma whitelist.
+    ast_offenders, ast_err = _ast_scan_ingest_file_callers(_STUDIO_SRC)
+    # Remove o próprio ingest.py (define ingest_file), ingest_asset
+    # (canonical wrapper), e o benchmark (anuncia a whitelist).
+    ast_filtered = []
+    for rel in ast_offenders:
+        rel_norm = rel.replace("\\", "/")
+        if any(w == rel_norm or rel_norm.endswith(w) for w in
+               _INGEST_FILE_TOP_LEVEL_WHITELIST):
+            continue
+        ast_filtered.append(rel_norm)
+    # dedup + sort
+    combined = sorted({o for o in (grep_offenders + ast_filtered)
+                       if not o.startswith("grep_failed:")})
+    grep_failed = not grep_ok
+
     return {
         "test": "B2_architecture_ingest_callers",
-        "ok": len(offenders) == 0,
-        "external_callers": offenders,
-        "all_occurrences": lines,
+        "ok": (len(combined) == 0) and (not grep_failed) and (ast_err is None),
+        "external_callers": combined,
+        "grep_offenders_count": len(grep_offenders),
+        "ast_offenders_count": len(ast_filtered),
+        "grep_rc": grep_rc,
+        "grep_failed": grep_failed,
+        "ast_err": ast_err,
         "policy": (
-            "Production callers DEVE importar ingest_asset e nunca "
+            "Production callers DEVEM usar ingest_asset e nunca "
             "ingest_file. Whitelisted: ingest_asset.py (canonical) "
-            "+ ingest.py (definição) + este benchmark."),
+            "+ ingest.py (definição) + este benchmark. "
+            "P2.1 fail-loud se grep rc>1; P2.2 AST scan independente."),
     }
 
 

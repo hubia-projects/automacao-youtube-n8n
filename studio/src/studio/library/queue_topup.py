@@ -40,7 +40,10 @@ from studio.config import Settings
 from studio.library.db import LibraryDB
 from studio.library.early_reject import preflight as preflight_check
 from studio.library.embed import Embedder
-from studio.library.ingest import ingest_file
+# P3 (2026-08-11): queue_topup migrado de ingest_file → ingest_asset.
+# import lazy dentro-de-função para preservar arranque do módulo com
+# `python -m` sem venv activo; canonical wrapper passa a ser ingest_asset.
+# import ingest_asset é lazy no call site para acelerar arranque.
 from studio.library.sources.pexels import sweep
 from studio.library.topup import (
     TopupPerEntity,
@@ -258,7 +261,13 @@ def _worker_ingest(
                          asset.path.name, rej.code)
                 continue
             try:
-                r = ingest_file(asset.path, asset.license, db, settings, embedder)
+                # P3 (2026-08-11): ingest_asset canónico.
+                from studio.library.ingest_asset import ingest_asset
+                r, _asset_state = ingest_asset(
+                    asset.path, asset.license, db, settings, embedder,
+                    source_id=getattr(asset, "source_id", None),
+                    video_id=getattr(asset, "video_id", None),
+                )
             except Exception as exc:
                 state.ingest_failures += 1
                 log.warning("worker[ingest]: ingest '%s' falhou: %s",

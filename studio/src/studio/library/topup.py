@@ -170,7 +170,12 @@ def topup_for_plan(
 
     budget = cost_budget_usd if cost_budget_usd is not None \
         else settings.budget_usd_per_run
-    from studio.library.ingest import ingest_file
+    # P3 (2026-08-11): migrate topup de ingest_file → ingest_asset.
+    # ingest_asset é o ÚNICO caminho de ingest canónico com state machine,
+    # DB verify (P6), e empty_media defence (A1). ingest_file deixa de ser
+    # exposto a callers production (whitelist reduzido a ingest.py para
+    # definição e ingest_asset.py para o wrapper canonical).
+    from studio.library.ingest_asset import ingest_asset
     from studio.library.sources.pexels import sweep
 
     # Dedupe cross-entity de queries (priority desc loop).
@@ -314,7 +319,18 @@ def topup_for_plan(
                              path.name, reject.code)
                     continue
                 try:
-                    r = ingest_file(path, lic, db, settings, embedder)
+                    # P3 (2026-08-11): ingest_asset devolve (IngestResult,
+                    # AssetStateRecord). topup só precisa dos campos do
+                    # IngestResult (status, shots_added, cost_usd).
+                    src_url = ((lic or {}).get("source_url", "")
+                               if isinstance(lic, dict)
+                               else getattr(lic, "source_url", "")
+                               or path.name)
+                    r, _asset_state = ingest_asset(
+                        path, lic, db, settings, embedder,
+                        source_id=src_url,
+                        video_id=run_id,
+                    )
                 except Exception as exc:
                     per.notes.append(
                         f"round={rnd} ingest falhou: {exc.__class__.__name__}")

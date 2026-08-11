@@ -131,14 +131,23 @@ def _targeted_topup_for_entity(
     dest = (settings.library_root / "downloads" / run_subdir
             / ent_plan.canonical_name.replace(" ", "_"))
     try:
+        # P3 (2026-08-11): targeted top-up em produce.py migrado para
+        # ingest_asset canónico com state machine + DB verify.
         from studio.library.sources.pexels import sweep
-        from studio.library.ingest import ingest_file
+        from studio.library.ingest_asset import ingest_asset
         for q in queries[:1]:
             downloaded = sweep(q, count=3, settings=settings, dest=dest)
             for path, lic in downloaded:
                 if not path.exists():
                     continue
-                ingest_file(path, lic, db, settings, embedder)
+                src_url = ((lic or {}).get("source_url", "")
+                           if isinstance(lic, dict)
+                           else getattr(lic, "source_url", "") or path.name)
+                ingest_asset(
+                    path, lic, db, settings, embedder,
+                    source_id=src_url,
+                    video_id=run_id,
+                )
         measure_coverage(ent_plan, db)
         ent_plan.deficit_seconds = round(
             max(0.0, ent_plan.target_seconds - ent_plan.available_seconds), 3)
@@ -209,16 +218,23 @@ def _maybe_targeted_topup(strict_violations, plan, db,
         dest = (settings.library_root / "downloads" / run_subdir
                 / ent_plan.canonical_name.replace(" ", "_"))
         try:
+            # P3 (2026-08-11): _maybe_targeted_topup migrado para ingest_asset.
             from studio.library.sources.pexels import sweep
-            from studio.library.ingest import ingest_file
+            from studio.library.ingest_asset import ingest_asset
             added = 0
             for q in queries[:1]:
                 downloaded = sweep(q, count=3, settings=settings, dest=dest)
                 for path, lic in downloaded:
                     if not path.exists():
                         continue
-                    r = ingest_file(path, lic, db, settings,
-                                    embedder or embedder)
+                    src_url = ((lic or {}).get("source_url", "")
+                               if isinstance(lic, dict)
+                               else getattr(lic, "source_url", "") or path.name)
+                    r, _ = ingest_asset(
+                        path, lic, db, settings, embedder or embedder,
+                        source_id=src_url,
+                        video_id=run_id,
+                    )
                     added += r.shots_added
             measure_coverage(ent_plan, db)
             ent_plan.deficit_seconds = round(

@@ -184,7 +184,9 @@ def _jit_topup(brief: VisualBrief, db: LibraryDB, embedder: Embedder,
     `query` sobrepõe o assunto do brief (usado para top-up por entidade)."""
     if settings.mock_mode or not settings.pexels_api_key:
         return 0
-    from studio.library.ingest import ingest_file
+    # P3 (2026-08-11): migrate assigner de ingest_file → ingest_asset.
+    # import lazy: ingestar é caminho cold (raro chamado em --workflow mode).
+    from studio.library.ingest_asset import ingest_asset
     from studio.library.sources.pexels import sweep
 
     q = query or brief.visual_subject_en
@@ -192,7 +194,15 @@ def _jit_topup(brief: VisualBrief, db: LibraryDB, embedder: Embedder,
     dest = settings.library_root / "downloads"
     try:
         for path, lic in sweep(q, 3, settings, dest):
-            added += ingest_file(path, lic, db, settings, embedder).shots_added
+            src_url = ((lic or {}).get("source_url", "")
+                       if isinstance(lic, dict) else
+                       getattr(lic, "source_url", "") or path.name)
+            r, _ = ingest_asset(
+                path, lic, db, settings, embedder,
+                source_id=src_url,
+                video_id=None,
+            )
+            added += r.shots_added
     except Exception as exc:  # top-up é best-effort; a falha dura é PoolExhausted
         log.warning("top-up JIT falhou (%s): %s", q, exc)
     return added
@@ -214,7 +224,8 @@ def _preflight_topups(missing_queries: set[str], db: LibraryDB,
     if settings.mock_mode or not settings.pexels_api_key or not missing_queries:
         return 0
 
-    from studio.library.ingest import ingest_file
+    # P3 (2026-08-11): migrate assigner pre-flight de ingest_file → ingest_asset.
+    from studio.library.ingest_asset import ingest_asset
     from studio.library.sources.pexels import sweep
 
     dest = settings.library_root / "downloads"
@@ -238,12 +249,20 @@ def _preflight_topups(missing_queries: set[str], db: LibraryDB,
             log.info("pre-flight: '%s' devolveu %d vídeos", q, len(results))
 
     # Ingestão SEQUENCIAL — protege SigLIP CUDA (4 GB VRAM) e LanceDB.
-    # O dedupe SHA em ingest_file torna isto idempotente (re-entradas viram
+    # P3 (2026-08-11): ingest_asset (canonical) — DB verify + state machine.
+    # O dedupe SHA em ingest_asset torna isto idempotente (re-entradas viram
     # skipped_duplicate sem inserir nada).
     log.info("pre-flight: a ingerir %d ficheiros sequencialmente...", len(all_paths_lics))
     for path, lic, q in all_paths_lics:
         try:
-            ingest_file(path, lic, db, settings, embedder)
+            src_url = ((lic or {}).get("source_url", "")
+                       if isinstance(lic, dict) else
+                       getattr(lic, "source_url", "") or path.name)
+            ingest_asset(
+                path, lic, db, settings, embedder,
+                source_id=src_url,
+                video_id=None,
+            )
         except Exception as exc:
             log.warning("pre-flight ingest de '%s' (%s) falhou: %s",
                         path.name, q, exc)
@@ -522,17 +541,22 @@ def assign_shots(scenes: list[Scene], briefs: list[VisualBrief], db: LibraryDB,
                 # ÚLTIMO recurso: gerar o clip (Veo). Entra pela ingestão normal
                 # com license=owned + ai_generated no meta (disclosure YouTube).
                 try:
-                    from studio.library.ingest import ingest_file
+                    # P3 (2026-08-11): Veo fallback migrado para ingest_asset.
+                    from studio.library.ingest_asset import ingest_asset
                     from studio.library.veo import generate_clip
 
                     dest = settings.library_root / "generated" / f"veo_{scene.scene_id}.mp4"
                     clip, _cost = generate_clip(
                         f"{brief.visual_subject_en}, cinematic b-roll, no people faces",
                         dest, settings)
-                    ingest_file(clip, {"source": "owned", "source_url": "",
-                                       "license": "owned", "author": "veo-ai",
-                                       "verified_by": "manual"},
-                                db, settings, embedder)
+                    ingest_asset(
+                        clip, {"source": "owned", "source_url": "",
+                               "license": "owned", "author": "veo-ai",
+                               "verified_by": "manual"},
+                        db, settings, embedder,
+                        source_id=f"veo:{scene.scene_id}",
+                        video_id=None,
+                    )
                     pool = _pool([], 0, False)
                     level = "veo_generated"
                 except Exception as exc:
