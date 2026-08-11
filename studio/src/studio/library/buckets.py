@@ -1,23 +1,27 @@
-"""Buckets per-video + topic tracking (Task 3).
+"""Buckets per-video + topic tracking (Task 3) — LOGICAL-ONLY model.
 
 Diretório: data/library/buckets/<video_id>/
 Ficheiro de estado: data/library/buckets/<video_id>/topic_topics.json
-Ficheiros matchantes: data/library/buckets/<video_id>/shots/<shot_id>.mp4  (cópia)
+[LEGACY] bucket/shots/<shot_id>.mp4 (cópia física) — desactivada por
+        defeito (STUDIO_BUCKET_LOGICAL_ONLY=1). Cada MP4 vive UMA vez
+        no content-addressed media/; o workset guarda apenas referências.
 
 Quando o CLI `studio ingest` recebe `--video-id X --topic-topics T1,T2,...`,
 depois de `analyze_shot+register_shot`, contamos quantas entidades matcham
-cada tópico. Se batedor, copiamos o shot_id para o bucket, incrementamos
-o contador do tópico em topic_topics.json. Quando todos os tópicos têm count>=1,
-`is_ready=True` — sinal claro para começar o vídeo (o resto enche-se depois).
+cada tópico. Se batedor, adicionamos o shot_id ao bucket (lista lógica em
+topic_topics.json — sem cópia de bytes) e incrementamos o contador.
 
-Os shots ficam duplicados propositadamente: library geral (lancedb) + bucket
-do vídeo. O bucket é pequeno e fácil de inspecionar; a library é grande e
-pesquisável por embedding.
+`is_ready` é hoje binário (count>0 em todos os tópicos). Para a regra
+"seconds + distinct shots" o consumidor certo é `coverage_plan.py` em
+S08Matching; buckets.py é o tracker operacional por vídeo.
+
+DOC: PROMPT 2026-08-11 — phase C 'logical references, no physical copies'.
 """
 from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import threading
 from datetime import datetime, timezone
@@ -26,9 +30,37 @@ from typing import Optional
 
 log = logging.getLogger("studio.library.buckets")
 
+# Logical-only mode (default ON desde 2026-08-11 — ver docstring). Operator
+# pode reverter a cópia física colocando STUDIO_BUCKET_LOGICAL_ONLY=0 no
+# .env; o caminho físico continua a existir para retro-compatibilidade
+# (não apaga cópias antigas; só deixa de criar novas cópias por defeito).
+def _logical_only() -> bool:
+    """Resolve logical-only com prioridade.
+
+    Ordem de resolução:
+      1. Env var STUDIO_BUCKET_LOGICAL_ONLY explicitamente setada
+         ("0"/"false"/"no"/"off" -> False; qualquer outro set -> True).
+      2. Settings.bucket_logical_only (cached via get_settings()) —
+         coerente com dedup.py / reconcile.py / ingest_asset.py padrão.
+      3. Safe default True se Settings indisponível (import em
+         `python -m studio.library.reconcile` antes do venv não deve
+         fazer fallback silencioso para legacy; seria hiding bug).
+
+    Code-reviewer MUST-HAVE: NÃO usar os.environ.get() com default fixo
+    porque isso torna Settings.bucket_logical_only dead config (Settings
+    override em unit tests não desativaria a cópia).
+    """
+    raw = os.environ.get("STUDIO_BUCKET_LOGICAL_ONLY")
+    if raw is not None and raw.strip() != "":
+        return raw.strip().lower() not in {"0", "false", "no", "off"}
+    try:
+        from studio.config import get_settings
+        return bool(get_settings().bucket_logical_only)
+    except Exception:
+        return True  # safe default se Settings indisponível
+
 _REPO_ROOT_BUCKETS = Path(__file__).resolve().parents[4]
 BUCKETS_ROOT = _REPO_ROOT_BUCKETS / "data" / "library" / "buckets"
-_REPO_ROOT_BUCKETS = Path(__file__).resolve().parents[4]
 WORKFLOWS_ROOT = _REPO_ROOT_BUCKETS / "data" / "library" / "workflows"
 
 # Per-video_id lock para serializar writes em topic_topics.json.
@@ -140,15 +172,22 @@ def bucket_shots_dir(video_id: str) -> Path:
 
 def init_bucket(video_id: str, *, script_theme: str,
                 topics: list[str]) -> Path:
-    """Cria (idempotente) bucket dir + topic_topics.json vazio. Devolve path do dir."""
+    """Cria (idempotente) bucket dir + topic_topics.json vazio. Devolve path do dir.
+
+    Em modo logical-only (default) NÃO cria bucket/shots/ — é dir vazio
+    sem uso; o bucket usa topic_topics.json (referências lógicas) +
+    media/<sha>.mp4 (content-addressed).
+    """
     d = bucket_dir(video_id)
     d.mkdir(parents=True, exist_ok=True)
-    bucket_shots_dir(video_id).mkdir(parents=True, exist_ok=True)
+    if not _logical_only():
+        bucket_shots_dir(video_id).mkdir(parents=True, exist_ok=True)
     p = topic_topics_path(video_id)
     if not p.exists():
         _write_topic_topics(p, video_id, script_theme,
                             {t: {"count": 0, "shots": []} for t in topics})
-        log.info("buckets: init '%s' com %d tópicos", video_id, len(topics))
+        log.info("buckets: init '%s' com %d tópicos (logical_only=%s)",
+                 video_id, len(topics), _logical_only())
     return d
 
 
@@ -173,6 +212,16 @@ def _write_topic_topics(p: Path, video_id: str, theme: str,
             for t in topics_list
         ],
         "missing_topics": [t for t in topics_list if hits[t].get("count", 0) == 0],
+        # SPEC-OFF: este `is_ready` é binário (count>0) — a regra nova é
+        # `available_seconds >= target_seconds AND available_distinct_shots
+        # >= min_distinct_shots`. O contrato operacional certo vive em
+        # `coverage_plan.py` (já tem segundos+shots); buckets.py fica como
+        # tracker operacional cheap. S08Matching deve reconciliar este
+        # `is_ready` contra `coverage_plan.is_ready_strict` antes do gate.
+        # NÃO renomear `is_ready` → callers (reconcile.py early-return em
+        # `prog.get("is_ready")`) dependem desta chave para o stop-condition
+        # do run (sem ela, reconcile processa o pool inteiro em vez de parar
+        # quando coverage=100%).
         "is_ready": all(hits[t].get("count", 0) > 0 for t in topics_list),
     }
     tmp = p.with_suffix(".tmp")
@@ -182,8 +231,15 @@ def _write_topic_topics(p: Path, video_id: str, theme: str,
 
 def update_topic_hit(video_id: str, topic: str, shot_id: str,
                      source_path: Optional[Path] = None) -> int:
-    """Bump topic count + (opcionalmente) copia shot para o bucket.
-    Devolve a nova count (ou 0 se video_id não existe).
+    """Bump topic count + adiciona shot_id lógico. Devolve a nova count
+    (ou 0 se video_id não existe).
+
+    Comportamento:
+      - Logical-only (default): NÃO copia MP4 — apenas regista shot_id em
+        topic_topics.json. Cada MP4 vive no content-addressed media/
+        (lancedb) e o bucket pointa para lá pela coluna `media_sha`.
+      - Legacy (STUDIO_BUCKET_LOGICAL_ONLY=0): copia o .mp4 para o bucket
+        para retro-compatibilidade com runs/workspaces antigos.
 
     Race-safe: serializa por video_id via _lock_for().
     """
@@ -201,16 +257,23 @@ def update_topic_hit(video_id: str, topic: str, shot_id: str,
                 t["count"] = len(t["shots"])
                 new_count = t["count"]
                 matched = True
-                # Copy the shot to bucket if a source_path is provided
-                if source_path and source_path.exists():
+                # LOGICAL-ONLY: o MP4 fica em media/<sha>.mp4 (sem cópia).
+                # O workset aponta para ele via media_sha no topup_report /
+                # selected_shots. Em legacy mode, mantém-se a cópia para
+                # retro-compatibilidade com runs/workspaces antigos.
+                if source_path and source_path.exists() and not _logical_only():
                     dst = bucket_shots_dir(video_id) / f"{shot_id}.mp4"
                     try:
                         shutil.copy2(source_path, dst)
-                        log.info("buckets: %s/%s -> %s",
+                        log.info("buckets: %s/%s -> %s (legacy copy)",
                                  video_id, topic, dst.name)
                     except OSError as exc:
                         log.warning("buckets: copy %s -> bucket falhou (%s)",
                                     source_path.name, exc)
+                elif source_path and source_path.exists():
+                    log.debug("buckets: logical-only — skip copy %s (referenced"
+                              " logically via media_sha em selected_shots)",
+                              source_path.name)
                 break
         if not matched:
             return 0

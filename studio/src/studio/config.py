@@ -299,6 +299,14 @@ class Settings(BaseSettings):
     # a re-fetch (mantém-se rejeitado se Vision voltar a rejeitar).
     negative_cache_ttl_days: int = Field(
         default=90, alias="STUDIO_NEGATIVE_CACHE_TTL_DAYS")
+    # True = buckets.py update_topic_hit NÃO copia MP4 para bucket/shots/.
+    # Cada MP4 vive UMA única vez em media/<sha>.<ext>; o workset guarda
+    # apenas referências (shot_id + media_sha) em topic_topics.json e
+    # selected_shots.json. False = legacy: mantém cópia física para
+    # retro-compatibilidade com runs/workspaces antigos.
+    # Migrar para True em novos worksets (default desde 2026-08-11).
+    bucket_logical_only: bool = Field(
+        default=True, alias="STUDIO_BUCKET_LOGICAL_ONLY")
 
     @property
     def runs_root(self) -> Path:
