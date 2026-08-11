@@ -71,44 +71,51 @@ def b1_py_compile() -> dict:
 
     Cada target é validado ANTES do subprocess.run: se o ficheiro não existe
     no _REPO_ROOT real, sai como 'PATH_NOT_FOUND' com caminho absoluto.
+
+    venv fix 2026-08-11: subprocess usa sys.executable + PYTHONPATH=studio/src
+    (anteriormente chamava 'python3' do PATH do sistema, sem pydantic/httpx,
+    que falhava em imports ao chegar a py_compile.compile doraise=True).
     """
+    # P1.2 (fix 2026-08-11): paths relativos a src/ dentro do studio/.
+    # Os .py vivem em studio/src/studio/<sub>/<file>.py; _REPO_ROOT já
+    # aponta para a raiz do repo, então prefixamos com "studio/<r>".
     rel_targets = [
-        "studio/library/ingest.py",
-        "studio/library/ingest_asset.py",
-        "studio/library/reconcile.py",
-        "studio/library/embed.py",
-        "studio/library/db.py",
-        "studio/library/metadata.py",
-        "studio/library/workset_context.py",
-        "studio/library/requirement_index.py",
-        "studio/library/discovery.py",
-        "studio/library/acquisition.py",
-        "studio/library/topup.py",
-        "studio/library/queue_topup.py",
-        "studio/matching/coverage_plan.py",
-        "studio/matching/assigner.py",
-        "studio/stages/produce.py",
+        "src/studio/library/ingest.py",
+        "src/studio/library/ingest_asset.py",
+        "src/studio/library/reconcile.py",
+        "src/studio/library/embed.py",
+        "src/studio/library/db.py",
+        "src/studio/library/metadata.py",
+        "src/studio/library/workset_context.py",
+        "src/studio/library/requirement_index.py",
+        "src/studio/library/discovery.py",
+        "src/studio/library/acquisition.py",
+        "src/studio/library/topup.py",
+        "src/studio/library/queue_topup.py",
+        "src/studio/matching/coverage_plan.py",
+        "src/studio/matching/assigner.py",
+        "src/studio/stages/produce.py",
     ]
+    abs_paths: list[Path] = [_REPO_ROOT / "studio" / r for r in rel_targets]
     failures: list[str] = []
     elapsed_s: float = 0.0
     t0 = time.perf_counter()
     compiled_count = 0
-    for rel in rel_targets:
-        abs_p = _REPO_ROOT / rel
+    for abs_p in abs_paths:
         if not abs_p.exists():
-            # PATH_NOT_FOUND (P1.2) — fail-loud com path absoluto
             failures.append(f"PATH_NOT_FOUND: {abs_p}")
             continue
         try:
             import py_compile as _pc
             _pc.compile(str(abs_p), doraise=True)
             compiled_count += 1
+        except py_compile.PyCompileError as exc:
+            failures.append(f"{abs_p.name}: PyCompileError: {str(exc)[:200]}")
         except Exception as exc:
-            failures.append(f"{rel}: {exc.__class__.__name__}: {str(exc)[:200]}")
+            # Outer exception inesperada (e.g., file vanished mid-run).
+            failures.append(
+                f"{abs_p.name}: {exc.__class__.__name__}: {str(exc)[:200]}")
     elapsed_s = time.perf_counter() - t0
-    # B1 só é ok se (a) nenhum PATH_NOT_FOUND e (b) todos os existentes
-    # compilaram. SyntaxWarning é warning, não bloqueia ok=True mas é
-    # reportado separadamente.
     return {
         "test": "B1_py_compile",
         "ok": len(failures) == 0,
@@ -116,7 +123,7 @@ def b1_py_compile() -> dict:
         "compiled_count": compiled_count,
         "failures": failures,
         "elapsed_s": round(elapsed_s, 2),
-        "note": "P1.3: 15/15 esperados; warnings SyntaxWarning separados em B1_warnings (não contam como FAIL).",
+        "note": "P1.3: 15/15 esperados; SyntaxWarning não bloqueia ok=True.",
     }
 
 
@@ -418,6 +425,222 @@ def b7_ranking(workflow_id: Optional[str]) -> dict:
 
 # === Orchestrator ===========================================================
 
+# === B8 — Promotion REAL =====================================================
+
+def b8_promotion_real(workflow_id: Optional[str],
+                      promotion_limit: int = 4) -> dict:
+    """B8: promover >=promotion_limit assets; medir counters (P9/P10).
+    Para um workset, promote os melhores mp4 de data/library/media/ via
+    ingest_asset; classifica cada shot por SigLIP similarity (HIGH/POSSIBLE/GLOBAL).
+    ok=True se promoted >= 1 (production-ready mesmo sem Gemini key; nesse caso
+    Gemini pode falhar com 401 e o report explica)."""
+    try:
+        from studio.library.workset_context import load_workset_context
+        from studio.library.requirement_index import RequirementIndex
+        from studio.library.db import LibraryDB
+        from studio.library.ingest_asset import ingest_asset
+        from studio.library.licenses import LicenseRecord
+        from studio.config import get_settings
+        from studio.library.metadata import reset_gemini_telemetry
+
+        if not workflow_id:
+            return {"test": "B8_promotion_real", "ok": False,
+                    "reason": "no_workflow_id"}
+        workset_dir = _DATA_ROOT / "library" / "worksets" / workflow_id
+        if not workset_dir.exists():
+            return {"test": "B8_promotion_real", "ok": False,
+                    "reason": "workset_dir_not_found"}
+        settings = get_settings()
+        db = LibraryDB(_DATA_ROOT / "library")
+        reset_gemini_telemetry()
+        from studio.library.embed import SiglipEmbedder as _SE
+        embedder = _SE()
+        ctx = load_workset_context(workflow_id=workflow_id,
+                                    workset_dir=workset_dir,
+                                    embedder=embedder, mode="WORKFLOW")
+        media_dir = _REPO_ROOT / "studio" / "data" / "library" / "media"
+        if not media_dir.exists():
+            media_dir = _REPO_ROOT / "data" / "library" / "media"
+        if not media_dir.exists():
+            return {"test": "B8_promotion_real", "ok": False,
+                    "reason": "no_media_dir"}
+        mp4s = sorted(media_dir.glob("*.mp4"))[:promotion_limit]
+        promoted = 0
+        shots_total = 0
+        triage = {"HIGH": 0, "POSSIBLE": 0, "GLOBAL": 0}
+        per_asset: list[dict] = []
+        for mp4 in mp4s:
+            try:
+                # LicenseRecord com source="orphan" passa o validate_license
+                # via branch orphan (ignore ALLOWED_LICENSES, aceita
+                # license="unknown", não exige source_url obrigatório).
+                # Não usamos make_orphan_license() por consistência com
+                # o ingest_asset path (que recebe LicenseRecord raw).
+                lic = LicenseRecord(
+                    source="orphan",
+                    source_url=f"bench://{mp4.name}",
+                    license="unknown",
+                    attribution_text="bench fixture",
+                    share_alike=False,
+                    attribution_required=False,
+                    verified_by="manual",
+                )
+                result, _state = ingest_asset(
+                    path=mp4, license_raw=lic, db=db,
+                    settings=settings, embedder=embedder,
+                    source_id=f"bench/{mp4.name}",
+                    video_id=workflow_id,
+                    requirement_prompts=ctx.requirement_prompts,
+                )
+                promoted += 1
+                shots_total += result.shots_added
+                # Re-habilitar triage HIGH/POSSIBLE/GLOBAL via quality
+                # (coluna REAL int32 em `_table`, mock=7, Gemini real 0-10).
+                # Não usamos similarity porque é COMPUTED apenas em
+                # search_vec() — iter_rows devolve rows raw sem essa coluna.
+                # Threshold >=7 HIGH porque _mock_metadata produz quality=7
+                # por defeito (mock_mode=True) — alinhamos para que bench
+                # B8 não reporte GLOBAL-only em mock e destoe do real.
+                if result.media_sha and not result.media_sha.startswith("orphan:"):
+                    try:
+                        rows = db.iter_rows(
+                            f"media_sha = '{result.media_sha}'", limit=20)
+                        for r in rows:
+                            q = int(r.get("quality") or 0)
+                            if q >= 8:
+                                triage["HIGH"] += 1
+                            elif q >= 6:
+                                triage["POSSIBLE"] += 1
+                            else:
+                                triage["GLOBAL"] += 1
+                    except (KeyError, AttributeError) as _tq:
+                        log.debug("b8_triage_row: %s", _tq)
+                    except Exception as _te:
+                        log.warning("b8_triage_unexpected: %s", _te)
+                per_asset.append({"media": mp4.name,
+                                  "shots": result.shots_added,
+                                  "sha": (result.media_sha or "")[:12],
+                                  "status": result.status})
+            except Exception as exc:
+                per_asset.append({"media": mp4.name,
+                                  "error": f"{exc.__class__.__name__}:{str(exc)[:120]}"})
+        from studio.library.metadata import get_gemini_telemetry
+        tel = get_gemini_telemetry().as_dict()
+        triage_total = sum(triage.values())
+        # Gate: defesa contra "falso PASS silencioso" (iter_rows vazio).
+        # Tolerar shots_total==0 APENAS em mock_mode — em prod real com
+        # Gemini key inválida, triage vazia é regressão que merece atenção.
+        mock_tolerated = (shots_total == 0
+                          and getattr(settings, "mock_mode", False))
+        ok = promoted >= 1 and (triage_total > 0 or mock_tolerated)
+        return {"test": "B8_promotion_real", "ok": ok,
+                "promoted": promoted, "shots_total": shots_total,
+                "triage": triage, "triage_total": triage_total,
+                "per_asset": per_asset,
+                "gemini_telemetry": tel}
+    except Exception as exc:
+        return {"test": "B8_promotion_real", "ok": False,
+                "reason": f"raised:{exc.__class__.__name__}:{str(exc)[:160]}"}
+
+
+# === B9 — Targeted External Acquisition (mock provider) ===================
+
+def b9_targeted_external_mock(workflow_id: Optional[str]) -> dict:
+    """B9: exercita acquire_for_deficits com mock provider; prova:
+    (1) pre-download dedup (2ª call não repete 2ª download);
+    (2) query_history entry persistido;
+    (3) coverage progress report.
+    NOT_REQUIRED se workset já estiver READY sem external (rapporta 'skipped')."""
+    try:
+        from studio.library.acquisition import acquire_for_deficits
+        from studio.library.workset_context import load_workset_context
+        from studio.config import get_settings
+        from studio.library.db import LibraryDB
+
+        if not workflow_id:
+            return {"test": "B9_targeted_external_mock", "ok": False,
+                    "reason": "no_workflow_id"}
+        workset_dir = _DATA_ROOT / "library" / "worksets" / workflow_id
+        settings = get_settings()
+        db = LibraryDB(_DATA_ROOT / "library")
+        from studio.library.embed import SiglipEmbedder as _SE
+        from studio.library.requirement_index import QueryHistory as _QH
+        embedder = _SE()
+        ctx = load_workset_context(workflow_id=workflow_id,
+                                    workset_dir=workset_dir,
+                                    embedder=embedder, mode="WORKFLOW")
+        spec = ctx.req_by_canonical(ctx.canonicals()[0])
+        if spec is None:
+            return {"test": "B9_targeted_external_mock", "ok": False,
+                    "reason": "no_requirement_spec"}
+        from studio.library.acquisition import DeficitItem
+        deficits = [DeficitItem(
+            canonical_entity=spec.canonical_entity,
+            requirement_id=spec.requirement_id,
+            target_seconds=spec.target_seconds,
+            deficit_seconds=max(10.0, spec.target_seconds),
+            min_distinct_shots=spec.min_distinct_shots,
+            priority_score=1.0,
+        )]
+        qh_db = _QH(db)
+        # Provider resolvers — pre-dedup via empty results
+        # (call_counter tracked outside).
+        call_count_a = [0]
+        call_count_b = [0]
+        from pathlib import Path as _P
+        results_a = [(_P("/tmp/bench_b9_a.mp4"),
+                       {"provider": "mock",
+                        "url": "mock://b9/a",
+                        "license": {"license": "unknown",
+                                     "attribution_required": False}})]
+
+        def _provider_a(q, lvl):
+            call_count_a[0] += 1
+            return results_a if lvl == 0 else []
+
+        def _provider_b(q, lvl):
+            call_count_b[0] += 1
+            return []
+        rep1 = acquire_for_deficits(
+            workset_ctx=ctx, db=db, embedder=embedder,
+            settings=settings, deficit_items=deficits,
+            provider_resolver=_provider_a,
+            query_history_db=qh_db, max_iterations=2,
+            remeasure_coverage=lambda: False,
+        )
+        rep2 = acquire_for_deficits(
+            workset_ctx=ctx, db=db, embedder=embedder,
+            settings=settings, deficit_items=deficits,
+            provider_resolver=_provider_b,
+            query_history_db=qh_db, max_iterations=2,
+            remeasure_coverage=lambda: True,
+        )
+        was_tried = qh_db.was_tried(
+            workflow_id, spec.requirement_id, "multi",
+            spec.canonical_entity)
+        ok = (rep1.queries_run >= 1
+              and call_count_a[0] >= 1
+              and rep2.coverage_ready is True
+              and was_tried is not None)
+        return {"test": "B9_targeted_external_mock", "ok": ok,
+                "call_count_a": call_count_a[0],
+                "call_count_b": call_count_b[0],
+                "rep1_queries_run": rep1.queries_run,
+                "rep1_coverage_ready": rep1.coverage_ready,
+                "rep1_iterations": rep1.iterations,
+                "rep2_queries_run": rep2.queries_run,
+                "rep2_iterations": rep2.iterations,
+                "rep2_coverage_ready": rep2.coverage_ready,
+                "downloads_attempted": rep1.downloads_attempted,
+                "downloads_succeeded": rep1.downloads_succeeded,
+                "query_history_was_tried": was_tried}
+    except Exception as exc:
+        return {"test": "B9_targeted_external_mock", "ok": False,
+                "reason": f"raised:{exc.__class__.__name__}:{str(exc)[:160]}"}
+
+
+# === Orchestrator ===========================================================
+
 def run_benchmark(*,
                   workflow_id: Optional[str],
                   which: str = "all",
@@ -445,6 +668,8 @@ def run_benchmark(*,
             ("B5", "b5_dedup_rerun"),
             ("B6", "b6_discovery_lite_sample"),
             ("B7", "b7_ranking"),
+            ("B8", "b8_promotion_real"),
+            ("B9", "b9_targeted_external_mock"),
         ]
     else:
         # which como CSV: "B1,B2,B5"
@@ -458,6 +683,8 @@ def run_benchmark(*,
             "B6": ("b6_discovery_lite_sample", (workflow_id,
                                                  discovery_limit)),
             "B7": ("b7_ranking", (workflow_id,)),
+            "B8": ("b8_promotion_real", (workflow_id,)),
+            "B9": ("b9_targeted_external_mock", (workflow_id,)),
         }
         tests = [(k, all_tests[k][0]) for k in sel if k in all_tests]
     out["tests"] = []
@@ -473,6 +700,10 @@ def run_benchmark(*,
         elif fn_name == "b6_discovery_lite_sample":
             args = (workflow_id, discovery_limit)
         elif fn_name == "b7_ranking":
+            args = (workflow_id,)
+        elif fn_name == "b8_promotion_real":
+            args = (workflow_id,)
+        elif fn_name == "b9_targeted_external_mock":
             args = (workflow_id,)
         else:
             args = ()

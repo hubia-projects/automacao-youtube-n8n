@@ -939,9 +939,95 @@ def main() -> int:
 
     _save_state(state)
     _log_finished_event(n_ok, n_skip, n_fail, video_id, topics)
+    log.info("reconcile: local loop DONE ok=%d skip=%d fail=%d total=%d",
+             n_ok, n_skip, n_fail, len(state["done"]))
+
+    # P11 (2026-08-11): UNIFIED ACQUISITION wired.
+    # Quando local candidates exhausted e deficits persistem em plan,
+    # chama acquire_for_deficits antes do return final.
+    _p11_acquire(state, db, embedder, settings, video_id, workset_ctx)
+
     log.info("reconcile: DONE  ok=%d  skip=%d  fail=%d  total_in_state=%d",
              n_ok, n_skip, n_fail, len(state["done"]))
     return 0 if n_fail == 0 else 2
+
+
+def _p11_acquire(state, db, embedder, settings, video_id, workset_ctx) -> None:
+    """P11 helper: invoca acquire_for_deficits quando aplicável.
+
+    Idempotente: se workset_ctx ausente OU sem _coverage_plan OU sem video_id,
+    não chama. Persiste _acquisition_report no state para resume read.
+    """
+    if (workset_ctx is None
+            or not state.get("_coverage_plan")
+            or not video_id):
+        return
+    try:
+        from studio.library.acquisition import (
+            acquire_for_deficits, DeficitItem,
+        )
+        plan = state["_coverage_plan"]
+        deficit_items = []
+        for ent in (plan.ranked_entities or []):
+            d = float(getattr(ent, "deficit_seconds", 0.0) or 0.0)
+            if d <= 0:
+                continue
+            deficit_items.append(DeficitItem(
+                canonical_entity=ent.canonical_name,
+                requirement_id=getattr(
+                    ent, "requirement_id", ent.canonical_name),
+                target_seconds=float(
+                    getattr(ent, "target_seconds", 0.0) or 0.0),
+                deficit_seconds=d,
+                min_distinct_shots=int(
+                    getattr(ent, "min_distinct_shots", 1) or 1),
+                priority_score=float(
+                    getattr(ent, "priority_score", 1.0) or 1.0),
+            ))
+        if not deficit_items:
+            return
+        log.info("reconcile: P11 \u2192 acquire_for_deficits deficits=%d",
+                 len(deficit_items))
+
+        def _remeasure() -> bool:
+            try:
+                from studio.matching.coverage_plan import (
+                    is_workset_ready,
+                )
+                pl = state.get("_coverage_plan")
+                ready, _, _ = is_workset_ready(
+                    pl, db, settings,
+                    confirmed_index=state.get(
+                        "_confirmed_index", {}) or None,
+                    remeasure=True,
+                )
+                return bool(ready)
+            except Exception:
+                return False
+
+        acq = acquire_for_deficits(
+            workset_ctx=workset_ctx,
+            db=db, embedder=embedder, settings=settings,
+            deficit_items=deficit_items,
+            provider_resolver=lambda q, lvl: [],
+            remeasure_coverage=_remeasure,
+            max_iterations=4,
+        )
+        log.info("reconcile: P11 queries=%d down=%d ready=%s",
+                 acq.queries_run, acq.downloads_attempted,
+                 acq.coverage_ready)
+        state["_acquisition_report"] = {
+            "queries_run": acq.queries_run,
+            "downloads_attempted": acq.downloads_attempted,
+            "downloads_succeeded": acq.downloads_succeeded,
+            "downloads_rejected_provider_dedup":
+                acq.downloads_rejected_provider_dedup,
+            "coverage_ready": acq.coverage_ready,
+            "wall_s": round(acq.wall_s, 3),
+        }
+        _save_state(state)
+    except Exception as exc:
+        log.warning("reconcile: P11 skip: %s", exc.__class__.__name__)
 
 
 def _log_finished_event(n_ok: int, n_skip: int, n_fail: int,

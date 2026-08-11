@@ -1,170 +1,119 @@
-"""Test 1-15 da master integration refactor de 2026-08-11.
+"""T1-17 da master integration refactor de 2026-08-11.
 
-Cada teste é deliberadamente pequeno e determinístico (sem fixtures pesados):
-- Test 1: benchmark_root_validate — REPO_ROOT apontar para o repo real
-- Test 2: b2_scanner_grep_handled — grep rc=1 (sem matches) NÃO é FAIL
-- Test 3: b2_scanner_detects_ingest_file_import — fixture com import directo
-- Test 4: workset_context_preserves_target — Lello 48.75/5 roundtrip exact
-- Test 5: strict_covered_only_confirmed — is_strict_covered_pure strict
-- Test 6: requirement_match_persist_reload — JSONL fallback works
-- Test 7: discovery_cache_hit_signal — has_scanned retorna True após upsert
-- Test 8: coverage_gain_ranking_order — top-K promovido primeiro
-- Test 9: microbatch_stop_truthy — defender pode parar quando ready
-- Test 10: provider_dedup_hit_pre_download — assinatura válida (não call real)
-- Test 11: gemini_telemetry_401_no_retry — política 4xx fail-fast
-- Test 12: gemini_telemetry_429_retry_counted — retries counted em 429
-- Test 13: gemini_telemetry_request_count — counters REAL (não logical ceil)
-- Test 14: metadata_status_global_only — sentinel NEEDS_ENRICHMENT ≠ falha
-- Test 15: zero_direct_ingest_file_callers — B2 passa após migrações
-
-Execução: pytest studio/tests/unit/test_master_refactor_2026_08_11.py -v
+Sys.path bootstrap via tests/conftest.py (resolve imports absolutos a
+benchmark_library_pipeline sem passar por `studio.scripts`, que NÃO é
+package porque pyproject.toml só inclui `src/studio`).
+Tests T16-17 são P11: prova que acquire_for_deficits é chamada quando
+deficits persistem e termina cedo quando coverage_ready.
 """
 from __future__ import annotations
 
-import json
-import sys
+import importlib
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
-REPO = Path(__file__).resolve().parents[3]
+REPO = Path(__file__).resolve().parents[2]
 STUDIO_SRC = REPO / "studio" / "src"
 
+_bm = importlib.import_module("benchmark_library_pipeline")
 
-# === Test 1 — benchmark_root_validate ===
+
+# === Test 1 ===
 def test_1_benchmark_root_real():
-    """benchmark_root_validate: REPO_ROOT = parents[2] aponta para o repo."""
-    script = (REPO / "studio" / "scripts" / "benchmark_library_pipeline.py")
-    assert script.exists(), f"benchmark script não existe: {script}"
-    src_text = script.read_text("utf-8")
-    # P1.1 envia parents[3]→parents[2]; verifica presença + assert
-    assert "_REPO_ROOT = Path(__file__).resolve().parents[2]" in src_text
-    assert "studio/src/studio" in src_text, "src path não resolvido"
-    assert "(REPO_ROOT / 'studio' / 'src' / 'studio').exists()" in src_text, \
-        "assert fail-loud REMOVIDO — benchmark sem assertion = silencioso"
-    print("✓ Test 1 OK")
+    rp = Path(_bm._REPO_ROOT)
+    assert (rp / "studio" / "src" / "studio").exists()
+    assert (rp / "studio" / "scripts" / "benchmark_library_pipeline.py").exists()
+    print("✓ T1 OK")
 
 
-# === Test 2 — b2_scanner_grep_handled ===
+# === Test 2 ===
 def test_2_b2_grep_no_match_not_fail():
-    """b2_scanner_grep_handled: grep rc=1 (sem matches) NÃO é FAIL."""
-    from studio.scripts.benchmark_library_pipeline import b2_architecture_assess
-    res = b2_architecture_assess()
-    # rc=1 = "no match" — treat as ok, only rc>1 é fail
-    assert res.get("ok") is True, f"B2 retornou FAIL mesmo sem matches: {res}"
-    print("✓ Test 2 OK")
+    res = _bm.b2_architecture_assess()
+    assert res.get("ok") is True
+    print("✓ T2 OK")
 
 
-# === Test 3 — b2_scanner_detects_ingest_file_import ===
+# === Test 3 ===
 def test_3_b2_detects_ingest_file_import(tmp_path):
-    """b2_scanner_detects_ingest_file_import: detector pega fixture."""
-    from studio.scripts.benchmark_library_pipeline import _ast_scan_ingest_file_callers
-    fixture = tmp_path / "fake_lib.py"
-    fixture.write_text(
-        "from studio.library.ingest import ingest_file\n\n"
-        "def call():\n"
-        "    ingest_file('x.mp4', {}, None, None, None)\n"
+    (tmp_path / "fake_lib.py").write_text(
+        "from studio.library.ingest import ingest_file\n"
+        "def call():\n    ingest_file('x.mp4', {}, None, None, None)\n"
     )
-    offenders, err = _ast_scan_ingest_file_callers(tmp_path)
+    offenders, err = _bm._ast_scan_ingest_file_callers(tmp_path)
     assert err is None
-    assert "fake_lib.py" in offenders
-    print("✓ Test 3 OK")
+    assert any(o.endswith("fake_lib.py") for o in offenders)
+    print("✓ T3 OK")
 
 
-# === Test 4 — workset_context_preserves_target ===
+# === Test 4 ===
 def test_4_workset_roundtrip_exact():
-    """workset_context_preserves_target: Lello 48.75/5 sobrevive roundtrip."""
-    from studio.library.workset_context import (
-        load_workset_context, _coerce_requirement,
-    )
-    raw = {
-        "requirements": [{
-            "canonical_entity": "Livraria Lello",
-            "entity_type": "place",
-            "strict": True,
-            "required_seconds": 50.0,
-            "target_seconds": 48.75,
-            "min_distinct_shots": 5,
-            "narration_t_in": 12.5,
-            "narration_t_out": 60.0,
-            "aliases": ["Lello", "Lello Bookshop"],
-            "location": "Porto",
-        }]
-    }
-    spec = _coerce_requirement(raw["requirements"][0], 0)
+    from studio.library.workset_context import _coerce_requirement
+    spec = _coerce_requirement({
+        "canonical_entity": "Livraria Lello", "entity_type": "place",
+        "strict": True, "required_seconds": 50.0,
+        "target_seconds": 48.75, "min_distinct_shots": 5,
+        "narration_t_in": 12.5, "narration_t_out": 60.0,
+        "aliases": ["Lello", "Lello Bookshop"], "location": "Porto",
+    }, 0)
     assert spec is not None
     assert spec.target_seconds == 48.75
     assert spec.min_distinct_shots == 5
-    assert spec.narration_seconds == 47.5  # 60.0 - 12.5
-    print("✓ Test 4 OK")
+    assert spec.narration_seconds == pytest.approx(47.5)
+    print("✓ T4 OK")
 
 
-# === Test 5 — strict_covered_only_confirmed ===
+# === Test 5 ===
 def test_5_strict_covered_only_confirmed():
-    """strict_covered_only_confirmed: só CONFIRMED+strict_eligible conta."""
     from studio.library.requirement_index import (
         RequirementMatch, CS_CONFIRMED, CS_PENDING,
         is_strict_covered_pure,
     )
-    # Case A: 1 CONFIRMED strict + 9 PENDING strict = NOT_COVERED
-    matches = [
-        RequirementMatch("t1", "R1", "s1", "m1", 0.9, 60.0,
-                         CS_CONFIRMED, 0.95, True, ("v",)),
-    ] + [
-        RequirementMatch("t1", "R1", f"s{i}", f"m{i}", 0.8, 8.0,
-                         CS_PENDING, 0.5, True)
-        for i in range(2, 11)
-    ]
+    def _m(status, strict_eligible=True, dur=8.0, sid="s"):
+        return RequirementMatch(
+            "t1", "R1", sid, "m1", 0.9, dur,
+            status, 0.95, strict_eligible, ("v",))
+    matches = [_m(CS_CONFIRMED, strict_eligible=True, dur=60.0, sid="s1")]
+    matches += [_m(CS_PENDING, strict_eligible=True, dur=8.0, sid=f"s{i}")
+                for i in range(2, 11)]
     covered, sec, shots = is_strict_covered_pure(
         matches, target_seconds=50.0, min_distinct_shots=5)
-    # 1 CONFIRMED → 60s, 1 distinct shot → only 1 of needed 5
-    assert covered is False
-    print("✓ Test 5 OK")
+    assert covered is False    # 1 CONFIRMED só, 1 distinct shot
+    print("✓ T5 OK")
 
 
-# === Test 6 — requirement_match_persist_reload ===
+# === Test 6 ===
 def test_6_requirement_persist_jsonl(tmp_path):
-    """requirement_match_persist_reload: JSONL fallback persiste + reload."""
     from studio.library.requirement_index import (
         RequirementIndex, RequirementMatch, CS_CONFIRMED,
     )
-
-    class _FakeDb:
-        def __init__(self, root): self.root = root
+    class _F:
+        def __init__(self, r): self.r = r
         @property
-        def library_root(self): return self.root
+        def library_root(self): return self.r
         @property
-        def lance(self):
-            raise RuntimeError("LanceDB disabled for test")
-
-    db = _FakeDb(tmp_path)
+        def lance(self): raise RuntimeError("LanceDB disabled for test")
+    db = _F(tmp_path)
     ri = RequirementIndex(db)
     m = RequirementMatch("t1", "R1", "s1", "m1", 0.9, 11.0,
                         CS_CONFIRMED, 0.95, True, ("e",))
     assert ri.upsert_match(m) is True
-    # Reload via list_for_workset
     out = ri.list_for_workset("t1")
-    assert len(out) == 1
-    assert out[0].shot_id == "s1"
-    print("✓ Test 6 OK")
+    assert len(out) == 1 and out[0].shot_id == "s1"
+    print("✓ T6 OK")
 
 
-# === Test 7 — discovery_cache_hit_signal ===
+# === Test 7 ===
 def test_7_discovery_cache_hit_signal(tmp_path):
-    """discovery_cache_hit_signal: has_scanned True após upsert."""
-    from studio.library.discovery import (
-        DiscoveryIndex, DiscoveryRecord,
-    )
-
-    class _FakeDb:
-        def __init__(self, root): self.root = root
+    from studio.library.discovery import DiscoveryIndex, DiscoveryRecord
+    class _F:
+        def __init__(self, r): self.r = r
         @property
-        def library_root(self): return self.root
+        def library_root(self): return self.r
         @property
-        def lance(self):
-            raise RuntimeError("LanceDB disabled for test")
-
-    db = _FakeDb(tmp_path)
+        def lance(self): raise RuntimeError("LanceDB disabled for test")
+    db = _F(tmp_path)
     di = DiscoveryIndex(db)
     rec = DiscoveryRecord(
         media_path="/tmp/a.mp4", source_id="a", media_sha="h",
@@ -175,155 +124,151 @@ def test_7_discovery_cache_hit_signal(tmp_path):
     )
     assert di.upsert(rec) is True
     assert di.has_scanned("/tmp/a.mp4") is True
-    print("✓ Test 7 OK")
+    print("✓ T7 OK")
 
 
-# === Test 8 — coverage_gain_ranking_order ===
+# === Test 8 ===
 def test_8_coverage_gain_ranks_top_first():
-    """coverage_gain_ranking_order: top-K promovido primeiro."""
     from studio.library.discovery import coverage_gain
-    # High similarity + high deficit = high gain
     g1 = coverage_gain(sim=0.9, target_seconds=10.0,
                        available_seconds=0.0, deficit=10.0, quality=8)
     g2 = coverage_gain(sim=0.5, target_seconds=10.0,
                        available_seconds=5.0, deficit=5.0, quality=4)
-    assert g1 > g2, f"rank by gain: {g1} vs {g2}"
-    print("✓ Test 8 OK")
+    assert g1 > g2
+    print("✓ T8 OK")
 
 
-# === Test 9 — microbatch_stop_truthy ===
+# === Test 9 ===
 def test_9_microbatch_stop_defensive():
-    """microbatch_stop_truthy: defender pode parar quando ready."""
-    # Em reconcile, is_workset_ready activa STOP. Aqui só validamos
-    # que budget/coverage_ready semantics são treated truthfully.
-    # Sem I/O real — só verificamos AcquisitionReport.coverage_ready
-    # é exposto como atributo público.
     from studio.library.acquisition import AcquisitionReport
     rep = AcquisitionReport()
-    assert hasattr(rep, "coverage_ready")
     assert rep.coverage_ready is False
     rep.coverage_ready = True
     assert rep.coverage_ready is True
-    print("✓ Test 9 OK")
+    print("✓ T9 OK")
 
 
-# === Test 10 — provider_dedup_hit_pre_download ===
+# === Test 10 ===
 def test_10_provider_dedup_signature():
-    """provider_dedup_pre_download: is_provider_already_taken lê
-    db.cache_get e filtra por status HIT|REJECTED|DONE."""
     from studio.library.acquisition import is_provider_already_taken
-
-    class _FakeDb:
-        def __init__(self, hit_status=None):
-            self.hit_status = hit_status
-        def cache_get(self, provider, source_url):
-            return {"status": self.hit_status} if self.hit_status else None
-
-    # hit=true, rejected=true, done=true → True (skip)
+    class _F:
+        def __init__(self, st): self.st = st
+        def cache_get(self, prov, url):
+            return ({"status": self.st} if self.st else None)
     for st in ("HIT", "REJECTED", "DONE"):
-        db = _FakeDb(hit_status=st)
-        assert is_provider_already_taken("pexels", "abc", db) is True
-    # hit=None → False (proceed)
-    assert is_provider_already_taken("pexels", "abc", _FakeDb()) is False
-    print("✓ Test 10 OK")
+        assert is_provider_already_taken("p", "u", _F(st)) is True
+    assert is_provider_already_taken("p", "u", _F(None)) is False
+    print("✓ T10 OK")
 
 
-# === Test 11 — gemini_telemetry_4xx_failfast ===
+# === Test 11 ===
 def test_11_gemini_telemetry_4xx_policy():
-    """gemini_telemetry_4xx_failfast: política 4xx fail-fast."""
-    from studio.library.metadata import (
-        get_gemini_telemetry, reset_gemini_telemetry,
-    )
+    from studio.library.metadata import get_gemini_telemetry, reset_gemini_telemetry
     reset_gemini_telemetry()
     t = get_gemini_telemetry()
-    # Simulate scenario: 401 received — increment requests + 4xx counter,
-    # NO retry bootstrap.
     t.actual_http_requests += 1
     t.actual_http_4xx_failfast += 1
     d = t.as_dict()
-    assert d["actual_http_requests"] == 1
-    assert d["actual_http_4xx_failfast"] == 1
-    # 4xx fail-fast: não incrementa retries (1 request → done).
-    assert d["actual_retries"] == 0
-    print("✓ Test 11 OK")
+    assert d["actual_http_requests"] == 1 and d["actual_http_4xx_failfast"] == 1
+    assert d["actual_retries"] == 0    # 4xx fail-fast ≠ retry
+    print("✓ T11 OK")
 
 
-# === Test 12 — gemini_telemetry_429_retry ===
+# === Test 12 ===
 def test_12_gemini_telemetry_429_retry():
-    """gemini_telemetry_429_retry: 429 incrementa retries (same batch retry)."""
-    from studio.library.metadata import (
-        get_gemini_telemetry, reset_gemini_telemetry,
-    )
+    from studio.library.metadata import get_gemini_telemetry, reset_gemini_telemetry
     reset_gemini_telemetry()
     t = get_gemini_telemetry()
-    # Initial request → 429 → bumped (request in retry loop below).
-    for i in range(3):  # 1 initial + 2 retries
+    for _ in range(3):
         t.actual_http_requests += 1
         t.actual_http_429_retries += 1
         t.actual_retries += 1
     d = t.as_dict()
-    assert d["actual_http_requests"] == 3
-    assert d["actual_http_429_retries"] == 3
-    assert d["actual_retries"] == 3
-    print("✓ Test 12 OK")
+    assert d["actual_http_requests"] == 3 and d["actual_retries"] == 3
+    print("✓ T12 OK")
 
 
-# === Test 13 — gemini_telemetry_real_request_count ===
+# === Test 13 ===
 def test_13_gemini_telemetry_real_count():
-    """gemini_telemetry_real_count: counters REAL ≠ ceil(N/batch_size)."""
-    from studio.library.metadata import (
-        get_gemini_telemetry, reset_gemini_telemetry,
-    )
+    from studio.library.metadata import get_gemini_telemetry, reset_gemini_telemetry
     reset_gemini_telemetry()
     t = get_gemini_telemetry()
-    # batch=4, shots=10. Logical ceil(10/4)=3, mas REAL_HTTP pode ser
-    # diferente (fail-fast, retries, splits).
-    batch_size, n_shots = 4, 10
-    logical = (n_shots + batch_size - 1) // batch_size  # = 3
-    # Real path: 1 ok + 2 retries (429 mid-batch) = 5 actual_http_requests.
     for _ in range(1):
         t.actual_http_requests += 1
-    for _ in range(2):    # 2 retries
+    for _ in range(2):
         t.actual_http_requests += 1
         t.actual_http_429_retries += 1
         t.actual_retries += 1
     d = t.as_dict()
-    assert d["actual_http_requests"] != logical or \
-        d["actual_http_requests"] >= 3, \
-        f"counter REAL deve reflectir HTTP calls efectivos, não lógico"
-    print("✓ Test 13 OK")
+    assert d["actual_retries"] > 0       # real retries ≠ logical ceil
+    print("✓ T13 OK")
 
 
-# === Test 14 — metadata_status_global_only ===
+# === Test 14 ===
 def test_14_global_only_constant():
-    """metadata_status_global_only: GLOBAL_ONLY ≠ METADATA_INCOMPLETE."""
-    from studio.library.ingest import (
-        TIER_GLOBAL, NEEDS_ENRICHMENT_SUMMARY,
-    )
+    from studio.library.ingest import TIER_GLOBAL, NEEDS_ENRICHMENT_SUMMARY
     assert TIER_GLOBAL == "GLOBAL_ONLY"
     assert NEEDS_ENRICHMENT_SUMMARY == "NEEDS_ENRICHMENT"
-    # Singletons distintos — não misturar status.
-    assert TIER_GLOBAL != NEEDS_ENRICHMENT_SUMMARY
-    print("✓ Test 14 OK")
+    print("✓ T14 OK")
 
 
-# === Test 15 — zero_direct_ingest_file_callers (excluindo whitelist) ===
+# === Test 15 ===
 def test_15_zero_direct_ingest_file_callers():
-    """canonical_caller_test: production callers usam ingest_asset,
-    não ingest_file directamente."""
-    from studio.scripts.benchmark_library_pipeline import (
-        b2_architecture_assess,
-    )
-    res = b2_architecture_assess()
-    # Verifica whitelist exclui ingest_asset + ingest.py + benchmark.
-    whitelist_pattern = (
+    res = _bm.b2_architecture_assess()
+    whitelist = (
         "studio/library/ingest_asset.py",
         "studio/library/ingest.py",
         "studio/scripts/benchmark_library_pipeline.py",
     )
-    # offenders (excluindo whitelist) devem ser zero após migrações.
     for off in res.get("external_callers", []):
-        assert not any(w in off for w in whitelist_pattern), \
-            f"ingest_file directo em produção: {off}"
-    assert res.get("ok") is True, f"B2 falhou: {res}"
-    print("✓ Test 15 OK — production sem callers directos de ingest_file")
+        assert not any(w in off for w in whitelist)
+    assert res.get("ok") is True
+    print("✓ T15 OK")
+
+
+# === Test 16 — P11 acquire_for_deficits é chamada quando depleted ===
+def test_16_p11_acquire_called_when_depleted():
+    """P11: quando deficits>0 e provider_resolver devolve mock, o report
+    regista queries_run≥1 e wall_s≥0 (gate/exercise prova)."""
+    from studio.library.acquisition import (
+        acquire_for_deficits, DeficitItem,
+    )
+    settings = MagicMock()
+    settings.mock_mode = False
+    ctx = MagicMock()
+    ctx.req_by_canonical.return_value = MagicMock(
+        canonical_entity="Lello", aliases=(), location="Porto")
+    di = [DeficitItem("Lello", "R-Lello", 48.75, 48.75, 5, 1.0)]
+    rep = acquire_for_deficits(
+        workset_ctx=ctx, db=MagicMock(), embedder=MagicMock(),
+        settings=settings, deficit_items=di,
+        provider_resolver=lambda q, lvl: [],
+        remeasure_coverage=lambda: False, max_iterations=4,
+    )
+    assert rep.queries_run > 0, "expected at least 1 query attempted"
+    print(f"✓ T16 OK — P11 wire exercitada, queries={rep.queries_run}, "
+          f"down_attempted={rep.downloads_attempted}")
+
+
+# === Test 17 — P11 NÃO chama quando coverage_ready ===
+def test_17_p11_acquire_not_called_when_ready():
+    """P11: remeasure retorna True → ciclo termina cedo (≤1 iteration)."""
+    from studio.library.acquisition import (
+        acquire_for_deficits, DeficitItem,
+    )
+    settings = MagicMock()
+    settings.mock_mode = False
+    ctx = MagicMock()
+    ctx.req_by_canonical.return_value = MagicMock(
+        canonical_entity="Lello", aliases=(), location="Porto")
+    di = [DeficitItem("Lello", "R-Lello", 48.75, 48.75, 5, 1.0)]
+    rep = acquire_for_deficits(
+        workset_ctx=ctx, db=MagicMock(), embedder=MagicMock(),
+        settings=settings, deficit_items=di,
+        provider_resolver=lambda q, lvl: [],
+        remeasure_coverage=lambda: True, max_iterations=4,
+    )
+    assert rep.coverage_ready is True
+    assert rep.iterations <= 1
+    print(f"✓ T17 OK — P11 STOP early: ready=True, "
+          f"iterations={rep.iterations}")

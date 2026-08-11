@@ -209,6 +209,16 @@ def acquire_for_deficits(
     # Iteração outer — cada iteração tenta satisfazer top deficit.
     for it in range(max_iterations):
         rep.iterations = it + 1
+        # P11 fix (code-reviewer): remeasure MUST fire at start of every
+        # outer iteration regardless of provider resolvability. With
+        # provider_resolver=[] (test T17), inner loop runs queries with
+        # results=[] and skips the gated remeasure — coverage never fires.
+        # Move it here: before picking remaining.
+        if remeasure_coverage is not None and remeasure_coverage():
+            log.info("acquire_for_deficits: coverage_ready atingido em "
+                     "iteração %d — STOP", it + 1)
+            rep.coverage_ready = True
+            break
         remaining = [d for d in deficit_items
                      if d.deficit_seconds > 0 and not d.is_covered]
         if not remaining:
@@ -382,7 +392,9 @@ def acquire_for_deficits(
                     ),
                     status="success" if results else "empty",
                 ))
-            # STOP early on coverage_ready
+            # STOP early on coverage_ready (test T17: remeasure
+            # chamada após processar results; se provider vazio, T16 ainda
+            # exercita outer break via one_iteration_added==0)
             if remeasure_coverage is not None and remeasure_coverage():
                 log.info("acquire_for_deficits: coverage_ready atingido em "
                          "iteração %d nível %d — STOP", it + 1, lvl)
