@@ -220,7 +220,8 @@ def _gemini_retry(fn: Callable, *args, **kwargs):
 def _process_one(mp4: Path, source_id: str, video_id: Optional[str],
                  topics: list[str], state: dict,
                  db: "LibraryDB", embedder: "SiglipEmbedder",
-                 settings: "Settings") -> dict:
+                 settings: "Settings",
+                 *, requirement_prompts: Optional[dict] = None) -> dict:
     """Phase 6 v2 — wrapper fino sobre ingest_asset canónico (P5+P6).
 
     Esta função NÃO mantém pipeline paralelo próprio. Delega em
@@ -249,6 +250,7 @@ def _process_one(mp4: Path, source_id: str, video_id: Optional[str],
         result, asset_state = ingest_asset(
             mp4, orphan_lic, db, settings, embedder,
             source_id=source_id, video_id=video_id,
+            requirement_prompts=requirement_prompts,
         )
     except Exception as exc:
         # Last-ditch: ingest_asset não devolveu (não deveria acontecer
@@ -343,6 +345,12 @@ def main() -> int:
                     help="OPT-IN: em --workflow, filtra por substring do nome "
                          "do ficheiro. Default é OFF (porque 908 órfãos têm "
                          "filenames hash do Pexels, sem keywords do topic).")
+    ap.add_argument("--force-redo-done", action="store_true",
+                    help="TEST-ONLY: limpa state[\"done\"] em memória antes do "
+                         "loop, permitindo reprocessar mp4 já DONE em runs "
+                         "anteriores. NÃO toca no state.json persistido até o "
+                         "loop confirmar novo resultado DONE. Para dev/test "
+                         "apenas; em prod use --reset-video-id + clear state.")
     args = ap.parse_args()
 
     # UPSTREAM-CHANGE 2026-08-11 §D: reconcile de produção exige
@@ -351,6 +359,11 @@ def main() -> int:
     #   --maintenance-library-only  → admin, processa sem vídeo (fail-loud)
     # Sem qualquer um dos dois, ERROR fail-closed (não aceita "reconcile
     # sem rumo"). Esta regra impede os runs de 5 dias.
+    # UPSTREAM-CHANGE 2026-08-11 §P5: inicializar requirement_prompts
+    # no topo da main() para estar em scope no call site de _process_one.
+    # Em --workflow porto-essencia-001 será populated pela WORKSET LOAD;
+    # em --maintenance-library-only fica vazio (legacy fallback per-shot).
+    requirement_prompts: dict[str, str] = {}
     if not args.workflow and not args.maintenance_library_only:
         log.error(
             "reconcile: production reconcile requires EXACTLY one of:\n"
@@ -436,37 +449,68 @@ def main() -> int:
     # para retro-compat mas funciona como hint/override (apenas nomes).
     # Resolve em ordem: workset > workflow.target_topics > vazio.
     if workflow_data:
-        spans_source = "workflow.target_topics"  # legacy
+        spans_source = "workset/visual_requirements.json"
         spans = []
+        # UPSTREAM-CHANGE 2026-08-11 §D: production reconcile é
+        # FAIL-CLOSED em workset ausente/inválido. workflow.target_topics
+        # é apenas hint retro-compat (sem t_in/t_out, sem coverage). Para
+        # --workflow em produção, workset/visual_requirements.json é
+        # OBRIGATÓRIO — não cai em fallback.
         work_vr = _load_workset_visual_requirements(args.workflow)
-        if work_vr and work_vr.get("requirements"):
-            spans_source = "workset/visual_requirements.json"
-            log.info("workset visual_requirements canonical para %s: %d entities",
-                     args.workflow, len(work_vr["requirements"]))
-            for req in work_vr["requirements"]:
-                from studio.script.entities import EntitySpan
-                spans.append(EntitySpan(
-                    canonical_name=req.get("canonical_entity", ""),
-                    entity_type=req.get("entity_type", "place"),
-                    t_in=float(req.get("narration_t_in", 0.0)),
-                    t_out=float(req.get("narration_t_out", 0.0)),
-                    importance=1.0,
-                    strict_visual=bool(req.get("strict", False)),
-                    location_context=req.get("location", "") or "",
-                ))
-        else:
-            # fallback legacy: workflow.target_topics (sem t_in/t_out)
-            from studio.script.entities import EntitySpan
-            for t in workflow_data.get("target_topics", []):
-                spans.append(EntitySpan(
-                    canonical_name=t.get("name", ""),
-                    entity_type=t.get("type", "place"),
-                    t_in=0.0,
-                    t_out=0.0,
-                    importance=t.get("importance", 0.5),
-                    strict_visual=bool(t.get("strict", False)),
-                    location_context=t.get("location", ""),
-                ))
+        if not work_vr or not work_vr.get("requirements"):
+            log.error(
+                "reconcile: --workflow '%s' mas workset/visual_requirements.json "
+                "ausente ou vazia em data/library/worksets/%s/. "
+                "REFUSING to run (production fail-closed per task §D 2026-08-11). "
+                "Corrige: cria ou popula workset/visual_requirements.json com "
+                "canonical_entity/required_seconds/target_seconds/min_distinct_shots.",
+                args.workflow, args.workflow,
+            )
+            return 1   # SystemExit equivalente a fail-closed em main()
+        log.info("workset visual_requirements canonical para %s: %d entities",
+                 args.workflow, len(work_vr["requirements"]))
+        for req in work_vr["requirements"]:
+            from studio.script.entities import EntitySpan, _slug
+            # UPSTREAM-CHANGE 2026-08-11 §D: preserva EXACTAMENTE os
+            # valores do JSON (não recalcula target_seconds/min_distinct_shots/
+            # narration_t_in/_out/aliases). Defaults são apenas safety net se
+            # o caller esqueceu um campo — log warning.
+            canonical = req.get("canonical_entity", "")
+            if not canonical:
+                log.warning("workset/visual_requirements.json: req sem "
+                            "canonical_entity — skip (key=%r)",
+                            req.get("requirement_id", "?"))
+                continue
+            target_s = float(req.get("target_seconds", 0.0) or 0.0)
+            min_shots = int(req.get("min_distinct_shots", 1) or 1)
+            if target_s <= 0:
+                log.warning("workset/visual_requirements.json: req '%s' "
+                            "target_seconds<=0 (got %.2f) — coverage gate "
+                            "vai sinalizar PARTIAL.", canonical, target_s)
+            if min_shots <= 0:
+                log.warning("workset/visual_requirements.json: req '%s' "
+                            "min_distinct_shots<=0 (got %d) — coerce a 1.",
+                            canonical, min_shots)
+                min_shots = 1
+            spans.append(EntitySpan(
+                entity_id=f"workset_{slug(canonical)}:{(req.get('requirement_id') or '0000')}",
+                canonical_name=canonical,
+                entity_type=req.get("entity_type", "place") or "place",
+                t_in=float(req.get("narration_t_in", 0.0) or 0.0),
+                t_out=float(req.get("narration_t_out", 0.0) or 0.0),
+                text=canonical,
+                aliases=list(req.get("aliases", []) or []),
+                importance=1.0,
+                strict_visual=bool(req.get("strict", False)),
+                location_context=req.get("location", "") or "",
+            ))
+        # UPSTREAM-CHANGE 2026-08-11 §P5: construir requirement_prompts
+        # dict[canonical_entity -> text_en] UMA VEZ (caller do loop).
+        # Cada text_en = canonical + aliases + location em inglês — SigLIP
+        # text tower é EN-only (ADR-0003).
+        requirement_prompts = _build_requirement_prompts(work_vr)
+        log.info("reconcile: requirement_prompts pronto (%d entities) "
+                 "para SigLIP triage no ingest", len(requirement_prompts))
         try:
             from studio.matching.coverage_plan import build_coverage_plan
             if spans:
@@ -491,6 +535,15 @@ def main() -> int:
 
     already_done = {d["file"] for d in state["done"]}
     already_failed_files = {f["file"] for f in state["failed"]}
+    # UPSTREAM-CHANGE 2026-08-11 §T1: --force-redo-done TEST-ONLY. NÃO
+    # persistimos a limpeza — o reconcile original adiciona novos done a
+    # state[\"done\"]; com flag activa, começamos com lista vazia em memória
+    # para esta run apenas (state.json mantém-se intacto até _save_state).
+    if args.force_redo_done:
+        log.warning("--force-redo-done ACTIVE: ignorando state[\"done\"] em "
+                    "memória (apenas este run); state.json será actualizado "
+                    "no fim do loop com novos done entries")
+        already_done = set()
     candidates = sorted(
         mp4 for mp4 in MEDIA_DIR.iterdir()
         if mp4.suffix.lower() == ".mp4"
@@ -521,7 +574,14 @@ def main() -> int:
     n_ok = n_skip = n_fail = 0
     for i, mp4 in enumerate(candidates):
         sid = _source_id_for(mp4)
-        if dedup.has(sid):
+        # UPSTREAM-CHANGE 2026-08-11 §T2: --force-redo-done também bypassa
+        # dedup.has(sid) (LanceDB provider_cache). Sem isto, candidatos
+        # recém-extraídos do filesystem mas já na dedup_index por runs
+        # anteriores ficam SKIP_DUP antes de chegar a _process_one, e a
+        # arquitectura nova (Gemini batch / SigLIP triage) nunca corre.
+        # Em prod, --force-redo-done NUNCA é invocado; em dev/test, este
+        # bypass é semanticamente equivalente a "rebuild from scratch".
+        if dedup.has(sid) and not args.force_redo_done:
             log.info("[%d/%d] SKIP duplicado (dedup): %s", i + 1, total_today, sid)
             state["skipped_duplicate"].append({"file": mp4.name, "source_id": sid})
             n_skip += 1
@@ -536,7 +596,8 @@ def main() -> int:
             # Sempre pipeline real (Gemini + SigLIP + register_shot); sem
             # branch stub — user pediu dados reais e resiliência em retries.
             res = _process_one(mp4, sid, video_id, topics, state,
-                                db, embedder, settings)
+                                db, embedder, settings,
+                                requirement_prompts=requirement_prompts)
             # Separar sucesso de falha por analyze.status + register_error
             # (code-review ALTA sequencial): falhas NÃO devem contar como ok,
             # NÃO devem entrar em dedup (para permitir retry em runs futuras).
@@ -753,6 +814,49 @@ def _log_finished_event(n_ok: int, n_skip: int, n_fail: int,
             }) + "\n")
     except OSError as exc:
         log.warning("ingest_log write falhou: %s", exc)
+
+
+def _build_requirement_prompts(work_vr: dict) -> dict[str, str]:
+    """UPSTREAM-CHANGE 2026-08-11 §P5: construir dict[canonical_entity
+    -> text_en] para SigLIP triage pré-Gemini.
+
+    Cada text_en = canonical + entity_type + location + aliases (EN).
+    SigLIP text tower é EN-only (ADR-0003) — qualquer token não-EN degrada
+    o coseno drasticamente. Em revisão futura, podem usar-se traduções
+    automáticas PT→EN; por agora os canonical_entities já são nomes
+    latinizados (Lello, Francesinha, Sao Bento) aceitáveis para SigLIP.
+
+    Args:
+        work_vr: dict carregado de workset/visual_requirements.json.
+
+    Returns:
+        dict[canonical_entity -> "text_en composto"]. vazio se work_vr
+        malformado.
+    """
+    out: dict[str, str] = {}
+    for req in work_vr.get("requirements", []):
+        if not isinstance(req, dict):
+            continue
+        canon = (req.get("canonical_entity") or "").strip()
+        if not canon:
+            continue
+        parts: list[str] = [canon]
+        et = (req.get("entity_type") or "").strip()
+        if et:
+            parts.append(et)
+        loc = (req.get("location") or "").strip()
+        if loc:
+            parts.append(loc)
+        for alias in (req.get("aliases") or []):
+            if not alias:
+                continue
+            a = str(alias).strip()
+            if a and a.lower() != canon.lower():
+                parts.append(a)
+        text_en = " ".join(parts).strip()
+        if text_en:
+            out[canon] = text_en
+    return out
 
 
 def _load_workset_visual_requirements(workflow_id: str) -> Optional[dict]:

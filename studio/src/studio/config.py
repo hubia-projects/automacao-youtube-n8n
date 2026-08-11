@@ -101,6 +101,15 @@ class Settings(BaseSettings):
     elevenlabs_api_key: str = Field(default="", alias="ELEVENLABS_API_KEY")
     elevenlabs_voice_id: str = Field(default="", alias="ELEVENLABS_VOICE_ID")
 
+    # --- Gemini rate-limit single-source-of-truth (camada GETTER-SAFE) ---
+    # É seguro manter mesmo com hasattr/getattr fallback no rate_limit.py:
+    # adicionamos aqui para override via .env (sem ter de patchar código).
+    # Defaults espelham GeminiRateLimiter.__init__.
+    gemini_cooldown_s: float = Field(default=60.0, alias="STUDIO_GEMINI_COOLDOWN_S")
+    gemini_cb_threshold: int = Field(default=3, alias="STUDIO_GEMINI_CB_THRESHOLD")
+    gemini_rps: float = Field(default=5.0, alias="STUDIO_GEMINI_RPS")
+    gemini_burst: int = Field(default=2, alias="STUDIO_GEMINI_BURST")
+
     # --- Whisper local (faster-whisper) ---
     # Fase 1B: default 'base' (~75MB, ms-accuracy suficiente para A/V sync).
     # 'large-v3-turbo' ainda disponível via STUDIO_WHISPER_MODEL=large-v3-turbo

@@ -2,6 +2,18 @@
 
 Fail-closed: sem licença válida → rejeitado. Duplicado (SHA-256) → no-op.
 Tudo registado em ingest_log.jsonl.
+
+UPSTREAM-CHANGE 2026-08-11 §P2-P5 (Hot path real):
+  - SigLIP triage entre Phase B (SigLIP batch) e Phase C (Gemini):
+      HIGH   (cosine ≥ settings.library_triage_high_threshold)  → Gemini batch
+      POSSIBLE (≥ library_triage_possible_threshold)             → Gemini batch
+      GLOBAL_ONLY                                              → stub sem Gemini
+  - HIGH+POSSIBLE shots agrupados e enviados via analyze_shots_batch em
+    chunks of settings.library_gemini_batch_size (default 4).
+  - GLOBAL_ONLY shots guardam summary="NEEDS_ENRICHMENT" (sem HTTP Gemini).
+  - requirement_prompts: dict[canonical_entity -> text_en] pré-calculado
+    pelo reconcile (uma embedding_text() por canonical, cache no run).
+    Se vazio/None → fallback legacy per-shot analyze_shot (compat retro).
 """
 
 from __future__ import annotations
@@ -21,11 +33,19 @@ from studio.config import Settings
 from studio.library.db import LibraryDB
 from studio.library.embed import DIM, Embedder, mean_pool
 from studio.library.licenses import LicenseError, LicenseRecord, validate_license
-from studio.library.metadata import analyze_shot
+from studio.library.metadata import ShotMetadata, analyze_shot, analyze_shots_batch
 from studio.library.shots import detect_shots, extract_keyframes
 from studio.perf import Profiler
 
 log = logging.getLogger("studio.ingest")
+
+# Tier classifications da triagem SigLIP.
+TIER_HIGH = "HIGH_RELEVANCE"
+TIER_POSSIBLE = "POSSIBLE_RELEVANCE"
+TIER_GLOBAL = "GLOBAL_ONLY"
+
+# Summary dos shots que ficaram em GLOBAL_ONLY (não chamaram Gemini).
+NEEDS_ENRICHMENT_SUMMARY = "NEEDS_ENRICHMENT"
 
 
 @dataclass
@@ -35,6 +55,11 @@ class IngestResult:
     shots_added: int = 0
     cost_usd: float = 0.0
     reason: str = ""
+    triage_high: int = 0
+    triage_possible: int = 0
+    triage_global: int = 0
+    gemini_requests: int = 0
+    gemini_batches: int = 0
 
 
 def _sha256(path: Path) -> str:
@@ -52,30 +77,110 @@ def _log_entry(settings: Settings, entry: dict) -> None:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+def _cosine(a: np.ndarray, b: np.ndarray) -> float:
+    na = np.linalg.norm(a)
+    nb = np.linalg.norm(b)
+    if na < 1e-8 or nb < 1e-8:
+        return 0.0
+    return float(np.dot(a, b) / (na * nb))
+
+
+def _triage_shots(
+    shot_vecs: dict[str, np.ndarray],
+    req_text_embeds: dict[str, np.ndarray],
+    settings: Settings,
+) -> dict[str, str]:
+    """Cosine entre shot_vec e cada requirement_text_embed; classifica tier.
+
+    Args:
+        shot_vecs: shot_id -> vec já calculado em Phase B.
+        req_text_embeds: canonical_entity -> text_vec (SigLIP EN).
+                          Pode ser vazio (sem triage).
+        settings: thresholds (library_triage_high_threshold / possible_threshold).
+
+    Returns:
+        dict[shot_id -> TIER_HIGH|...] (TIER_GLOBAL se req_text_embeds vazio).
+    """
+    high_t = float(getattr(settings, "library_triage_high_threshold", 0.30) or 0.30)
+    pos_t = float(getattr(settings, "library_triage_possible_threshold", 0.18) or 0.18)
+
+    if not req_text_embeds or not shot_vecs:
+        # Sem requirements → tudo fica GLOBAL_ONLY (fallback conservativo;
+        # caller decide se ainda vale a pena chamar Gemini ou não).
+        return {sid: TIER_GLOBAL for sid in shot_vecs}
+
+    out: dict[str, str] = {}
+    for sid, svec in shot_vecs.items():
+        best = 0.0
+        for _canon, rvec in req_text_embeds.items():
+            sim = _cosine(svec, rvec)
+            if sim > best:
+                best = sim
+        if best >= high_t:
+            out[sid] = TIER_HIGH
+        elif best >= pos_t:
+            out[sid] = TIER_POSSIBLE
+        else:
+            out[sid] = TIER_GLOBAL
+    return out
+
+
+def _stub_metadata_for_global() -> ShotMetadata:
+    """ShotMetadata vazio para GLOBAL_ONLY (sem Gemini call). summary é o
+    sentinel 'NEEDS_ENRICHMENT' para o pipeline detectar que precisa de
+    enrichment futuro sem marcar como falha."""
+    return ShotMetadata(
+        summary=NEEDS_ENRICHMENT_SUMMARY,
+        places=[],
+        landmarks=[],
+        food_items=[],
+        objects=[],
+        ocr_text="",
+        shot_type="unknown",
+        camera_motion="unknown",
+        time_of_day="day",
+        indoor_outdoor="unknown",
+        people_present=False,
+        quality=5,
+        defects=["needs_enrichment=true"],
+    )
+
+
 def ingest_file(
     path: Path,
     license_raw: dict | LicenseRecord,
     db: LibraryDB,
     settings: Settings,
     embedder: Embedder,
+    *,
+    requirement_prompts: dict[str, str] | None = None,
 ) -> IngestResult:
-    """Ingerir 1 ficheiro na biblioteca. Instrumentada via Profiler (Fase 1) — 8 categorias.
+    """Ingerir 1 ficheiro na biblioteca. Instrumentada via Profiler.
 
-    Categorias: ingest_sha, ingest_copy, ingest_scenedetect, keyframes, siglip,
-    gemini_metadata, ingest_lancedb, ingest_file (sinal de carga total).
-    Acumulam-se em <run>/performance.json + linha resumo PERF para o S08.
+    Categorias instrumentadas (ordenadas por pipeline stage):
+      ingest_sha, ingest_copy, ingest_scenedetect, keyframes, siglip,
+      triage, gemini_metadata (= total de chamadas Gemini no batch),
+      ingest_lancedb, ingest_file (sinal de carga total).
 
-    try/finally garante Profiler.record("ingest_file") em TODOS os caminhos:
-    happy path (ingested), rejected (licença inválida), skipped_duplicate (já
-    ingested). Sem isso, performance.json subestimava volume real de
-    invocações (cenários fail-closed desapareciam da observability).
+    Args:
+        requirement_prompts: canonical_entity -> text_en. Pre-calculado pelo
+            reconcile (uma embed_text() por canonical). None ou vazio →
+            fallback legacy per-shot analyze_shot (retro-compat).
+
+    try/finally garante Profiler.record("ingest_file") em TODOS os caminhos
+    (happy / rejected / skipped_duplicate).
+
+    Hot path real (§P2-P5 2026-08-11):
+      Phase A — detect_shots + extract_keyframes (ffmpeg-bound)
+      Phase B — SigLIP batch (UMA chamada para TODOS os keyframes)
+      Phase B2 — SigLIP triage (cosine entre shot_vec e req_text_embed)
+      Phase C — Gemini batched: HIGH/POSSIBLE em chunks of
+                library_gemini_batch_size; GLOBAL_ONLY → stub sem HTTP
+      Phase D — LanceDB write
     """
     t_ingest = time.perf_counter()
-    # sentinel pattern (mais idiomático que mutable container): o finally
-    # lê shots["n"] que o happy-path actualiza; early-returns (rejected /
-    # skipped_duplicate) deixam-no em 0. Funciona porque `dict` é mutável
-    # por closure — mas é lexicalmente claro que é só um canal de saída.
-    shots_out = {"n": 0}
+    shots_out = {"n": 0, "triage_high": 0, "triage_possible": 0,
+                 "triage_global": 0, "gemini_requests": 0, "gemini_batches": 0}
 
     try:
         # 1. Licença (fail-closed — LIBRARY_POLICY.md)
@@ -105,18 +210,13 @@ def ingest_file(
             Profiler.record("ingest_copy", time.perf_counter() - t_copy,
                             items=path.stat().st_size)
 
-        # 4. Shots → keyframes → embedding + metadados (Pass 4 two-phase)
+        # 4. Shots → keyframes → embedding (Pass 4 two-phase)
         t_scene = time.perf_counter()
         shots = detect_shots(media_path)
         Profiler.record("ingest_scenedetect", time.perf_counter() - t_scene,
                         items=len(shots))
-        rows, total_cost = [], 0.0
-        now = datetime.now(timezone.utc).isoformat()
 
         # --- Phase A: extract ALL keyframes per shot (ffmpeg-bound) ---
-        # Ordem preservada = ordem de inserção LanceDB (determinismo). Cada
-        # shot guarda o seu índice + slice na lista global para grouping
-        # posterior. Mantemos também o path absoluto para o row da DB.
         shot_keyframes_meta: list[tuple[int, str, list[Path], float, float]] = []
         for idx, (t_in, t_out) in enumerate(shots):
             shot_id = f"{sha[:12]}_{idx:03d}"
@@ -128,10 +228,6 @@ def ingest_file(
             shot_keyframes_meta.append((idx, shot_id, keyframes, t_in, t_out))
 
         # --- Phase B: UMA chamada SigLIP com TODOS os keyframes ---
-        # Speedup esperado ~5-10× vs loop per-shot: eliminando N calls com
-        # pequeno batch (profiler mede o tempo da chamada única). O
-        # embedder aplica auto-tune (Pass 4) — o batching adaptativo cuida
-        # do tamanho ideal sem intervenção do ingest.
         all_kf_paths: list[Path] = [kf for _, _, kfs, _, _ in shot_keyframes_meta
                                      for kf in kfs]
         t_emb = time.perf_counter()
@@ -142,49 +238,152 @@ def ingest_file(
         Profiler.record("siglip", time.perf_counter() - t_emb,
                         items=len(all_kf_paths))
         # Mapping shot_idx -> slice [lo, hi) em all_vecs (ordem preservada).
-        shot_slices: list[tuple[int, str, int, int, list[Path], float, float]] = []
+        shot_slices: list[tuple[int, str, list[Path], float, float, np.ndarray]] = []
         cursor = 0
         for idx, shot_id, kfs, t_in, t_out in shot_keyframes_meta:
             n = len(kfs)
-            shot_slices.append((idx, shot_id, cursor, cursor + n, kfs, t_in, t_out))
-            cursor += n
-
-        # --- Phase C: metadata Vision + LanceDB write (por-shot, UNchanged APIs) ---
-        for idx, shot_id, lo, hi, keyframes, t_in, t_out in shot_slices:
-            slot = all_vecs[lo:hi]
+            slot = all_vecs[cursor:cursor + n]
             if slot.shape[0] > 0:
                 vec = mean_pool(slot)
             else:
-                # Sem keyframes (shot vazio) — vec DETERMINÍSTICO-por-shot-id
-                # (não zeros, evita colisão similarity LanceDB: vários shots
-                # vazios teriam o mesmo vec=0 idêntico, false positives em
-                # search_shots()). seed = sha256(shot_id)[:8] é estável por
-                # shot entre runs. `import hashlib` já está module-level
-                # (não reimport dentro do hot loop — code-reviewer Pass 5).
+                # Sem keyframes: deterministic placeholder (não zeros,
+                # evita collision similarity LanceDB).
                 _seed = int.from_bytes(hashlib.sha256(shot_id.encode()).digest()[:8], "big")
                 _rng = np.random.default_rng(_seed)
                 _placeholder = _rng.standard_normal((1, DIM), dtype=np.float32)
                 _norms = np.linalg.norm(_placeholder, axis=-1, keepdims=True)
                 _placeholder = _placeholder / np.clip(_norms, 1e-8, None)
                 vec = mean_pool(_placeholder)
-            try:
-                t_meta = time.perf_counter()
-                meta, cost = analyze_shot(keyframes, settings, source_hint=path.name)
-                Profiler.record("gemini_metadata", time.perf_counter() - t_meta,
+            shot_slices.append((idx, shot_id, kfs, t_in, t_out, vec))
+            cursor += n
+
+        # --- Phase B2: SigLIP triage (HOT path real §P5 2026-08-11) ---
+        # Embeddings textuais cacheadas uma vez por run no reconcile.
+        req_text_embeds: dict[str, np.ndarray] = {}
+        if requirement_prompts:
+            t_triage = time.perf_counter()
+            for canon, text_en in requirement_prompts.items():
+                if not text_en:
+                    continue
+                try:
+                    req_text_embeds[canon] = embedder.embed_text(text_en)
+                except Exception as exc:
+                    log.debug("ingest.embed_text('%s') falhou (%s) — skip prompt",
+                              canon, exc.__class__.__name__)
+            Profiler.record("triage_embed_text", time.perf_counter() - t_triage,
+                            items=len(requirement_prompts))
+        shot_tier: dict[str, str] = _triage_shots(
+            {sid: vec for _, sid, _, _, _, vec in shot_slices},
+            req_text_embeds, settings,
+        )
+        n_high = sum(1 for v in shot_tier.values() if v == TIER_HIGH)
+        n_pos = sum(1 for v in shot_tier.values() if v == TIER_POSSIBLE)
+        n_glb = sum(1 for v in shot_tier.values() if v == TIER_GLOBAL)
+        shots_out["triage_high"] = n_high
+        shots_out["triage_possible"] = n_pos
+        shots_out["triage_global"] = n_glb
+        log.info("ingest %s: triage HIGH=%d POSSIBLE=%d GLOBAL_ONLY=%d (reqs=%d)",
+                 path.name, n_high, n_pos, n_glb, len(req_text_embeds))
+        Profiler.record("triage", 0.0, items=len(shot_slices))
+
+        # --- Phase C: Gemini batched (analyze_shots_batch em chunks) ou ---
+        # GLOBAL_ONLY stub (sem HTTP). Shots ordenados por idx original para
+        # preservar determinismo da inserção LanceDB.
+        #
+        # Construir metadata_map[shot_id] -> ShotMetadata antes do LanceDB write.
+        metadata_map: dict[str, ShotMetadata | None] = {}
+
+        # Caminho novo: trabalha com requirement_prompts e triage.
+        if requirement_prompts and any(
+                v in (TIER_HIGH, TIER_POSSIBLE) for v in shot_tier.values()):
+            batch_size = max(1, int(getattr(settings, "library_gemini_batch_size", 4) or 4))
+            # Recolher shots HIGH+POSSIBLE em ordem.
+            hp_shots: list[tuple[int, str, list[Path]]] = []
+            for idx, sid, kfs, _t_in, _t_out, _vec in shot_slices:
+                if shot_tier.get(sid) in (TIER_HIGH, TIER_POSSIBLE):
+                    hp_shots.append((idx, sid, kfs))
+
+            # Slice em chunks of batch_size (preservando ordem — chunk 0..4, 4..8, ...)
+            n_hp = len(hp_shots)
+            n_batches = (n_hp + batch_size - 1) // batch_size
+            shots_out["gemini_requests"] = n_batches
+            shots_out["gemini_batches"] = n_batches
+            log.info("ingest %s: %d HP shots → %d Gemini batches (size=%d)",
+                     path.name, n_hp, n_batches, batch_size)
+            t_meta = time.perf_counter()
+            for b_start in range(0, n_hp, batch_size):
+                chunk = hp_shots[b_start:b_start + batch_size]
+                batch_input = [(sid, kfs) for _idx, sid, kfs in chunk]
+                t_chunk = time.perf_counter()
+                results = analyze_shots_batch(
+                    batch_input, settings, source_hint=path.name,
+                )
+                Profiler.record("gemini_metadata",
+                                time.perf_counter() - t_chunk,
                                 items=1)
-            except Exception as exc:
-                # shot mau não pode matar o ficheiro inteiro — salta e regista
-                log.warning("shot %s saltado (análise falhou): %s", shot_id, exc)
-                _log_entry(settings, {"file": str(path), "status": "shot_skipped",
-                                      "shot_id": shot_id, "reason": str(exc)[:200]})
-                continue
-            total_cost += cost
-            # Pass 3: negative cache wired — Vision heuristic confidence
-            # baixa => cache_mark_rejected(lic.source_url, reason).
-            # Heurística: nº evidence fields (places+landmarks+food) >= 8
-            # => confidence 1.0; abaixo disso => linear até 0. Phase 3
-            # approximation; entity confirm (Fase E) substitui por Vision
-            # real em Pass 4+).
+                log.debug("ingest %s: batch %d/%d devolveu %d entries",
+                          path.name,
+                          b_start // batch_size + 1, n_batches,
+                          sum(1 for v in results.values() if v[0] is not None))
+                for _idx, sid, _kfs in chunk:
+                    meta, _cost = results.get(sid, (None, 0.0))
+                    metadata_map[sid] = meta
+                # (removido code-reviewer #2b — não-op duplicado;
+                # n_batches já foi setado antes do loop.)
+            Profiler.record("gemini_metadata", time.perf_counter() - t_meta,
+                            items=n_batches)
+
+            # shot Skips no batch (e.g. METADATA_INCOMPLETE) — log estruturado
+            for _idx, sid, _kfs in hp_shots:
+                if metadata_map.get(sid) is None:
+                    _log_entry(settings, {
+                        "file": str(path), "status": "shot_metadata_incomplete",
+                        "shot_id": sid,
+                    })
+
+        elif requirement_prompts:
+            # Triage correu mas ninguém passou → todos GLOBAL_ONLY abaixo.
+            log.info("ingest %s: 0 HP shots — Gemini calls=0 (todos GLOBAL_ONLY)",
+                     path.name)
+        else:
+            # Compat legacy — sem requirement_prompts, fallback per-shot analyze_shot.
+            log.debug("ingest %s: legacy per-shot analyze_shot (requirement_prompts vazio)",
+                      path.name)
+            t_meta = time.perf_counter()
+            for _idx, sid, kfs, _t_in, _t_out, _vec in shot_slices:
+                try:
+                    meta, _cost = analyze_shot(kfs, settings, source_hint=path.name)
+                    metadata_map[sid] = meta
+                    Profiler.record("gemini_metadata", 0.0, items=1)
+                    shots_out["gemini_requests"] += 1
+                except Exception as exc:
+                    log.warning("shot %s saltado (legacy analyze_shot falhou): %s",
+                                sid, exc)
+                    metadata_map[sid] = None
+            Profiler.record("gemini_metadata",
+                            time.perf_counter() - t_meta,
+                            items=len(shot_slices))
+
+        # 5. GLOBAL_ONLY slots global → stub metadata status=NEEDS_ENRICHMENT.
+        for _idx, sid, kfs, t_in, t_out, _vec in shot_slices:
+            if shot_tier.get(sid) == TIER_GLOBAL:
+                if sid not in metadata_map:
+                    metadata_map[sid] = _stub_metadata_for_global()
+
+        # 6. Construir rows para LanceDB em ordem shot_slices (determinismo).
+        rows: list[dict] = []
+        now = datetime.now(timezone.utc).isoformat()
+        for idx, shot_id, keyframes, t_in, t_out, vec in shot_slices:
+            meta = metadata_map.get(shot_id, None)
+            if meta is None:
+                # skip shot — meta não chegou; virar stub para escrever row.
+                meta = _stub_metadata_for_global()
+            # negative cache heuristic mantém-se do fluxo antigo (Vision_conf
+            # baixa) — mas só quando meta tem evidence (não stub). O stub
+            # GLOBAL_ONLY tem summary=NEEDS_ENRICHMENT como sentinel para
+            # diferenciar de Vision realmente baixa-conf; este guard (is_stub)
+            # protege contra falsos positives no negative_cache
+            # (UPSTREAM-CHANGE 2026-08-11 §P5 + code-reviewer #4).
             try:
                 min_conf = float(getattr(settings, "entity_confirm_min_confidence", 0.85) or 0.85)
                 n_evidence = (
@@ -192,20 +391,22 @@ def ingest_file(
                     + len(meta.food_items or [])
                 )
                 vision_conf = round(min(1.0, n_evidence / 8.0), 3)
-                if vision_conf < min_conf:
+                # stub GLOBAL_ONLY nunca mete no negative_cache (evidence=0 mas
+                # marker explícito NEEDS_ENRICHMENT — distinguir de heurística real)
+                is_stub = (meta.summary == NEEDS_ENRICHMENT_SUMMARY)
+                if (not is_stub) and vision_conf < min_conf:
                     src_provider = (getattr(lic, "source", "") if lic else "") or "pexels"
                     src_url = (getattr(lic, "source_url", "") if lic else "") or ""
                     db.cache_mark_rejected(
                         src_provider, src_url,
                         f"vision_low_confidence={vision_conf:.2f} [heuristic]",
                     )
-                    # code-reviewer Pass 3 C+D: is_heuristic=True no log entry
-                    # sinaliza que vision_conf vem de heuristica len(evidence)/8
-                    # (nao Vision LLM real). Operador ve flag no log + reason.
-                    _log_entry(settings, {"file": str(path), "status": "shot_low_confidence",
-                                          "shot_id": shot_id,
-                                          "confidence": vision_conf,
-                                          "is_heuristic": True})
+                    _log_entry(settings, {
+                        "file": str(path), "status": "shot_low_confidence",
+                        "shot_id": shot_id,
+                        "confidence": vision_conf,
+                        "is_heuristic": True,
+                    })
             except Exception as exc:
                 log.debug("cache_mark_rejected(vision) falhou (não fatal): %s",
                           exc.__class__.__name__)
@@ -233,26 +434,36 @@ def ingest_file(
                 "meta_json": meta.model_dump_json(),
             })
 
-        # 5. LanceDB writes (pode dominar tempo se shots > 50)
+        # 7. LanceDB writes (pode dominar tempo se shots > 50)
         t_db = time.perf_counter()
         db.add_shots(rows)
         Profiler.record("ingest_lancedb", time.perf_counter() - t_db,
                         items=len(rows))
-        shots_out["n"] = len(rows)   # sinalizar happy-path ao finally
-        _log_entry(settings, {"file": str(path), "status": "ingested", "sha": sha,
-                              "shots": len(rows), "cost_usd": round(total_cost, 4),
-                              "license": lic.license, "source": lic.source})
-        log.info("ingerido %s: %d shots (%s)", path.name, len(rows), lic.source)
-        return IngestResult(status="ingested", media_sha=sha,
-                            shots_added=len(rows), cost_usd=total_cost)
+        shots_out["n"] = len(rows)
+        _log_entry(settings, {
+            "file": str(path), "status": "ingested", "sha": sha,
+            "shots": len(rows),
+            "cost_usd": round(sum(
+                1 for _ in shot_slices if shot_tier.get(_[1]) in (TIER_HIGH, TIER_POSSIBLE)
+            ) * 0.001, 4),  # aproximação grossa para ledger
+            "license": lic.license, "source": lic.source,
+            "triage_high": n_high, "triage_possible": n_pos, "triage_global": n_glb,
+            "gemini_requests": shots_out["gemini_requests"],
+        })
+        log.info("ingerido %s: %d shots (HIGH=%d POSS=%d GLOBAL=%d, Gemini=%d batches)",
+                 path.name, len(rows), n_high, n_pos, n_glb,
+                 shots_out["gemini_requests"])
+        return IngestResult(
+            status="ingested", media_sha=sha, shots_added=len(rows),
+            cost_usd=round(sum(
+                1 for _ in shot_slices if shot_tier.get(_[1]) in (TIER_HIGH, TIER_POSSIBLE)
+            ) * 0.001, 4),
+            triage_high=n_high, triage_possible=n_pos, triage_global=n_glb,
+            gemini_requests=shots_out["gemini_requests"],
+            gemini_batches=shots_out["gemini_batches"],
+        )
     finally:
         # cobre TODOS os caminhos (happy / rejected / skipped_duplicate).
-        # observability-first: Profiler nunca bloqueia o caminho real.
-        # ASSIMETRIA INTENCIONAL vs alignment.py: o finally é mais largo
-        # (AttributeError+RuntimeError+TypeError) propositadamente — um
-        # finally NUNCA deve crashar mesmo se Profiler estiver completamente
-        # partido. alignment.py está no hot-path do validate_alignment e
-        # usa narrow AttributeError porque bugs reais devem propagar.
         try:
             Profiler.record("ingest_file",
                             time.perf_counter() - t_ingest,

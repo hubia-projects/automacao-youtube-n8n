@@ -131,6 +131,7 @@ def ingest_asset(
     video_id: Optional[str] = None,
     expected_shots: int = 1,
     state_store: Optional[AssetStateStore] = None,
+    requirement_prompts: Optional[dict] = None,
 ) -> tuple[IngestResult, AssetStateRecord]:
     """Wrapper canónico de ingest_file com P5+P6 invariantes.
 
@@ -142,6 +143,9 @@ def ingest_asset(
         video_id:            se ingest foi para um workset específico
         expected_shots:      nº mínimo esperado de shots adicionados (>=1)
         state_store:         override (para tests); default = AssetStateStore()
+        requirement_prompts: dict[canonical_entity -> text_en] para SigLIP
+            triage pré-Gemini (HOT path real §P5 2026-08-11). None →
+            legacy fallback per-shot analyze_shot.
 
     Returns:
         (IngestResult, AssetStateRecord). Caller usa `record.state` para
@@ -156,7 +160,12 @@ def ingest_asset(
 
     # === Hot path: ingest_file does the real work. =============================
     try:
-        result = ingest_file(path, license_raw, db, settings, embedder)
+        # PROPOGA requirement_prompts para ingest_file (HOT path real). None
+        # mantém compat legacy (per-shot analyze_shot).
+        result = ingest_file(
+            path, license_raw, db, settings, embedder,
+            requirement_prompts=requirement_prompts,
+        )
     except LicenseError as exc:
         # Permanent failure — license invalid; retry will not change outcome.
         rec = store.transition(
