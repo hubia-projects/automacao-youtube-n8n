@@ -1,0 +1,110 @@
+{
+  "started_at": "2026-08-11T12:29:00.645804+00:00",
+  "workflow_id": "porto-essencia-001",
+  "argv": [
+    "scripts/benchmark_library_pipeline.py",
+    "--workflow",
+    "porto-essencia-001",
+    "--which",
+    "B1,B2,B3,B4,B5",
+    "--out",
+    "data/library/worksets/porto-essencia-001/benchmark.json"
+  ],
+  "tests": [
+    {
+      "test": "B4_gemini_policy_synthetic",
+      "ok": true,
+      "policy_lines": [
+        "401/403/404: FAIL FAST (sem retry, sem split)",
+        "429: retry same batch com Retry-After",
+        "5xx (500/502/503/504/network): bounded backoff sem split",
+        "parse fail ou shape: split progressivo (4 → 2+2 → 1+1)"
+      ],
+      "wall_s": 0.18,
+      "label": "B4"
+    },
+    {
+      "test": "B2_architecture_ingest_callers",
+      "ok": true,
+      "external_callers": [],
+      "all_occurrences": [],
+      "policy": "Production callers DEVE importar ingest_asset e nunca ingest_file. Whitelisted: ingest_asset.py (canonical) + ingest.py (definição) + este benchmark.",
+      "wall_s": 0.0,
+      "label": "B2"
+    },
+    {
+      "test": "B1_py_compile",
+      "ok": false,
+      "n_targets": 15,
+      "failures": [
+        "studio/library/ingest.py: Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/home/hubia/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/py_compile.py\", line 142, in compil",
+        "studio/library/ingest_asset.py: Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/home/hubia/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/py_compile.py\", line 142, in compil",
+        "studio/library/reconcile.py: Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/home/hubia/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/py_compile.py\", line 142, in compil",
+        "studio/library/embed.py: Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/home/hubia/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/py_compile.py\", line 142, in compil",
+        "studio/library/db.py: Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/home/hubia/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/py_compile.py\", line 142, in compil",
+        "studio/library/metadata.py: Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/home/hubia/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/py_compile.py\", line 142, in compil",
+        "studio/library/workset_context.py: Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/home/hubia/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/py_compile.py\", line 142, in compil",
+        "studio/library/requirement_index.py: Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/home/hubia/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/py_compile.py\", line 142, in compil",
+        "studio/library/discovery.py: Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/home/hubia/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/py_compile.py\", line 142, in compil",
+        "studio/library/acquisition.py: Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/home/hubia/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/py_compile.py\", line 142, in compil",
+        "studio/library/topup.py: Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/home/hubia/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/py_compile.py\", line 142, in compil",
+        "studio/library/queue_topup.py: Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/home/hubia/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/py_compile.py\", line 142, in compil",
+        "studio/matching/coverage_plan.py: Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/home/hubia/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/py_compile.py\", line 142, in compil",
+        "studio/matching/assigner.py: Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/home/hubia/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/py_compile.py\", line 142, in compil",
+        "studio/stages/produce.py: Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/home/hubia/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/py_compile.py\", line 142, in compil"
+      ],
+      "elapsed_s": 0.3,
+      "wall_s": 0.3,
+      "label": "B1"
+    },
+    {
+      "test": "B3_strict_coverage_synthetic",
+      "ok": true,
+      "case_a_NOT_COVERED_1CONF_5PEND": {
+        "covered_predicted": false,
+        "CONFIRMED_seconds_total": 10.0,
+        "CONFIRMED_distinct_shots": 1,
+        "expected_NOT_COVERED": true
+      },
+      "case_b_COVERED_5CONF": {
+        "covered_predicted": true,
+        "seconds_total": 55.0,
+        "distinct_shots": 5,
+        "expected_COVERED": true
+      },
+      "case_c_EMPTY_matches": {
+        "covered_predicted": false,
+        "seconds_total": 0,
+        "distinct_shots": 0,
+        "expected_NOT_COVERED": true
+      },
+      "case_d_5CONF_but_NOT_strict_eligible": {
+        "covered_predicted": false,
+        "seconds_total": 0,
+        "distinct_shots": 0,
+        "expected_NOT_COVERED": true,
+        "note": "Even CONFIRMED shots are ignored if strict_eligible=False (e.g., non-strict requirements don't count for strict gate)."
+      },
+      "wall_s": 0.0,
+      "label": "B3"
+    },
+    {
+      "test": "B5_dedup_rerun",
+      "ok": true,
+      "done_count": 0,
+      "skipped_duplicate_count": 0,
+      "media_dir_mp4_count": 0,
+      "dedup_protects_against_retrash": false,
+      "note": "B5 é observability: produz números para o relatório; rerun em si é feito pela flag --force-redo-done em reconcile.",
+      "wall_s": 0.0,
+      "label": "B5"
+    }
+  ],
+  "ready_flags_summary": {
+    "B4": true,
+    "B2": true,
+    "B1": false,
+    "B3": true,
+    "B5": true
+  }
+}

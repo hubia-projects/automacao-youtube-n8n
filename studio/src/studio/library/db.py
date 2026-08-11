@@ -12,6 +12,7 @@ import re
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any  # usado no annotation @property lance
 
 import numpy as np
 import pyarrow as pa
@@ -112,6 +113,32 @@ class LibraryDB:
         else:
             self._cache_tbl = self._db.create_table(CACHE_TABLE,
                                                     schema=_CACHE_SCHEMA)
+
+    # --- public properties (acesso encapsulado a atributos internos) ---
+    @property
+    def library_root(self) -> Path:
+        """Path público equivalente a `self.root` (alias estável para callers
+        externos como requirement_index e discovery — evita espalhamento de
+        `_library_root` em código downstream).
+
+        NOTA: `self.root` E `self.library_root` são aliases intencionais. O
+        primeiro é o nome canónico interno; o segundo existe por ergonomia
+        para callers externos (que esperam `library_root_path` semantics).
+        """
+        return self.root
+
+    @property
+    def lance(self) -> "Any":
+        """LanceDB connection handle pública. Substitui `_db` privado em
+        callers externos que precisam de abrir tabelas próprias
+        (requirement_index, discovery, benchmark).
+
+        ⚠️ READ-ONLY USE: writes devem continuar a passar pelos métodos da
+        LibraryDB (add_shots, cache_mark, etc.) que serializam via
+        `_write_lock`. Bypass expõe a conexão fora do lock — pode causar
+        race conditions em writes concorrentes.
+        """
+        return self._db
 
     def get_shot(self, shot_id: str) -> dict | None:
         rows = (self._table.search()
