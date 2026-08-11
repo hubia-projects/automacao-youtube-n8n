@@ -1,4 +1,6 @@
 # Regras permanentes do editor automático de vídeo
+> ⚠️ **Telegram desactivado desde 2026-08-10** — ver `studio/OPERATIONS.md` §TEMPORARILY OFF (use `STUDIO_AUTO_APPROVE_GATES=true` para approves automáticos).
+
 
 ## Regra principal
 Nunca confiar apenas em `state`, metadata, query ou `render_timeline.clips` para aprovar vídeo.

@@ -21,6 +21,7 @@ from pathlib import Path
 import httpx
 
 from studio.config import Settings
+from studio.perf import Profiler
 
 log = logging.getLogger("studio.tts")
 
@@ -133,6 +134,7 @@ def _render_chunk(i: int, chunk: str, td: Path, use_eleven: bool,
 
 def synthesize(text: str, out_wav: Path, settings: Settings) -> float:
     """Gera narração wav (24 kHz mono). Devolve duração em segundos.
+    Reporta a Profiler como categoria "tts" com items=caracteres.
     Cascata: multivozes (com auto-arranque) → ElevenLabs → erro (fail-closed).
     Fase 1C: chunks em paralelo via ThreadPoolExecutor (4 workers multivozes
     ou 3 ElevenLabs). Ordem preservada por índice na concatenação final.

@@ -1,4 +1,6 @@
 # Fluxo do Pipeline de Videos
+> ⚠️ **Telegram desactivado desde 2026-08-10** — ver `studio/OPERATIONS.md` §TEMPORARILY OFF (use `STUDIO_AUTO_APPROVE_GATES=true` para approves automáticos).
+
 
 Versao resumida e mais visual:
 

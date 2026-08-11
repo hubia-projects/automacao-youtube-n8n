@@ -55,6 +55,27 @@ class Settings(BaseSettings):
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
 
+    # --- Vertex AI (rota preferencial quando disponível) ---
+    # True = Gemini via Vertex AI (service account, projeto GCP dedicado);
+    # False = Gemini AI Studio direto (?key= na query string).
+    # FAIL-LOUD: quando True, NÃO há fallback silencioso para AI Studio —
+    # Vertex indisponível = raise (apaga-se o billing cross-account e o
+    # data-residency cross-project que era a razão de usar Vertex).
+    gemini_vertex_enabled: bool = Field(default=False, alias="GEMINI_VERTEX_ENABLED")
+    # ID do projeto GCP onde o Vertex AI está habilitado. Vazio +
+    # gemini_vertex_enabled=True = erro na primeira chamada.
+    google_cloud_project: str = Field(default="", alias="GOOGLE_CLOUD_PROJECT")
+    # Região Vertex (us-central1 default; europe-west4 se cliente exigir
+    # data-residency na UE). Endpoint URL deriva desta var.
+    google_cloud_location: str = Field(
+        default="us-central1", alias="GOOGLE_CLOUD_LOCATION")
+    # Path absoluto para o ficheiro JSON da service account (NÃO o PEM
+    # inline). O `.env` tem GOOGLE_APPLICATION_CREDENTIALS=/caminho/*.json.
+    google_application_credentials: str = Field(
+        default="", alias="GOOGLE_APPLICATION_CREDENTIALS")
+    google_service_account_email: str = Field(
+        default="", alias="GOOGLE_SERVICE_ACCOUNT_EMAIL")
+
     # --- Telegram (gates humanos) ---
     telegram_bot_token: str = Field(default="", alias="TELEGRAM_BOT_TOKEN")
     telegram_chat_id: str = Field(default="", alias="TELEGRAM_CHAT_ID")
@@ -85,7 +106,13 @@ class Settings(BaseSettings):
     # 'large-v3-turbo' ainda disponível via STUDIO_WHISPER_MODEL=large-v3-turbo
     # em .env (24GB VRAM obrigatórios; útil em GPUs topo-de-gama).
     whisper_model: str = Field(default="base", alias="STUDIO_WHISPER_MODEL")
-    whisper_device: str = Field(default="cpu", alias="STUDIO_WHISPER_DEVICE")
+    # Fase 1 — Whisper device. 3 modos explícitos:
+    #   "auto" (default): detecta CUDA via torch.cuda.is_available(); cai
+    #     para CPU se indisponível (compatibilidade Pascal + hosts sem GPU).
+    #   "cuda": força CUDA; se indisponível/erro na inicialização do
+    #     faster-whisper, faz fail-closed (não finge GPU) com log claro.
+    #   "cpu": força CPU.
+    whisper_device: str = Field(default="auto", alias="STUDIO_WHISPER_DEVICE")
 
     # --- Roteiro ---
     words_per_minute: int = Field(default=145, alias="STUDIO_WPM")
@@ -194,6 +221,26 @@ class Settings(BaseSettings):
     render_preset: str = Field(default="medium", alias="STUDIO_RENDER_PRESET")
     burn_captions: bool = Field(default=False, alias="STUDIO_BURN_CAPTIONS")
 
+    # --- Fase 1 Optimização — perf instrumentation + render parallel + DAG ---
+    # True ⇒ escreve <run>/performance.json + linha resumo PERF; quase
+    # zero overhead (time.perf_counter + agregador thread-safe).
+    perf_enabled: bool = Field(default=True, alias="STUDIO_PERF_ENABLED")
+    # 2 = nº de workers ffmpeg para render paralelo de segmentos
+    # (Fase 3). NÃO subir sem benchmarking real — cada worker compete por
+    # CPU + I/O; > 4 normalmente piora wall-clock em vez de melhorar.
+    render_segment_workers: int = Field(
+        default=2, alias="STUDIO_RENDER_SEGMENT_WORKERS")
+    # 8 KB chunks para hashing SHA-256 no ingest — equilíbrio entre
+    # syscalls e velocidade (testes mostraram 64 KB não muda throughput).
+    ingest_sha_chunk_bytes: int = Field(
+        default=1 << 20, alias="STUDIO_INGEST_SHA_CHUNK_BYTES")
+    # 128 MB = limiar para skipping SceneDetect em ficheiros tão
+    # grandes (cost ~30s/vídeo em testes 2026-08-08 Porto real). Ainda
+    # ingerir o ficheiro (shots=0) caso SceneDetect falhe — explica
+    # a queda de cobertura no S08 sem o ficheiro aparecer.
+    ingest_max_scene_detect_bytes: int = Field(
+        default=128 << 20, alias="STUDIO_INGEST_MAX_SCENEDETECT_BYTES")
+
     # --- YouTube (mesmas credenciais do pipeline legacy) ---
     youtube_client_id: str = Field(default="", alias="YOUTUBE_CLIENT_ID")
     youtube_client_secret: str = Field(default="", alias="YOUTUBE_CLIENT_SECRET")
@@ -205,6 +252,53 @@ class Settings(BaseSettings):
     model_pro: str = Field(default="gemini-pro-latest", alias="STUDIO_MODEL_PRO")
     model_flash: str = Field(default="gemini-flash-latest", alias="STUDIO_MODEL_FLASH")
     model_humanize: str = Field(default="gpt-4o", alias="STUDIO_MODEL_HUMANIZE")
+
+    # --- Fase 2 Optimização — aquisição + ingest producer/consumer ---
+    # 2 = download workers (I/O bound, network). Subir se Pexels latency
+    # alto; descer se rate-limit começar a aparecer nos logs.
+    topup_dl_workers: int = Field(default=2, ge=1, alias="STUDIO_TOPUP_DL_WORKERS")
+    # 1 = ingest workers. `ge=1` garante >=1 worker (0 crasha). `le=1` é
+    # CAP RÍGIDO POR DETERMINISMO: qualquer ingest worker >1 quebra a ordem
+    # canónica do S08 (keyframe batching = ordem de inserção LanceDB).
+    # Trade-off VRAM (4GB GTX 1050 Ti) é independente — não é motivo para
+    # >1; subir quebra em silêncio. Pydantic reject em runtime é melhor
+    # que determinismo corrompido no output.
+    topup_ingest_workers: int = Field(
+        default=1, ge=1, le=1, alias="STUDIO_TOPUP_INGEST_WORKERS")
+    # 32 = maxsize da queue.Queue entre download workers e ingest worker.
+    # Backpressure automática: downloads pausam quando ingest worker lento.
+    # NÃO subir acima de 64 (memory pressure com downloads 50-100MB).
+    topup_queue_max: int = Field(default=32, ge=1, alias="STUDIO_TOPUP_QUEUE_MAX")
+    # 5.0 = palpite calibrado com vídeos 8 min produzidos 2026-07 (cada
+    # asset Pexels cobre em média ~5s no timeline após cobertas cenas
+    # restantes). Usado em topup.py micro_batch_count() para dimensionar
+    # nº de downloads pelo deficit real. Subir = pede menos assets por
+    # round; descer = pede mais (mas tem hard_max=5 clamp).
+    topup_asset_useful_s_default: float = Field(
+        default=5.0, ge=0.1, alias="STUDIO_TOPUP_ASSET_USEFUL_S_DEFAULT")
+    # 8 = batch_size inicial do SigLIP (Pass 4). Auto-tune iterativo
+    # increment-and-decay (AIMD-like) em embed.py sobe até o cap=64 em
+    # ~3 chunks de sucesso. Floor seguro para GTX 1050 Ti 4 GB VRAM
+    # (calibrado arranque 2026-08) — subir em GPUs topo-de-gama via
+    # STUDIO_INGEST_BATCH_SIZE_START no .env.
+    ingest_batch_size_start: int = Field(
+        default=8, alias="STUDIO_INGEST_BATCH_SIZE_START")
+    # 64 = batch_size max (Pass 4). Teto hard do auto-tune para SigLIP.
+    # Subir implica VRAM >= 6 GB + benchmark real (não mexer sem teste).
+    ingest_batch_size_max: int = Field(
+        default=64, alias="STUDIO_INGEST_BATCH_SIZE_MAX")
+    # 720 = resolução mínima aceitável (paisagem). Rejeitar abaixo (mobile /
+    # thumbnails / shorts verticais re-encodeados).
+    early_reject_min_resolution: int = Field(
+        default=720, alias="STUDIO_EARLY_REJECT_MIN_RESOLUTION")
+    # 2.0 = duração mínima do ficheiro em segundos. Rejeitar abaixo
+    # (giros curtos, B-roll sem narrativa).
+    early_reject_min_duration_s: float = Field(
+        default=2.0, alias="STUDIO_EARLY_REJECT_MIN_DURATION_S")
+    # 90 dias = TTL para a provider_cache. Após o TTL, o item é candidato
+    # a re-fetch (mantém-se rejeitado se Vision voltar a rejeitar).
+    negative_cache_ttl_days: int = Field(
+        default=90, alias="STUDIO_NEGATIVE_CACHE_TTL_DAYS")
 
     @property
     def runs_root(self) -> Path:

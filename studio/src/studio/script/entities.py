@@ -194,7 +194,7 @@ def extract_entities(script_text: str, research: str,
         return _mock_extract(script_text, research, settings)
 
     prompt = _prompt(settings, _PROMPT_NAME, script=script_text,
-                     research=research_text or "(sem research)")
+                     research=research or "(sem research)")
 
     total_cost, last_err = 0.0, None
     data = None

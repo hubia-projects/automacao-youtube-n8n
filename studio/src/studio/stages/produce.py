@@ -490,8 +490,15 @@ class S08Matching:
         topic = (ctx.state.topic or ctx.params.get("topic", ""))
         spans_path = ctx.run_dir / "06_scenes" / "entity_spans.json"
         if spans_path.exists():
-            spans = [EntitySpan.model_validate(s) for s in
-                     json.loads(spans_path.read_text("utf-8"))]
+            # FIX-Pipeline-resume: S06Scenes.write_artifacts() guarda
+            # `{"spans": [...]}` (envelope com chave). Antes desta fase o
+            # reader iterava o envelope dict e processava 'spans' como
+            # string → Pydantic error "model_type". Agora extraímos
+            # `data["spans"]` (ou aceitamos lista crua, retro-compatível).
+            raw = json.loads(spans_path.read_text("utf-8"))
+            spans_payload = (raw.get("spans", [])
+                             if isinstance(raw, dict) else raw)
+            spans = [EntitySpan.model_validate(s) for s in spans_payload]
         else:
             spans = []  # run legacy sem Fase A → plano vazio
 
@@ -511,14 +518,36 @@ class S08Matching:
         # Executa ENTRE o plano e o assign_shots: para cada entity com
         # deficit > 0, faz rondas de Pexels-search → ingest → re-measure.
         # Idempotente (media_exists_denied em ingest.py) e budget-aware.
-        from studio.library.topup import topup_for_plan, write_topup_log
+        from studio.library.queue_topup import topup_for_plan_concurrent
+        from studio.library.topup import write_topup_log
         # FIX-S: topup MUDA entity.deficit_seconds in-place (re-medida
         # após cada round). assign_shots partilha o mesmo `plan` object
         # — vê valores pós-top-up. Intencional: alignment validator
         # (Fase G) também lê plano partilhado.
-        topup = topup_for_plan(plan, db, ctx.settings, embedder,
-                                run_id=ctx.video_id)
+        #
+        # Pass 5: topup_for_plan_concurrent substitui topup_for_plan() em
+        # modo real (não-mock) — N download workers + queue bounded + 1
+        # ingest worker. mock_mode BYPASSA a queue automaticamente
+        # (queue_topup.delega ao legacy sequencial).
+        topup = topup_for_plan_concurrent(
+            plan, db, ctx.settings, embedder, run_id=ctx.video_id,
+        )
         write_topup_log(topup, d / "topup_log.json")
+
+        # Pass 3: cache_prune_by_ttl cleanup periódico no fim de S08.
+        # Rows mais antigas que Settings.negative_cache_ttl_days (default
+        # 90) são apagadas; restantes ficam intactas. Fail-soft: não
+        # bloqueia S08 se LanceDB .delete() não estiver disponível.
+        try:
+            ttl_days = int(getattr(ctx.settings, "negative_cache_ttl_days",
+                                   90) or 90)
+            pruned = db.cache_prune_by_ttl(ttl_days)
+            if pruned > 0:
+                log.info("cache_prune: %d rows removidas (TTL=%dd)",
+                         pruned, ttl_days)
+        except Exception as exc:
+            log.debug("cache_prune_by_ttl falhou (não fatal): %s",
+                      exc.__class__.__name__)
 
         # Fase E — strict_only wiring: cenas com brief.strict_entity=True
         # DEVEM ter confirmação visual antes do assign (lazy confirm); cenas
@@ -1125,30 +1154,38 @@ class S14Upload:
 
 
 def produce_stages() -> list[list]:
-    """Pipeline em ondas (Fase 3 — DAG audio/video paralelo).
+    """Pipeline em ondas — REVISITADO pós-Optimização Profunda (Fase 1).
 
-    Onda 1: 01_topic (gates + topic)
-    Onda 2: 02_research (Flash + search grounding)
-    Onda 3: 03_script (mega-prompt Flash pós-Fase 2)
-    Onda 4 (PARALELO): 04_tts + 06_scenes — ambas dependem só de script.md
-    Onda 5 (PARALELO): 05_timestamps + 07_briefs — dependem da onda 4
-    Onda 6-12: sequencial pós-match (08_matching junta ambos os branches)
+    Cadeia REAL de dependências (auditada 2026-08-08):
+        03_script ──► 04_tts ──► 05_timestamps ──► 06_scenes ──► 07_briefs
+                                                              │
+                                                              ▼
+                                                       08_matching ◄── (consome S05 + S06 + S07)
+                                                              │
+                                                              ▼
+        09_timeline ──► 10_proxy ──► 11_review ──► 12_final ──► 13_pkg ──► 14_upload
 
-    Speedup vs serial: ~2 min em vídeos 8 min (wave4 termina em max(10s,
-    5s) em vez de 15s; wave5 termina em max(2min, 5s) em vez de 2m+5s).
-    Acumulado com Fase 1 + Fase 2 + Sprint B, projecção vídeo 8 min:
-    ~20-25 min → ~14-17 min pós-Fase 3 wall-clock.
+    S05 + S07 em paralelo era INVÁLIDO (S07Briefs lê 06_scenes/scenes.json
+    que sai do S06 — race produzia S07 a ler []  ou [] órfão).
+    S04 + S06 em paralelo era INVÁLIDO (S06 lê 05_timestamps/words.json).
+    Por isso as cadeias S04→S05→S06→S07 ficam estritamente sequenciais.
+    A pequena poupança de ~10s paralelizando S04 + nada-útil foi
+    sacrificada em favor da CORRECTNESS + DOUTRINA DG dependências explícitas.
+
+    Nenhuma das stages 03-14 tem subtrabalho verdadeiramente independente:
+    manter serial torna o DAG trivial de auditar (1 docstring + 1
+    return list) e previne invalidadez sutil como as duas acima.
+
+    DOC: ARCHITECTURE §3 (DAG revisitado Fase 1 Optimização).
     """
-    # Fase A — S06Scenes precisa de words.json (alinhamento de entity_spans)
-    # → sai do wave-4 (paralelo com S04Tts) para wave-6 (depois de S05 + S07).
-    # Custo de ~10s de paralelismo perdido; ganho: correctness do alinhamento.
     return [
         [S01Topic()],
         [S02Research()],
         [S03Script()],
-        [S04Tts()],                        # wave 4 — sequencial (Fase A)
-        [S05Timestamps(), S07Briefs()],   # wave 5 — paralelo
-        [S06Scenes()],                     # wave 6 — após words+briefs
+        [S04Tts()],
+        [S05Timestamps()],
+        [S06Scenes()],
+        [S07Briefs()],
         [S08Matching()],
         [S09Timeline()],
         [S10RenderProxy()],
@@ -1157,3 +1194,6 @@ def produce_stages() -> list[list]:
         [S13Package()],
         [S14Upload()],
     ]
+
+
+

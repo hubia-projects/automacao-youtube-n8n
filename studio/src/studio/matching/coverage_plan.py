@@ -42,6 +42,7 @@ from pydantic import BaseModel, Field
 
 from studio.config import Settings
 from studio.library.db import LibraryDB
+from studio.perf import Profiler
 from studio.script.entities import EntitySpan
 
 log = logging.getLogger("studio.coverage")
@@ -86,6 +87,11 @@ class EntityCoverage(BaseModel):
     location: str = ""
     """Notas (sem mismatch, entity inexistente na biblioteca, etc.)."""
     notes: list[str] = Field(default_factory=list)
+    """Soma das age_seconds das rows provider_cache rejected que mencionam
+    esta entity (lens diagnóstico: quanto tempo de "esforço desperdiçado"
+    em queries rejeitadas para esta entity — orienta decisões de
+    cobertura manual)."""
+    negative_cache_age_seconds: float = 0.0
 
 
 class CoveragePlan(BaseModel):
@@ -233,6 +239,34 @@ def measure_coverage(
     coverage.available_seconds = round(real_secs, 3)
     coverage.available_distinct_shots = len(dist_shots)
     coverage.available_files = len(dist_files)
+
+    # Pass 3: negative cache lens — soma das ages das rows provider_cache
+    # rejected que mencionam `canonical_name` no reason (heurística:
+    # LIKE sobre lower(entity) para performance em tables grandes).
+    try:
+        from datetime import datetime, timezone as _tz
+        canon_safe = coverage.canonical_name.strip().lower().replace("'", "")
+        if canon_safe:
+            cache_clause = (
+                f"status = 'rejected' AND reason LIKE '%{canon_safe}%'"
+            )
+            cache_rows = db.cache_iter_rows(cache_clause, limit=2000)
+            now = datetime.now(_tz.utc)
+            age_total = 0.0
+            for r in cache_rows:
+                created_at = r.get("created_at")
+                if not created_at:
+                    continue
+                try:
+                    c_at = datetime.fromisoformat(created_at)
+                    age_total += (now - c_at).total_seconds()
+                except (ValueError, TypeError):
+                    pass
+            coverage.negative_cache_age_seconds = round(age_total, 3)
+    except Exception as exc:
+        log.debug("measure_coverage: negative_cache_age failed (não fatal): %s",
+                  exc.__class__.__name__)
+
     return coverage
 
 

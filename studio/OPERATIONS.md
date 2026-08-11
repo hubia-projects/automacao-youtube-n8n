@@ -34,18 +34,32 @@ uv run studio costs               # ledger de custos por run
 uv run studio ingest status       # nº de shots na biblioteca
 ```
 
-## Fluxo de aprovações (Telegram)
+## TEMPORARILY OFF — Telegram approval gates (2026-08-10 → até o Studio estar 100% funcional)
 
-O run PÁRA em `waiting_approval` nos gates (tema; revisão final). O bot envia
-a pergunta ao Telegram. Para retomar após decisão:
+> Os gates do Telegram estão **desactivados** enquanto o Studio não estiver
+> 100% funcional. Approvals fazem-se localmente via CLI. Reactivamos quando
+> a produção estiver madura.
+
+- **Activado em:** 2026-08-10 (sessão de alinhamento Porto / Livraria Lello).
+- **Razão:** testes e melhorias end-to-end sem bloqueios por Telegram.
+- **Como reverter:** pôr `STUDIO_AUTO_APPROVE_GATES=false` (ou remover) em
+  `studio/.env` ou no `.env` da raiz — e repor a secção antiga deste doc.
+
+### Approvals locais (substitui completamente o Telegram)
 
 ```bash
-uv run studio approve <video_id> topic approve    # ou: final approve/reject
+uv run studio approve <video_id> topic approve     # ou: final approve/reject
 uv run studio resume <video_id>
 ```
 
-(Se o utilizador clicou no botão do Telegram, `resume` deteta o clique e
-continua sozinho — um poll por resume.)
+Ou, no launch em si, passar `STUDIO_AUTO_APPROVE_GATES=true` via env:
+
+```bash
+STUDIO_AUTO_APPROVE_GATES=true uv run studio run --topic "..." --duration 5
+```
+
+(Se o utilizador clicou no botão do Telegram por inércia, ele é ignorado —
+o pipeline auto-aprova via Settings.)
 
 Run falhou a meio? `uv run studio resume <video_id>` retoma exatamente onde
 parou sem refazer nada (nem custos repetidos).

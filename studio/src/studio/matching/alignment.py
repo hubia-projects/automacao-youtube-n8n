@@ -27,12 +27,14 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from enum import Enum
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
 from studio.config import Settings
+from studio.perf import Profiler
 from studio.script.entities import EntitySpan
 from studio.script.scenes import Scene
 from studio.matching.briefs import VisualBrief
@@ -212,7 +214,19 @@ def validate_alignment(
     `__confirmation` (DetectedEntity). Sem isso, reportaremos
     `missing_required_entity` para cenas strict (que é o sinal correto —
     operador vê o problema estrutural).
+
+    Instrumentada via Profiler (categoria "alignment"): reporta
+    `elapsed` total + `items = nº de violations encontradas`. O categoria
+    ajuda a detectar quanto tempo a Fase G alignment consome no S08
+    (esperado low-ms por vídeo 8 min, mas a contagem é indicador:
+    p.ex. alignment=2.0s com 14 violations indica repair loop útil).
+
+    Observability-first: `AlignmentReport(...)` falha propaga (fail-closed);
+    `Profiler.record(...)` falha é logada + ignorada (Profiler é
+    observability, não caminho crítico). `Profiler.begin()` omitido
+    — `record()` faz begin lazy.
     """
+    t0_align = time.perf_counter()
     brief_by_scene = {b.scene_id: b for b in briefs}
     # FIX-5: lê overrides de Settings, fallback para defaults
     eps = float(getattr(settings, "alignment_time_epsilon_s",
@@ -342,8 +356,12 @@ def validate_alignment(
                                   f"required_seconds={ent.required_seconds:.1f}"],
                         note="cobertura insuficiente no plano (>= 0)",
                     ))
-        except Exception as exc:
-            log.debug("validate_alignment: plano inválido, ignora gap (%s)",
+        except AttributeError as exc:
+            # narrow: gap-report é best-effort; atributos em falta (Settings
+            # mock, versão antiga de CoveragePlan) não devem quebrar S08.
+            # Bugs de runtime reais (Pydantic ValidationError, etc.)
+            # propagam — narrow SSoT consistente com o resto do alignment.py.
+            log.debug("validate_alignment: gap-report best-effort falhou (%s)",
                       exc.__class__.__name__)
 
     summary = {
@@ -353,12 +371,25 @@ def validate_alignment(
         "strict_scenes_in_run": strict_scenes,
         "alignment_min_severity": min_sev,
     }
-    return AlignmentReport(
+    # Construção do report primeiro — AlignmentReport() a falhar propaga
+    # (fail-closed intacto). Só depois instrumentamos o Profiler com
+    # try/except (observability não deve bloquear o S08Matching).
+    report = AlignmentReport(
         total_segments=len(segments),
         total_strict_scenes=strict_scenes,
         violations=violations,
         summary=summary,
     )
+    try:
+        Profiler.record("alignment", time.perf_counter() - t0_align,
+                        items=len(violations))
+    except AttributeError as exc:
+        # Profiler.record tipicamente falha em pytest com Settings
+        # mock-incompleto; narrow evita swallow de bugs reais (e.g.
+        # Pydantic ValidationError).
+        log.debug("alignment Profiler.record falhou (%s)",
+                  exc.__class__.__name__)
+    return report
 
 
 def write_report(report: AlignmentReport, out_path: Path) -> Path:

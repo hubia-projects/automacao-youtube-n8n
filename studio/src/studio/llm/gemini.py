@@ -107,6 +107,15 @@ def generate(prompt: str, settings: Settings, *, model: str | None = None,
              json_mode: bool = False, search_grounding: bool = False,
              temperature: float = 0.7, timeout: httpx.Timeout = _TIMEOUT_STRUCT,
              tag: str = "") -> tuple[str, float]:
+    # Vertex AI take precedence when configured — billing/data-residency
+    # isolation in GCP project dedicado. FAIL-LOUD se Vertex enabled:
+    # NÃO cai de volta para Gemini AI Studio (privacidade + custo cruzado).
+    if settings.gemini_vertex_enabled:
+        from studio.llm import vertex
+        return vertex.generate(
+            prompt, settings, model=model, json_mode=json_mode,
+            search_grounding=search_grounding, temperature=temperature,
+            timeout=timeout, tag=tag)
     model = model or settings.model_flash
     body: dict = {
         "contents": [{"parts": [{"text": prompt}]}],

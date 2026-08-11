@@ -24,6 +24,16 @@ Este é um projeto real da Hubia. Trabalhar com cuidado.
 - Não executar comandos destrutivos como `rm -rf`, reset de base de dados, `drop`, `truncate` ou limpeza de storage sem confirmação explícita.
 - Não instalar dependências sem explicar primeiro o motivo.
 
+## Decisões de Negócio Activas
+
+- **TEMPORARILY OFF — Telegram approval gates** (desde 2026-08-10).
+  Enquanto o Studio não estiver 100% funcional, os gates do Telegram estão
+  desactivados via `STUDIO_AUTO_APPROVE_GATES=true`. Approvals fazem-se
+  localmente via CLI (`studio approve <run> <gate> <approve|reject>`).
+  Reactivarlos quando o pipeline estiver maduro (mete `false` no `.env`
+  e repõe a secção antiga em `studio/OPERATIONS.md`).
+  Decisão tomada para focar testes + melhorias sem bloqueios por Telegram.
+
 ## Forma de trabalhar
 
 Antes de alterar ficheiros:

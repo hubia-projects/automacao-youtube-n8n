@@ -1,4 +1,6 @@
 # Fluxo Visual do Pipeline
+> ⚠️ **Telegram desactivado desde 2026-08-10** — ver `studio/OPERATIONS.md` §TEMPORARILY OFF (use `STUDIO_AUTO_APPROVE_GATES=true` para approves automáticos).
+
 
 Este arquivo e a visao rapida do pipeline. Para a versao completa e detalhada, veja fluxo.md.
 

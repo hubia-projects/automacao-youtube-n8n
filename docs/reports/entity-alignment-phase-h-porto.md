@@ -1,4 +1,6 @@
 # Phase H — Porto: ENTITY ALIGNMENT antes/depois
+> ⚠️ **Telegram desactivado desde 2026-08-10** — ver `studio/OPERATIONS.md` §TEMPORARILY OFF (use `STUDIO_AUTO_APPROVE_GATES=true` para approves automáticos).
+
 
 Validação estrutural do problema fundamental do prompt:
 

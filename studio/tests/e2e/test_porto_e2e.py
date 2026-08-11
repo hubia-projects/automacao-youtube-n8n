@@ -39,8 +39,14 @@ from studio.matching.assigner import (
     AssignmentResult, SceneStrictCoverageGap, SegmentAssignment,
 )
 from studio.matching.briefs import VisualBrief
+from studio.orchestrator.runner import PipelineRunner
+from studio.orchestrator.state import (
+    load_state, new_state, save_state,
+)
+from studio.orchestrator.stage import RunContext
 from studio.script.entities import EntitySpan
 from studio.script.scenes import Scene
+from studio.stages.produce import produce_stages
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -550,15 +556,25 @@ def test_porto_e2e_fail_closed_when_persistent(porto_library,
                                                 monkeypatch):
     """FAIL-CLOSED E2E: S08Matching.run() real com assign_shots
     monkey-patched para levantar SceneStrictCoverageGap persistentemente
-    → pytest.raises(StageFailed); artefactos auditáveis.
+    → S08Matching.run() RETURNS StageResult(status='failed') com notas
+    claras; artefactos auditáveis (alignment_report.json + repair_log.json
+    + coverage_plan.json) no disco.
 
     DOC: prompt original Fase H acceptance #18 ("Mismatch strict restante
     faz S08 falhar — S09/S10 não devem iniciar").
+
+    ESTRATÉGIA alinhada com tests/unit/test_alignment.py (linha 887,
+    test_repair_loop_fail_closed_when_targeted_topup_no_op):
+    o contract fail-closed é testado chamando S08Matching.run() DIRECTAMENTE
+    e verificando o StageResult devolvido (status='failed' + alignment_report
+    com strict violations + repair_log com phase='v1_scg_topup'). A
+    propagação para o runner (state.json + StageFailed raise) é coberta
+    em test_s09_does_not_run_when_s08_fails (test_alignment.py linha 887).
     """
     from studio.matching import assigner as assigner_mod
-    from studio.orchestrator.runner import PipelineRunner, StageFailed
     from studio.orchestrator.state import new_state, save_state
     from studio.orchestrator.stage import RunContext
+    from studio.stages import produce as produce_mod
 
     run_dir = porto_run_factory("porto_fc")
     video_id = "porto_fc"
@@ -578,7 +594,6 @@ def test_porto_e2e_fail_closed_when_persistent(porto_library,
 
     def fake_assign_persistent(*args, **kwargs):
         # cenas outras: OK; Francesinha: SceneStrictCoverageGap persistente
-        from studio.matching.assigner import AssignmentResult
         ok_segs = []
         for sc in scenes:
             if sc.scene_id == fran_scene_id:
@@ -612,61 +627,100 @@ def test_porto_e2e_fail_closed_when_persistent(porto_library,
 
     ctx = RunContext(
         video_id=video_id, run_dir=run_dir, settings=settings,
+        state=new_state(video_id, "Porto fc", 5.0),
     )
     ctx.params.update({
         "topic": "Porto fail-closed", "duration_minutes": 2.0,
         "_embedder": fake_embedder,
     })
-    state = new_state(video_id, "Porto fc", 5.0)
-    save_state(state, run_dir)
+    save_state(ctx.state, run_dir)
 
-    # Corre S08 apenas (índice 6 em produce_stages()); repair loop esgotou
-    # com targeted_topup=0 → status=failed → StageFailed.
-    from studio.stages.produce import produce_stages
-    with pytest.raises(StageFailed) as excinfo:
-        PipelineRunner(produce_stages()[6:7]).run(ctx, state)
-    stage_msg = str(excinfo.value)
-    assert "08" in stage_msg or "S08" in stage_msg or "8_matching" in stage_msg
+    # S08Matching directo: testa o contract fail-closed do stage
+    # (status='failed' + artefactos auditáveis). Esta é a mesma estratégia que
+    # tests/unit/test_alignment.py usa em test_s08_matching_run_integration_fail_closed.
+    res = produce_mod.S08Matching().run(ctx)
 
-    # Validações do contract fail-closed usando estado do run (state.json)
-    # em vez de artefactos em disco. Mais robusto: o PipelineRunner grava
-    # state.json COMO PARTE do fail-closed path (touch_stage_end com
-    # status='failed'), independentemente do que S08Matching conseguiu
-    # escrever no disco. Cobertura detalhada dos artefactos (alignment_report,
-    # repair_log) está em tests/unit/test_alignment.py:
-    # - test_s08_matching_run_integration_fail_closed
-    # - test_repair_loop_fail_closed_when_targeted_topup_no_op
-    from studio.orchestrator.state import load_state
-    state_after = load_state(run_dir)
-    assert state_after.stages["08_matching"].status == "failed", (
-        f"fail-closed contract broken: state.status = "
-        f"{state_after.stages['08_matching'].status}")
+    # 1. contract fail-closed obrigatório
+    assert res.status == "failed", (
+        f"S08Matching deveria devolver status='failed' (fail-closed); "
+        f"got {res.status} / notes={res.notes}")
+    assert ("SceneStrictCoverageGap" in (res.notes or "")
+            or "S08 G-alignment FAIL" in (res.notes or "")
+            or "assign_shots levantou" in (res.notes or "")
+            or "entity_coverage_gap" in (res.notes or "")), (
+        f"notas devem indicar fail-closed motivação, got: {res.notes!r}")
 
-    # Se S08Matching conseguiu escrever o alignment_report + repair_log antes
-    # de falhar (caminho standard), validamos Francesinha em FAIL/WARN. Senão,
-    # referimos os unit tests. A presença/ausência destes artefactos NÃO é
-    # contract MUST-HAVE deste e2e — a propagação fail-closed via state.json
-    # é o MUST-HAVE.
+    # 2. artefactos auditáveis no disco
     d08 = run_dir / "08_matching"
-    if (d08 / "alignment_report.json").exists() and \
-       (d08 / "repair_log.json").exists():
-        repair_log = json.loads(
-            (d08 / "repair_log.json").read_text())
-        assert any(e.get("phase") in ("v1_scg_topup", "after_v1_scg_topup",
-                                       "v1_scg_persistent")
-                    for e in repair_log), (
-            f"Fase fail-closed não encontrada em repair_log: {repair_log}")
+    assert (d08 / "coverage_plan.json").exists(), (
+        "coverage_plan.json deve existir (escrito antes do fail-closed)")
+    assert (d08 / "repair_log.json").exists(), (
+        "repair_log.json deve existir (auditoria mesmo em fail-closed)")
+    assert (d08 / "alignment_report.json").exists(), (
+        "alignment_report.json deve existir (auditoria mesmo em fail-closed)")
 
-        try:
-            md_path = _generate_entity_alignment_report(run_dir)
-            md = md_path.read_text("utf-8")
-            fran_block = re.search(
-                r"### Francesinha\b.*?(?=### |\Z)", md, re.DOTALL)
-            if fran_block is not None:
-                assert ("FAIL" in fran_block.group(0)
-                       or "WARN" in fran_block.group(0)), fran_block.group(0)
-        except Exception:
-            pass  # report generator best-effort em fail-closed
+    # 3. repair_log tem o evento v1_scg_topup (sinaliza que o S08 DETECTOU
+    #    a exception SCG e tentou _targeted_topup_for_entity para Francesinha)
+    repair_log = json.loads((d08 / "repair_log.json").read_text("utf-8"))
+    assert any(e.get("phase") == "v1_scg_topup"
+                and e.get("entity", "").lower() == "francesinha"
+                for e in repair_log), (
+        f"repair_log deve registar phase='v1_scg_topup' para 'Francesinha'; "
+        f"got {repair_log}")
+
+    # 4. NOTES-FIX-reviewer: asserção permissiva antiga aceitava 'done' E
+    #    'failed' (regressão silenciosa). Removida — o contract fail-closed
+    #    já fica coberto pelos asserts #1 (res.status=="failed") + #3
+    #    (repair_log com v1_scg_topup Francesinha). O contract runner-level
+    #    (PipelineRunner raise StageFailed quando S08Matching real devolveu
+    #    status='failed') está coberto em
+    #    tests/unit/test_alignment.py::test_s09_does_not_run_when_s08_fails
+    #    via S08Stub que PURPOSEFULLY devolve StageResult(status='failed').
+    #    Aqui testamos o contract REAL (com repair loop + targeted_topup
+    #    no-op em mock_mode) que o Stub não cobre.
+    # ------------------------------------------------------------------------
+    # COBERTURA E2E RUNNER-LEVEL (acceptance #18): S09/S10 NÃO devem
+    # iniciar quando S08 falha. Em vez de usar monkeypatch em assign_shots,
+    # chamamos o S08Matching REAL via PipelineRunner num NOVO run_dir e
+    # validamos que state.stages["08_matching"].status=="failed" +
+    # state.stages["09_timeline"] está ausente ou não-done.
+    #
+    # NOTA: o S08Matching NUNCA lève SceneStrictCoverageGap — converte em
+    # StageResult(failed). O runner marca state="failed" se
+    # result.status=="failed" OU se _outputs_ok=False. Aqui ambos os
+    # caminhos estão satisfeitos, então state fica "failed".
+    fc_redo_dir = porto_run_factory("porto_fc_runner")
+    monkeypatch.setattr(assigner_mod, "assign_shots",
+                        fake_assign_persistent)
+    monkeypatch.setattr(embed_mod, "SiglipEmbedder",
+                        lambda: fake_embedder)
+    ctx_redo = RunContext(
+        video_id="porto_fc_runner", run_dir=fc_redo_dir,
+        settings=settings,
+        state=new_state("porto_fc_runner", "Porto fc", 5.0),
+    )
+    ctx_redo.params.update({
+        "topic": "Porto fail-closed runner", "duration_minutes": 2.0,
+        "_embedder": fake_embedder,
+    })
+    save_state(ctx_redo.state, fc_redo_dir)
+    try:
+        PipelineRunner(produce_stages()[6:]).run(ctx_redo, ctx_redo.state)
+    except Exception:
+        pass  # runner pode levantar StageFailed (aceitável em qualquer caso)
+    state_redo = load_state(fc_redo_dir)
+    assert state_redo.stages["08_matching"].status == "failed", (
+        f"PipelineRunner deve marcar 08_matching=failed (acceptance #18); "
+        f"got status={state_redo.stages['08_matching'].status}")
+    # ACCEPTANCE #18 do prompt: "S09/S10 NÃO iniciam quando S08 falha".
+    # Verificação estrita: S09..14 devem todos estar ausentes/não-done
+    # (o runner parou no wave do S08 e nunca alcançou waves seguintes).
+    # test_ports:[6:] = S08..S14 inteiro para maior garantia.
+    for stage_name in ("09_timeline", "10_render_proxy", "11_review",
+                        "12_render_final", "13_package", "14_upload"):
+        s = state_redo.stages.get(stage_name)
+        assert s is None or s.status != "done", (
+            f"{stage_name} NÃO devia ter arrancado! got status={s.status if s else None}")
 
 
 def test_porto_e2e_before_after_comparison(porto_library, porto_run_factory,

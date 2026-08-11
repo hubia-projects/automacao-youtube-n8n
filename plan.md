@@ -1,4 +1,6 @@
 # plan.md — n8n + Node pipeline for faceless long-form YouTube (Travel)
+> ⚠️ **Telegram desactivado desde 2026-08-10** — ver `studio/OPERATIONS.md` §TEMPORARILY OFF (use `STUDIO_AUTO_APPROVE_GATES=true` para approves automáticos).
+
 
 ## 1. Objectives
 - Deliver an **8-phase automated pipeline** where only manual steps are **weekly idea selection (Telegram)** and **final publish approval (Telegram)**.

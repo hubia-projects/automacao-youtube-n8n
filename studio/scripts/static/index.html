@@ -95,6 +95,45 @@
     .log.flash { box-shadow: inset 0 0 0 2px rgba(46,160,67,0.7); transition: none; }
     .log-line { display: flex; gap: 10px; }
     .log-line .ts { flex: 0 0 90px; color: #6e7681; font-size: 10px; padding-top: 1px; }
+    /* ----- Tabs + Library panel (Task 1) ----- */
+    .tabs { display: flex; gap: 4px; margin: 0 0 16px; border-bottom: 1px solid #30363d; }
+    .tab-btn {
+      background: transparent; border: 0; padding: 8px 14px;
+      color: #8b949e; font-size: 13px; cursor: pointer; font-weight: 500;
+      border-bottom: 2px solid transparent;
+    }
+    .tab-btn.active { color: #e6edf3; border-bottom-color: #2ea043; }
+    .tab-btn:hover { color: #e6edf3; }
+    .lib-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+    .lib-card { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 12px 14px; }
+    .lib-card h3 { margin: 0 0 8px; font-size: 12px; color: #79c0ff; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; }
+    .lib-big { font-size: 22px; font-weight: 600; color: #e6edf3; }
+    .lib-meta { font-size: 11px; color: #6e7681; font-family: ui-monospace, monospace; }
+    .kvlist { width: 100%; border-collapse: collapse; }
+    .kvlist td { padding: 3px 6px; font-size: 12px; }
+    .kvlist .k { color: #e6edf3; }
+    .kvlist .v { color: #79c0ff; font-family: ui-monospace, monospace; text-align: right; }
+    .search-row { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; }
+    .search-input {
+      flex: 1; background: #0d1117; border: 1px solid #30363d;
+      color: #e6edf3; padding: 6px 10px; border-radius: 4px; font-size: 13px;
+    }
+    .action-btn {
+      background: #1f6f3d; color: #d2f4dc; border: 0; padding: 8px 14px;
+      border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;
+    }
+    .action-btn:hover { background: #2ea043; }
+    .action-btn.danger { background: #8a1f2e; color: #ffd0d8; }
+    .action-btn.danger:hover { background: #c9354c; }
+    .lib-log {
+      background: #06090d; border: 1px solid #30363d; border-radius: 6px;
+      padding: 8px 10px; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 11px; max-height: 280px; overflow-y: auto; white-space: pre-wrap;
+    }
+    .status-pill { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; }
+    .status-pill.ok { background: #1f6f3d; color: #d2f4dc; }
+    .status-pill.skip { background: #9e6a03; color: #fde2a4; }
+    .status-pill.fail { background: #8a1f2e; color: #ffd0d8; }
   </style>
 </head>
 <body>
@@ -104,6 +143,11 @@
       <span>Studio Monitor</span>
       <span style="color:#6e7681; font-weight:400; font-size:12px; margin-left:auto;" id="vid-label"></span>
     </h1>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="runs">📦 Runs</button>
+      <button class="tab-btn" data-tab="library">📚 Library</button>
+    </div>
 
     <div class="meta">
       <div><span class="label">Tópico:</span> <strong id="topic">—</strong></div>
@@ -130,6 +174,75 @@
 
     <div class="footer">
       Studio Monitor · <span id="footer-info">STUDIO_MONITOR_PORT=8765</span> · auto-refresh 4s
+    </div>
+  </div>
+
+  <div id="tab-library" style="display:none; max-width:980px; margin: 0 auto; padding: 8px 16px 64px;">
+    <h2 style="font-size:14px; color:#79c0ff; margin:0 0 14px; display:flex; align-items:center; gap:10px;">
+      <span class="live-dot" id="lib-live-dot"></span>
+      <span>Library — busca &amp; organização</span>
+      <span style="color:#6e7681; font-weight:400; font-size:11px; margin-left:auto;" id="lib-updated">—</span>
+    </h2>
+
+    <div class="lib-grid">
+      <div class="lib-card">
+        <h3>Total shots (lancedb)</h3>
+        <div class="lib-big" id="lib-total-shots">—</div>
+        <div class="lib-meta" id="lib-stats-meta">a carregar…</div>
+      </div>
+      <div class="lib-card">
+        <h3>Saúde da library</h3>
+        <div class="lib-big" id="lib-health-text">—</div>
+        <div class="lib-meta" id="lib-health-meta">—</div>
+      </div>
+      <div class="lib-card">
+        <h3>Por fonte (top-10)</h3>
+        <table class="kvlist" id="lib-by-source"><tr><td class="k">—</td><td class="v">0</td></tr></table>
+      </div>
+      <div class="lib-card">
+        <h3>Por place (top-15)</h3>
+        <table class="kvlist" id="lib-by-place"><tr><td class="k">—</td><td class="v">0</td></tr></table>
+      </div>
+      <div class="lib-card">
+        <h3>Por landmark (top-15)</h3>
+        <table class="kvlist" id="lib-by-landmark"><tr><td class="k">—</td><td class="v">0</td></tr></table>
+      </div>
+      <div class="lib-card">
+        <h3>Por food (top-15)</h3>
+        <table class="kvlist" id="lib-by-food"><tr><td class="k">—</td><td class="v">0</td></tr></table>
+      </div>
+    </div>
+
+    <div class="lib-card" style="margin-bottom: 18px;">
+      <h3>Buckets por vídeo (Task 3)</h3>
+      <div id="lib-buckets">—</div>
+    </div>
+
+    <div class="lib-card" style="margin-bottom: 18px;">
+      <h3>Busca em metadados</h3>
+      <div class="search-row">
+        <input id="lib-q" class="search-input" placeholder="ex.: porto, francesinha, lello, lisboa…" />
+        <button class="action-btn" id="lib-search-btn">🔎 Buscar</button>
+      </div>
+      <div id="lib-search-results">— digite o termo e prima Buscar —</div>
+    </div>
+
+    <div class="lib-card" style="margin-bottom: 18px;">
+      <h3>Ingest log (últimas 50 linhas)</h3>
+      <div class="search-row">
+        <button class="action-btn" id="lib-logs-all">📜 Todos</button>
+        <button class="action-btn danger" id="lib-logs-fail">⚠ Só falhas</button>
+        <span style="margin-left:auto; color:#6e7681; font-size:11px;" id="lib-logs-meta">—</span>
+      </div>
+      <div class="lib-log" id="lib-logs">—</div>
+    </div>
+
+    <div class="lib-card" style="margin-bottom: 18px;">
+      <h3>Acções</h3>
+      <div class="search-row">
+        <button class="action-btn" id="lib-reconcile-now">⏵ Reconcile Now (Task 2)</button>
+        <span style="color:#6e7681; font-size:11px;" id="lib-reconcile-meta">—</span>
+      </div>
     </div>
   </div>
 
@@ -316,6 +429,204 @@
 
     fetchStatus(); fetchLog();
     setInterval(function () { fetchStatus(); fetchLog(); }, REFRESH_MS);
+  })();
+
+  // ----------------- Library Tab (Task 1) -----------------
+  (function () {
+    const LIB_REFRESH_MS = 2500;
+
+    function el(id) { return document.getElementById(id); }
+    function escape(s) {
+      return String(s).replace(/[<>&"]/g, c => (
+        {"<":"&lt;",">":"&gt;","&":"&amp;","\"":"&quot;"}[c]
+      ));
+    }
+
+    function showTab(name) {
+      const container = document.querySelector(".container");
+      if (container) container.style.display = (name === "runs") ? "" : "none";
+      const libPanel = el("tab-library");
+      if (libPanel) libPanel.style.display = (name === "library") ? "" : "none";
+      document.querySelectorAll(".tab-btn").forEach(b => {
+        b.classList.toggle("active", b.dataset.tab === name);
+      });
+      try { localStorage.setItem("studio.tab", name); } catch (e) {}
+    }
+    document.querySelectorAll(".tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => showTab(btn.dataset.tab));
+    });
+
+    function paintKv(tableId, obj, maxRows) {
+      const elT = el(tableId);
+      if (!elT) return;
+      elT.innerHTML = "";
+      const entries = Object.entries(obj || {}).sort((a, b) => b[1] - a[1]);
+      if (!entries.length) {
+        elT.innerHTML = "<tr><td class=\"k\">—</td><td class=\"v\">0</td></tr>";
+        return;
+      }
+      entries.slice(0, maxRows || 10).forEach(([k, v]) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = "<td class=\"k\">" + escape(k) + "</td><td class=\"v\">" + v + "</td>";
+        elT.appendChild(tr);
+      });
+    }
+
+    async function fetchLibStats() {
+      try {
+        const r = await fetch("/api/library/stats");
+        if (!r.ok) return;
+        const s = await r.json();
+        el("lib-total-shots").textContent = (s.total_shots || 0).toString();
+        el("lib-stats-meta").textContent = s.note ||
+          (s.error ? "⚠ " + s.error : "lancedb OK · atualizado " + new Date(s.updated_at).toLocaleTimeString());
+        paintKv("lib-by-source", s.by_source, 10);
+        paintKv("lib-by-place", s.by_place, 15);
+        paintKv("lib-by-landmark", s.by_landmark, 15);
+        paintKv("lib-by-food", s.by_food, 15);
+        el("lib-updated").textContent = new Date().toLocaleTimeString();
+      } catch (e) { /* silent */ }
+    }
+
+    async function fetchLibHealth() {
+      try {
+        const r = await fetch("/api/library/health");
+        if (!r.ok) return;
+        const d = await r.json();
+        const c = d.checks || {};
+        const issues = [];
+        if (!c.library_root_exists) issues.push("library root faltando");
+        if (c.lancedb_shots_rows === 0 || c.lancedb_shots_rows === "?")
+          issues.push("lancedb vazio");
+        el("lib-health-text").textContent = issues.length === 0 ?
+          "🟢 OK" : "🔴 " + issues.join(" · ");
+        el("lib-health-meta").textContent =
+          "downloads:" + (c.downloads_count || 0) +
+          " / media:" + (c.media_count || 0) +
+          " / shots dirs:" + (c.shots_dirs_count || 0) +
+          " / lancedb rows:" + (c.lancedb_shots_rows || "?") +
+          " / dedup:" + (c.dedup_index_exists ? "✓" : "✗");
+      } catch (e) {}
+    }
+
+    async function fetchLibBuckets() {
+      try {
+        const r = await fetch("/api/library/buckets");
+        const d = await r.json();
+        const list = d.buckets || [];
+        if (!list.length) {
+          el("lib-buckets").innerHTML =
+            "<div style='color:#6e7681;font-size:12px;'>Nenhum bucket ainda — corre `studio ingest --video-id X --topic-topics \"...\"`.</div>";
+          return;
+        }
+        el("lib-buckets").innerHTML = list.map(b => {
+          const cls = b.is_ready ? "ok" :
+            (b.topics_with_hits > 0 ? "skip" : "fail");
+          const txt = b.is_ready ? "PRONTO" :
+            (b.topics_with_hits + "/" + b.topics_total);
+          const miss = (b.missing || []).slice(0, 5).join(", ");
+          return "<div style='padding:6px 8px; border-left:3px solid " +
+            (b.is_ready ? "#2ea043" : "#30363d") + "; margin-bottom:4px;'>" +
+            "<span class='status-pill " + cls + "'>" + txt + "</span> " +
+            "<strong>" + escape(b.video_id) + "</strong> " +
+            "<span style='color:#6e7681; font-size:11px;'> shots=" + b.shots_in_bucket +
+            " / matches=" + b.topics_with_hits + "/" + b.topics_total +
+            (miss ? " / falta: " + escape(miss) : "") + "</span></div>";
+        }).join("");
+      } catch (e) {}
+    }
+
+    async function fetchLibLogs(onlyFailures) {
+      try {
+        const url = "/api/library/logs?lines=50" + (onlyFailures ? "&failures=1" : "");
+        const r = await fetch(url);
+        const d = await r.json();
+        el("lib-logs-meta").textContent =
+          (d.count || 0) + " eventos · " + (d.only_failures ? "só falhas" : "todos");
+        const events = d.events || [];
+        if (!events.length) {
+          el("lib-logs").innerHTML = "<div style='color:#6e7681;'>Sem eventos.</div>";
+          return;
+        }
+        el("lib-logs").innerHTML = events.slice(0, 50).map(ev => {
+          const st = String(ev.status).toLowerCase();
+          const cls = (st === "ingested" || st === "reconciled") ? "ok" :
+            (st.indexOf("skipped") !== -1 || st === "shot_skipped") ? "skip" : "fail";
+          return "<div class='lib-log-row'>" +
+            "<span style='color:#6e7681;'>" + (ev.at || "").slice(11, 19) + "</span> " +
+            "<span class='status-pill " + cls + "'>" + escape(ev.status) + "</span> " +
+            "<span>" + escape(ev.file || "") +
+            (ev.error ? " — " + escape(ev.error).slice(0, 100) : "") + "</span></div>";
+        }).join("");
+      } catch (e) {}
+    }
+
+    async function fetchLibReconcile() {
+      try {
+        const r = await fetch("/api/library/reconcile-state");
+        if (!r.ok) { el("lib-reconcile-meta").textContent = "sem state"; return; }
+        const d = await r.json();
+        if (!d.exists) { el("lib-reconcile-meta").textContent = "sem state"; return; }
+        if (d.error) { el("lib-reconcile-meta").textContent = "⚠ " + d.error; return; }
+        const t = d.totals || {};
+        el("lib-reconcile-meta").innerHTML =
+          (d.video_id ? "<strong>v" + d.version + "</strong> " + escape(d.video_id) +
+            " · " + (d.topics || []).length + " tópicos" : "pronto a iniciar") +
+          " · ok=" + (t.ok || 0) + " skip=" + (t.skip || 0) + " fail=" + (t.fail || 0);
+      } catch (e) {}
+    }
+
+    async function libSearch(q) {
+      if (!q) return;
+      try {
+        const r = await fetch("/api/library/search?q=" + encodeURIComponent(q));
+        const d = await r.json();
+        const hits = d.hits || [];
+        if (!hits.length) {
+          el("lib-search-results").innerHTML =
+            "<div style='color:#6e7681;'>Sem resultados para \u201c" + escape(q) + "\u201d.</div>";
+          return;
+        }
+        el("lib-search-results").innerHTML =
+          "<table class='kvlist'>" +
+          hits.slice(0, 30).map(h =>
+            "<tr>" +
+            "<td class='k' style='font-family:monospace;'>" + escape(h.shot_id || "") + "</td>" +
+            "<td class='v'>" + escape(h.places_csv || "") + "</td>" +
+            "<td class='v'>" + escape(h.landmarks_csv || "") + "</td>" +
+            "<td class='v'>" + escape(h.food_csv || "") + "</td>" +
+            "</tr>"
+          ).join("") + "</table>";
+      } catch (e) {}
+    }
+
+    el("lib-search-btn").addEventListener("click",
+      () => libSearch(el("lib-q").value));
+    el("lib-q").addEventListener("keypress",
+      e => { if (e.key === "Enter") libSearch(el("lib-q").value); });
+    el("lib-logs-all").addEventListener("click", () => fetchLibLogs(false));
+    el("lib-logs-fail").addEventListener("click", () => fetchLibLogs(true));
+    el("lib-reconcile-now").addEventListener("click", async () => {
+      el("lib-reconcile-meta").textContent = "⏵ a iniciar reconcile…";
+      try {
+        const r = await fetch("/api/library/reconcile", { method: "POST" });
+        const d = await r.json();
+        el("lib-reconcile-meta").innerHTML = d.started ?
+          "⏵ running PID " + d.pid + " · log: " + d.log_path :
+          "⚠ " + (d.error || "erro");
+      } catch (e) { el("lib-reconcile-meta").textContent = "⚠ " + e; }
+    });
+
+    function refreshAll() {
+      fetchLibStats(); fetchLibHealth(); fetchLibBuckets();
+      fetchLibLogs(false); fetchLibReconcile();
+    }
+    try {
+      const last = localStorage.getItem("studio.tab");
+      if (last) showTab(last);
+    } catch (e) {}
+    refreshAll();
+    setInterval(refreshAll, LIB_REFRESH_MS);
   })();
   </script>
 </body>

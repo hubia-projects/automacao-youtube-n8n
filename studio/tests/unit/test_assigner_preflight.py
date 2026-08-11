@@ -41,17 +41,33 @@ def _brief(scene_id: str, subject: str, must_have: list[str],
 
 def _settings_with_pexels(tmp_path: Path) -> Settings:
     """Settings com pexels_api_key mas mock_mode=False (pre-flight activo).
-    Requeremos atributos necessários porque o assigner lê vários campos."""
-    s = MagicMock(spec=Settings)
-    s.mock_mode = False
-    s.pexels_api_key = "test-key"
-    s.veo_enabled = False
-    s.veo_max_per_video = 0
-    s.library_root = tmp_path
-    s.runs_root = tmp_path
-    s.duration_minutes = 2.0
-    s.auto_approve_gates = False
-    s.youtube_default_privacy = "private"
+
+    FIX-Fase-F-regressão: a versão anterior usava `MagicMock(spec=Settings)`
+    que falhava em runtime quando `_score()` lê os campos adicionados na
+    Fase F (`assign_score_similarity`, `assign_score_geography_penalty`,
+    etc.) — porque `spec=` captura a introspecção estática da classe no
+    momento da criação do mock, e essa introspecção não enxerga os campos
+    adicionados por herança/concat posterior. Solução robusta: criar
+    Settings REAL (via construtor pydantic) e sobrepor com patch apenas
+    nos campos que o assigner usa para decidir pre-flight.
+    """
+    s = Settings(
+        mock_mode=False,
+        pexels_api_key="test-key",
+        veo_enabled=False,
+        veo_max_per_video=0,
+        library_root=tmp_path,
+        runs_root=tmp_path,
+        data_root=tmp_path,
+        duration_minutes=2.0,
+        auto_approve_gates=False,
+        youtube_default_privacy="private",
+        output_width=640,
+        output_height=360,
+        render_preset="ultrafast",
+        budget_usd_per_run=5.0,
+        _env_file=None,
+    )
     return s
 
 

@@ -1,4 +1,6 @@
 # Relatório — Teste End-to-End Completo (Studio v2)
+> ⚠️ **Telegram desactivado desde 2026-08-10** — ver `studio/OPERATIONS.md` §TEMPORARILY OFF (use `STUDIO_AUTO_APPROVE_GATES=true` para approves automáticos).
+
 
 **Data do teste:** 2026-08-05
 **Run ID:** `20260805-173851`

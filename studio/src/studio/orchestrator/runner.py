@@ -21,6 +21,15 @@ import logging
 import threading
 from pathlib import Path
 
+# WORKAROUND IPv6 blackhole em redes onde Google APIs só respondem em IPv4.
+# Python stdlib prefere IPv6 → hang de 60-120s em httpx/requests/urllib para
+# generativelanguage.googleapis.com e Vertex. `curl` resolve via Happy
+# Eyeballs (RFC 6555) com fallback rápido.
+# Aplicar ANTES de qualquer import que toque em networking.
+# Idempotente — pode ser chamado múltiplas vezes sem efeito.
+from studio._net import apply_ipv4_only
+apply_ipv4_only()
+
 from studio.llm.budget import BudgetExceeded, check_budget
 from studio.orchestrator.stage import RunContext, Stage
 from studio.orchestrator.state import (
@@ -31,6 +40,7 @@ from studio.orchestrator.state import (
     touch_stage_end,
     touch_stage_start,
 )
+from studio.perf import Profiler
 
 log = logging.getLogger("studio.runner")
 
@@ -146,6 +156,15 @@ class PipelineRunner:
                 # as_completed propaga a primeira excepção: fail-fast na wave.
                 for fut in concurrent.futures.as_completed(futures):
                     fut.result()  # levanta StageFailed / WaitingApproval / BudgetExceeded
+        # Fase 1 Optimização — dump métricas em <run>/performance.json
+        # + linha resumo PERF (8 maiores consumidores por ordem de tempo).
+        # get_settings() corre lazily; se indisponível, desliga-se off.
+        try:
+            enabled = bool(getattr(ctx.settings, "perf_enabled", True))
+        except Exception:
+            enabled = True
+        if enabled:
+            Profiler.write(ctx.run_dir)
         return state
 
 

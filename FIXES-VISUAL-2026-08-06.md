@@ -1,4 +1,6 @@
 # Ajustes visuais — 2026-08-06
+> ⚠️ **Telegram desactivado desde 2026-08-10** — ver `studio/OPERATIONS.md` §TEMPORARILY OFF (use `STUDIO_AUTO_APPROVE_GATES=true` para approves automáticos).
+
 
 > 3 problemas observados pelo utilizador no vídeo "24 Horas no Porto: os maiores
 > mitos da cidade" (gerado em 2026-08-05). Patches cirúrgicos; nada de

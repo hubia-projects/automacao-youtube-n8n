@@ -57,14 +57,66 @@ def _fake_table(rows: list[dict]):
 
 
 def _fake_db(rows: list[dict] | None = None) -> MagicMock:
-    """Mock que cobre a nova API pública `LibraryDB.iter_rows()` (Fase C).
-    Mantém `_table` para retro-compat, mas `iter_rows` é a fonte usada
-    por `measure_coverage`."""
+    """Mock que cobre a nova API pública `LibraryDB.iter_rows()` (Fase C)
+    aplicando um filtro LIKE básico para se aproximar do
+    comportamento real de LanceDB — necessário para que multi-entity
+    testes provem o invariante "Coverage Plan evita downloads quando
+    cobertura já é suficiente" (T20.2)."""
     db = MagicMock()
     db._table = _fake_table(rows or [])
-    # iter_rows cláusula simples → devolve rows (sem filtro restricted)
-    db.iter_rows = MagicMock(return_value=list(rows or []))
+    all_rows = list(rows or [])
+
+    def iter_rows(clause, limit=20_000):
+        out = []
+        for r in all_rows:
+            if _clause_matches(r, clause):
+                out.append(r)
+        return out[:limit] if limit else out
+
+    db.iter_rows = MagicMock(side_effect=iter_rows)
     return db
+
+
+def _clause_matches(row: dict, clause: str) -> bool:
+    """Parser minimalista de cláusulas LanceDB WHERE. Suporta:
+      - `col LIKE '%pattern%'`
+      - `col1 LIKE 'a%' OR col2 LIKE 'b%'`
+      - `quality >= N`
+      - `revoked = false`
+    Divide em partes OR; cada parte pode ter col LIKE pattern;
+    row passa se QUALQUER part for match (semântica OR dos cláusulas
+    reais)."""
+    import re
+    parts = clause.split(" OR ")
+    if not parts:
+        return True
+    matches_any = False
+    for part in parts:
+        part = part.strip().strip("()")
+        # LIKE patterns
+        like_m = re.search(r"(\w+)\s+LIKE\s+'%([^']+)%'", part)
+        if like_m:
+            col = like_m.group(1)
+            pat = like_m.group(2).lower()
+            val = (row.get(col) or "").lower()
+            if pat in val:
+                matches_any = True
+                continue
+        # quality >= N
+        q_m = re.search(r"quality\s*>=\s*(\d+)", part)
+        if q_m:
+            n = int(q_m.group(1))
+            if int(row.get("quality", 0)) < n:
+                continue
+        # revoked = false
+        r_m = re.search(r"revoked\s*=\s*false", part)
+        if r_m:
+            if row.get("revoked", False):
+                continue
+        # fallback: assume match (e.g., parens wrappers sem campo)
+        if not like_m and not q_m and not r_m:
+            matches_any = True
+    return matches_any
 
 
 def _span(canonical: str, et: str, t_in: float, t_out: float,
@@ -253,6 +305,111 @@ def tempfile_ses() -> Path:
     """Devolve Path (em vez de string) para que '/plan.json' funcione."""
     import tempfile
     return Path(tempfile.mkdtemp(prefix="tmp_coverage_"))
+
+
+# ----------------- T20 — invariante Fase 2: cobertura suficiente ⇒ deficit==0
+# Spec: "Coverage Plan evita downloads quando cobertura já é suficiente."
+# Garantia mecânica: topup_for_plan (em topup.py) salta entidades com
+# deficit_seconds <= 0 (não chama sweep, não chama ingest). Esta classe
+# prova que build_coverage_plan calcula deficit_seconds = 0 quando
+# available_meets_target, para dois cenários canónicos.
+class TestCoverageSufficient(unittest.TestCase):
+    def test_single_entity_covered_zero_deficit(self):
+        """Cenário 1 entity: Francesinha exige 20s de narração; library
+        tem 1 shot de 30s Francesinha (single media_sha) ⇒ target=25s,
+        available=30s, **deficit=0** ⇒ ZERO downloads quando topup correr."""
+        s = Settings()
+        row = _span("Francesinha", "food", t_in=0, t_out=20)  # 20s required
+        rows = [{
+            "shot_id": "sh_fran",
+            "media_sha": "sha_fran",
+            "t_in": 0.0, "t_out": 30.0,     # 30s reais cap por media_sha
+            "quality": 5, "revoked": False,
+            "places_csv": "Porto",
+            "landmarks_csv": "",
+            "food_csv": "Francesinha",
+        }]
+        plan = build_coverage_plan(
+            [row], _fake_db(rows), s,
+            topic="24h Porto", total_script_seconds=300.0)
+        ent = plan.ranked_entities[0]
+        # required=20, buffer=1.25, target=25
+        self.assertEqual(ent.required_seconds, 20.0)
+        self.assertEqual(ent.target_seconds, 25.0)
+        # available=30 (cap real: t_out max por media_sha = 30)
+        self.assertEqual(ent.available_seconds, 30.0)
+        # INVARIANTE Fase 2: deficit = max(0, target-available) = 0
+        self.assertEqual(ent.deficit_seconds, 0.0)
+        # Sanity: a entity está coberta com shots + files contabilizados.
+        self.assertEqual(ent.available_distinct_shots, 1)
+        self.assertEqual(ent.available_files, 1)
+        # NÃO marcou nota "sem shots" porque há shots.
+        self.assertFalse(
+            any("sem shots" in n for n in ent.notes),
+            f"coberta mas marcou nota: {ent.notes}",
+        )
+
+    def test_multi_entity_only_deficit_triggers_topup(self):
+        """Cenário 2 entities: Francesinha coberta, Lello SEM shots.
+        Apenas Lello entra no topup. Francesinha fica inalterada."""
+        s = Settings()
+        spans = [
+            _span("Francesinha", "food", t_in=0, t_out=20),
+            _span("Livraria Lello", "landmark", t_in=30, t_out=50),
+        ]
+        rows = [{
+            "shot_id": "sh_fran",
+            "media_sha": "sha_fran",
+            "t_in": 0.0, "t_out": 30.0,
+            "quality": 5, "revoked": False,
+            "places_csv": "Porto",
+            "landmarks_csv": "",
+            "food_csv": "Francesinha",
+        }]
+        # Lello NÃO tem rows — fica deficit total.
+        plan = build_coverage_plan(
+            spans, _fake_db(rows), s,
+            topic="24h Porto", total_script_seconds=300.0)
+        deficiencies = {ent.canonical_name: ent.deficit_seconds
+                        for ent in plan.ranked_entities}
+        # Francesinha coberta: NO top-up
+        self.assertEqual(deficiencies["Francesinha"], 0.0)
+        # Lello descoberta pelo plan mas sem biblioteca ⇒ deficit total
+        lello_deficit = deficiencies["Livraria Lello"]
+        self.assertGreater(lello_deficit, 0.0,
+                            f"Lello devia ter deficit > 0, obtido {lello_deficit}")
+        # Sanity: Francesinha NÃO marca 'sem shots' nota; Lello marca.
+        fran_ent = next(e for e in plan.ranked_entities
+                        if e.canonical_name == "Francesinha")
+        lello_ent = next(e for e in plan.ranked_entities
+                         if e.canonical_name == "Livraria Lello")
+        self.assertFalse(any("sem shots" in n for n in fran_ent.notes))
+        self.assertTrue(any("sem shots" in n for n in lello_ent.notes),
+                        "Lello sem shots devia ter nota explícita")
+
+    def test_exact_target_match_zero_deficit_boundary(self):
+        """Caso de borda: available == target (sem folga) ⇒ deficit = 0.
+        Importante porque topup usa strict > e queremos zero marginal downloads."""
+        s = Settings()
+        row = _span("Francesinha", "food", t_in=0, t_out=20)  # required=20s
+        # buffer 1.25 → target = 25.0
+        rows = [{
+            "shot_id": "sh_fran",
+            "media_sha": "sha_fran",
+            "t_in": 0.0, "t_out": 25.0,    # exactamente target
+            "quality": 5, "revoked": False,
+            "places_csv": "Porto",
+            "landmarks_csv": "",
+            "food_csv": "Francesinha",
+        }]
+        plan = build_coverage_plan(
+            [row], _fake_db(rows), s,
+            topic="24h Porto", total_script_seconds=300.0)
+        ent = plan.ranked_entities[0]
+        self.assertEqual(ent.target_seconds, 25.0)
+        self.assertEqual(ent.available_seconds, 25.0)
+        # boundary: 0 deficit (>=), não negativo
+        self.assertEqual(ent.deficit_seconds, 0.0)
 
 
 if __name__ == "__main__":

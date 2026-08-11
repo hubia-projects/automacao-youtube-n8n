@@ -1,0 +1,6 @@
+$54e86d65-07c2-4981-a46a-e1d0e2e94761²ã	 shot_id ÿÿÿÿÿÿÿÿÿ*string08$	media_sha ÿÿÿÿÿÿÿÿÿ*string08t_in ÿÿÿÿÿÿÿÿÿ*float08t_out ÿÿÿÿÿÿÿÿÿ*float081vec ÿÿÿÿÿÿÿÿÿ*fixed_size_list:float:76808"summary ÿÿÿÿÿÿÿÿÿ*string08%
+places_csv ÿÿÿÿÿÿÿÿÿ*string08(landmarks_csv ÿÿÿÿÿÿÿÿÿ*string08#food_csv ÿÿÿÿÿÿÿÿÿ*string08&objects_csv	 ÿÿÿÿÿÿÿÿÿ*string08$	shot_type
+ ÿÿÿÿÿÿÿÿÿ*string08(camera_motion ÿÿÿÿÿÿÿÿÿ*string08&time_of_day ÿÿÿÿÿÿÿÿÿ*string08)indoor_outdoor ÿÿÿÿÿÿÿÿÿ*string08'people_present ÿÿÿÿÿÿÿÿÿ*bool08!quality ÿÿÿÿÿÿÿÿÿ*int3208!has_food ÿÿÿÿÿÿÿÿÿ*bool08%has_landmark ÿÿÿÿÿÿÿÿÿ*bool08#
+restricted ÿÿÿÿÿÿÿÿÿ*bool08 revoked ÿÿÿÿÿÿÿÿÿ*bool08)license_source ÿÿÿÿÿÿÿÿÿ*string08"license ÿÿÿÿÿÿÿÿÿ*string08-attribution_required ÿÿÿÿÿÿÿÿÿ*bool08+attribution_text ÿÿÿÿÿÿÿÿÿ*string08%
+source_url ÿÿÿÿÿÿÿÿÿ*string08!author ÿÿÿÿÿÿÿÿÿ*string08%usage_count ÿÿÿÿÿÿÿÿÿ*int3208(last_used_run ÿÿÿÿÿÿÿÿÿ*string08&ingested_at ÿÿÿÿÿÿÿÿÿ*string08(keyframes_csv ÿÿÿÿÿÿÿÿÿ*string08%
+media_path ÿÿÿÿÿÿÿÿÿ*string08$	meta_json ÿÿÿÿÿÿÿÿÿ*string08

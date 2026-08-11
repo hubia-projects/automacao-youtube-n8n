@@ -1,4 +1,6 @@
 # Relatório de Análise Completa — Pipeline de Automação YouTube com IA
+> ⚠️ **Telegram desactivado desde 2026-08-10** — ver `studio/OPERATIONS.md` §TEMPORARILY OFF (use `STUDIO_AUTO_APPROVE_GATES=true` para approves automáticos).
+
 
 **Data:** 23 de junho de 2026 (atualizado após correções)  
 **Projeto:** `automacao-youtube-n8n` (Hubia)  

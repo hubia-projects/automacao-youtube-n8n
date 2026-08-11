@@ -23,12 +23,16 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from studio.config import Settings
 from studio.library.db import LibraryDB
 from studio.library.embed import Embedder
+from studio.library.early_reject import preflight as preflight_check
+from studio.perf import Profiler
 from studio.matching.coverage_plan import (
     CoveragePlan,
     EntityCoverage,
@@ -61,6 +65,11 @@ class TopupReport:
     total_cost_usd: float = 0.0
     skipped_due_to_budget: bool = False
     skipped_due_to_mock: bool = False
+    # Pass 3 close-out (3a via): counter de entities ja saturadas antes
+    # do top-up (deficit_seconds <= 0 na entrada). Mantem contract
+    # "per_entity = so entities que precisaram accao" e ao mesmo tempo
+    # expone observability via metadata (evita poluir payload).
+    satisfied_count: int = 0
 
     def aggregate_dict(self) -> dict:
         return {
@@ -81,7 +90,27 @@ class TopupReport:
             "total_cost_usd": round(self.total_cost_usd, 4),
             "skipped_due_to_budget": self.skipped_due_to_budget,
             "skipped_due_to_mock": self.skipped_due_to_mock,
+            # Pass 3 observability via metadata (NAO polui per_entity).
+            "satisfied_count": self.satisfied_count,
         }
+
+
+# --------- micro-batch helper (Pass 2) ---------
+def micro_batch_count(deficit_seconds: float, useful_per_asset_s: float,
+                      hard_max: int = 5) -> int:
+    """Tamanho do micro-batch dimensionado pelo deficit.
+
+    Formula: clamp(ceil(deficit / useful_per_asset), 1, hard_max).
+    Quando deficit <= 0 devolve 0 (caller deve early-return sem pedir nada).
+
+    Defaults calibrados com vídeos 8 min produzidos 2026-07: cada asset
+    Pexels cobre em media ~5s no timeline apos demais cenas cobertas.
+    """
+    if deficit_seconds <= 0:
+        return 0  # deficit zero -> NAO pedir nada
+    if useful_per_asset_s <= 0:
+        return hard_max  # defensivo (evitar divisao por 0)
+    return max(1, min(hard_max, math.ceil(deficit_seconds / useful_per_asset_s)))
 
 
 # --------- função principal ---------
@@ -150,6 +179,16 @@ def topup_for_plan(
 
     for ent in plan.ranked_entities:
         if ent.deficit_seconds <= 0:
+            # Pass 3 close-out (3a via): manter contract "per_entity = so
+            # entities que precisaram de accao" (test_topup.py invariantes
+            # TestTopupEarlyReturn + TestTopupNoDeficit). Observability
+            # exposta via counter TopupReport.satisfied_count + log
+            # estruturado (sem poluir payload de per_entity).
+            report.satisfied_count += 1
+            log.info(
+                "coverage: %s deficit=0 -- skip search (ja saturado; total_satisfied=%d)",
+                ent.canonical_name, report.satisfied_count,
+            )
             continue
         if report.total_cost_usd >= budget:
             report.skipped_due_to_budget = True
@@ -183,10 +222,29 @@ def topup_for_plan(
             if report.total_cost_usd >= budget:
                 report.skipped_due_to_budget = True
                 break
-            available_q = [q for q in candidate_queries
-                           if q.lower() not in seen_queries]
+            available_q = []
+            for q in candidate_queries:
+                if q.lower() in seen_queries:
+                    continue
+                # Pass 3: provider cache wired — skip queries já cached-
+                # rejected (TTL via Settings.negative_cache_ttl_days).
+                try:
+                    cached = db.cache_get("pexels", q.lower())
+                except Exception as exc:
+                    log.debug("topup: cache_get falhou (skip): %s", exc)
+                    cached = None
+                if cached and cached.get("status") == "rejected":
+                    per.notes.append(
+                        f"round={rnd}: skip cached-rejected query '{q}'"
+                    )
+                    log.info("topup: skip cached-rejected query '%s'", q)
+                    seen_queries.add(q.lower())  # no retry
+                    continue
+                available_q.append(q)
             if not available_q:
-                per.notes.append(f"round={rnd}: todas as queries já tentadas")
+                per.notes.append(
+                    f"round={rnd}: todas as queries já tentadas ou cached-rejected"
+                )
                 break
             q = available_q[0]
             seen_queries.add(q.lower())
@@ -199,18 +257,61 @@ def topup_for_plan(
             run_subdir = run_id or "shared"
             dest = (settings.library_root / "downloads"
                     / run_subdir / ent.canonical_name.replace(" ", "_"))
+            # Pass 2: micro-batch dimensionado pelo deficit (evita pedir
+            # 5 quando deficit=10s).
+            count = micro_batch_count(
+                per.deficit_after,
+                getattr(settings, "topup_asset_useful_s_default", 5.0),
+            )
+            if count == 0:
+                per.notes.append(f"round={rnd}: deficit=0 -> skip search")
+                log.info("coverage: %s round=%d deficit=0 -> stop",
+                         ent.canonical_name, rnd)
+                break
+            t0_search = time.perf_counter()
             try:
-                downloaded = sweep(q, count=5, settings=settings, dest=dest)
+                downloaded = sweep(q, count=count, settings=settings, dest=dest)
             except Exception as exc:
                 per.notes.append(
                     f"round={rnd} sweep falhou: {exc.__class__.__name__}")
                 log.warning("topup sweep '%s' falhou: %s", q, exc)
                 continue
+            else:
+                # `else` corre SÓ em sucesso do try (não no except); items
+                # = nº de vídeos devolvidos pelo provider para esta query.
+                Profiler.record(
+                    "pexels_search",
+                    time.perf_counter() - t0_search,
+                    items=len(downloaded) if isinstance(downloaded, list) else 0,
+                )
 
             round_added = 0
             round_cost = 0.0
             for path, lic in downloaded:
                 if not path.exists():
+                    continue
+                # Pass 2: early rejection ANTES de ingest_file. ffprobe
+                # (~0.1s) vs SceneDetect+SigLIP+Vision (~30s+). Reject e
+                # gravado em provider_cache (negative cache wired em Pass 3
+                # tera este read-side automtico).
+                try:
+                    reject = preflight_check(path, settings)
+                except Exception as exc:
+                    log.warning("topup preflight falhou para %s: %s",
+                                path.name, exc.__class__.__name__)
+                    reject = None  # fail-soft: deixa ingest tentar
+                if reject is not None:
+                    try:
+                        db.cache_mark_rejected(
+                            "pexels",
+                            (lic.get("source_url") if lic else "") or "",
+                            str(reject),
+                        )
+                    except Exception as exc:
+                        log.warning("cache_mark_rejected falhou: %s", exc)
+                    per.notes.append(f"round={rnd} preflight reject: {reject.code}")
+                    log.info("topup: %s preflight reject (%s) - skip ingest",
+                             path.name, reject.code)
                     continue
                 try:
                     r = ingest_file(path, lic, db, settings, embedder)
