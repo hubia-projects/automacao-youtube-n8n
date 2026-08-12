@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -513,7 +514,14 @@ def acquire_for_deficits(
                                            status="DONE")
                         # item U: media nova entra no workset com matches
                         # reais — nunca o anti-padrão cego.
-                        if requirement_index is not None:
+                        if requirement_index is not None and re.fullmatch(
+                                r"[0-9a-fA-F]{8,64}", result.media_sha or ""):
+                            # media_sha é sempre um digest hex (_sha256() em
+                            # ingest.py) — o fullmatch é uma validação de
+                            # forma, não um escape best-effort: nunca contém
+                            # aspas, então a interpolação abaixo é segura,
+                            # mas validar explicitamente remove qualquer
+                            # dúvida (revisão de segurança automática).
                             try:
                                 from studio.library.requirement_matching import (
                                     matches_for_shot,

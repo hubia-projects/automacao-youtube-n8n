@@ -55,7 +55,7 @@ def test_ingest_bem_sucedido_persiste_matches_reais_via_requirement_index():
     db = MagicMock()
     db.cache_get.return_value = None
     db.iter_rows.return_value = [
-        {"shot_id": "new_shot_1", "media_sha": "shaNEW", "t_in": 0.0,
+        {"shot_id": "new_shot_1", "media_sha": "deadbeef01", "t_in": 0.0,
          "t_out": 5.0, "vec": _vec_cos(0.95)},
     ]
     ri = MagicMock()
@@ -64,7 +64,7 @@ def test_ingest_bem_sucedido_persiste_matches_reais_via_requirement_index():
               return_value=(True, "")):
         with patch("studio.library.ingest_asset.ingest_asset") as mock_ingest:
             mock_ingest.return_value = (
-                MagicMock(status="ingested", media_sha="shaNEW", shots_added=1),
+                MagicMock(status="ingested", media_sha="deadbeef01", shots_added=1),
                 MagicMock(),
             )
             acquire_for_deficits(
@@ -104,7 +104,7 @@ def test_sem_requirement_index_nao_rebenta_comportamento_antigo():
               return_value=(True, "")):
         with patch("studio.library.ingest_asset.ingest_asset") as mock_ingest:
             mock_ingest.return_value = (
-                MagicMock(status="ingested", media_sha="shaNEW2", shots_added=1),
+                MagicMock(status="ingested", media_sha="deadbeef012", shots_added=1),
                 MagicMock(),
             )
             acq = acquire_for_deficits(

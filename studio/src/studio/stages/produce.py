@@ -731,6 +731,56 @@ class S08Matching:
                  topup.total_cost_usd, topup.skipped_due_to_mock,
                  topup.skipped_due_to_budget)
 
+        # item V/W (closure pass): gate de aprovação da biblioteca. Depois
+        # do topup automático (Fase D) e da confirmação Vision (Fase E)
+        # acima, medimos a cobertura REAL (com o confirmed_index dos
+        # strict) e decidimos se vale a pena gastar mais trabalho de
+        # matching numa biblioteca ainda incompleta. `auto_acquire_library`
+        # já teve o topup automático acima como única tentativa (a
+        # unificação via AcquisitionService/micro-waves bounded é o item
+        # O, ainda pendente) — se mesmo assim não ficar pronta, falha
+        # fechado em vez de perder tempo em assign_shots/repair loop.
+        # W é consequência directa: qualquer StageResult que não seja
+        # "done" impede o PipelineRunner de avançar para S09.
+        from studio.matching.coverage_plan import is_workset_ready
+        confirmed_index_for_gate = {
+            canon: [row.get("shot_id") for row in rows if row.get("shot_id")]
+            for canon, rows in confirmed_entities.items()
+        }
+        ready_for_gate, per_status_gate, _strict_uncovered_gate = is_workset_ready(
+            plan, db, ctx.settings, confirmed_index=confirmed_index_for_gate,
+            remeasure=False,
+        )
+        if not ready_for_gate:
+            covered_n = sum(1 for v in per_status_gate.values() if v == "COVERED")
+            deficits_msg = ", ".join(
+                f"{name}={status}" for name, status in per_status_gate.items()
+                if status != "COVERED"
+            ) or "sem detalhe"
+            if ctx.params.get("auto_acquire_library"):
+                return StageResult(
+                    status="failed",
+                    outputs=[d / "coverage_plan.json"],
+                    notes=f"auto_acquire_library esgotado sem "
+                          f"WORKSET_READY ({covered_n}/{len(per_status_gate)} "
+                          f"cobertos, item V/W fail-closed): {deficits_msg}",
+                )
+            try:
+                request_gate(
+                    ctx.settings, ctx.state, "library",
+                    f"Biblioteca incompleta para '{ctx.state.topic}' "
+                    f"({covered_n}/{len(per_status_gate)} requirements "
+                    f"cobertos). Deficits: {deficits_msg}. Aprovar avançar "
+                    f"mesmo assim?",
+                )
+            except GatePending:
+                return StageResult(
+                    status="waiting_approval",
+                    outputs=[d / "coverage_plan.json"],
+                    notes=f"gate: library ({covered_n}/"
+                          f"{len(per_status_gate)} cobertos — {deficits_msg})",
+                )
+
         # Fase G — Entity Alignment Validator + Repair Loop (ARCHITECTURE §1.8)
         # 1ª passagem: assign_shots como antes. Se utilizador pediu keep_v1,
         # gravamos cópia para auditoria antes de qualquer repair.
