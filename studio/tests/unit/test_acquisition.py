@@ -121,3 +121,41 @@ def test_max_downloads_safety_cap_para_o_loop_honestamente():
             )
     assert acq.downloads_succeeded <= 3 + 8  # cap + slack de 1 iteração
     assert acq.iterations < 1000, "devia ter parado bem antes de max_iterations"
+
+
+# ---------------------------------------------------------------------------
+# T9/item 34 (idempotência) — coverage já pronta -> ZERO chamadas ao
+# provider. Simula "RUN B" contra o mesmo workset de uma "RUN A" anterior:
+# remeasure_coverage() devolve True imediatamente (biblioteca já cobre
+# tudo), então o loop nunca deve chamar provider_resolver.
+# ---------------------------------------------------------------------------
+def test_coverage_ja_pronta_zero_chamadas_ao_provider():
+    spec = _ReqSpec("Livraria Lello")
+    ctx = _workset_ctx_stub([spec])
+    # deficit_seconds=0 -> is_covered=True; mesmo assim confirmamos que o
+    # provider_resolver nunca é invocado quando remeasure já diz "ready".
+    deficit = DeficitItem(
+        canonical_entity="Livraria Lello", requirement_id=spec.requirement_id,
+        target_seconds=100.0, deficit_seconds=0.0, min_distinct_shots=5,
+    )
+    provider_calls = {"n": 0}
+
+    def resolver(query, level):
+        provider_calls["n"] += 1
+        return []
+
+    acq = acquire_for_deficits(
+        workset_ctx=ctx, db=MagicMock(), embedder=MagicMock(),
+        settings=MagicMock(mock_mode=True),
+        deficit_items=[deficit],
+        provider_resolver=resolver,
+        remeasure_coverage=lambda: True,  # RUN B: já 100% coberto
+        max_iterations=8,
+    )
+    assert provider_calls["n"] == 0, (
+        "provider_resolver foi chamado apesar de remeasure_coverage=True "
+        "no início — RUN B deveria ser zero-download"
+    )
+    assert acq.coverage_ready is True
+    assert acq.downloads_attempted == 0
+    assert acq.queries_run == 0
