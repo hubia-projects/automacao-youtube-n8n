@@ -222,7 +222,9 @@ def _process_one(mp4: Path, source_id: str, video_id: Optional[str],
                  topics: list[str], state: dict,
                  db: "LibraryDB", embedder: "SiglipEmbedder",
                  settings: "Settings",
-                 *, requirement_prompts: Optional[dict] = None) -> dict:
+                 *, requirement_prompts: Optional[dict] = None,
+                 requirement_embeddings: Optional[dict] = None,
+                 visual_prompt_embeddings: Optional[dict] = None) -> dict:
     """Phase 6 v2 — wrapper fino sobre ingest_asset canónico (P5+P6).
 
     Esta função NÃO mantém pipeline paralelo próprio. Delega em
@@ -252,6 +254,8 @@ def _process_one(mp4: Path, source_id: str, video_id: Optional[str],
             mp4, orphan_lic, db, settings, embedder,
             source_id=source_id, video_id=video_id,
             requirement_prompts=requirement_prompts,
+            requirement_embeddings=requirement_embeddings,
+            visual_prompt_embeddings=visual_prompt_embeddings,
         )
     except Exception as exc:
         # Last-ditch: ingest_asset não devolveu (não deveria acontecer
@@ -707,9 +711,14 @@ def main() -> int:
         try:
             # Sempre pipeline real (Gemini + SigLIP + register_shot); sem
             # branch stub — user pediu dados reais e resiliência em retries.
-            res = _process_one(mp4, sid, video_id, topics, state,
-                                db, embedder, settings,
-                                requirement_prompts=requirement_prompts)
+            res = _process_one(
+                mp4, sid, video_id, topics, state, db, embedder, settings,
+                requirement_prompts=requirement_prompts,
+                requirement_embeddings=(
+                    workset_ctx.requirement_embeddings if workset_ctx else None),
+                visual_prompt_embeddings=(
+                    workset_ctx.visual_prompt_embeddings if workset_ctx else None),
+            )
             # Separar sucesso de falha por analyze.status + register_error
             # (code-review ALTA sequencial): falhas NÃO devem contar como ok,
             # NÃO devem entrar em dedup (para permitir retry em runs futuras).

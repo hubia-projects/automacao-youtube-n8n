@@ -611,6 +611,29 @@ class S08Matching:
                  workset_result.is_workset_ready, len(plan.ranked_entities),
                  plan.ranked_entities[0].canonical_name if plan.ranked_entities else "—")
 
+        # item E/G (closure pass): biblioteca global EXISTENTE primeiro —
+        # popula a RequirementIndex com o que a biblioteca já tem (sem
+        # re-embed: vectores já armazenados) ANTES de qualquer decisão de
+        # aquisição. Depois, remede cada entity via RequirementIndex
+        # (matches semanticamente filtrados) em vez do scan CSV por
+        # substring — quando a index já tem matches; caso contrário
+        # measure_coverage_from_index devolve False e a medida do
+        # scan CSV (já feita dentro de build_workset) fica como está.
+        from studio.library.requirement_index import RequirementIndex
+        from studio.library.requirement_matching import (
+            index_existing_shots_against_workset,
+        )
+        from studio.matching.coverage_plan import measure_coverage_from_index
+        ri = RequirementIndex(db)
+        idx_stats = index_existing_shots_against_workset(workset_ctx, db, ri)
+        log.info("workset=%s: indexed existing library (scanned=%d, "
+                 "matches=%d)", workset_result.workset_id,
+                 idx_stats["shots_scanned"], idx_stats["matches_written"])
+        for ent in plan.ranked_entities:
+            if measure_coverage_from_index(ent, workset_ctx, ri, db):
+                ent.deficit_seconds = round(
+                    max(0.0, ent.target_seconds - ent.available_seconds), 3)
+
         # Fase D — top-up inteligente baseado em deficit do CoveragePlan.
         # Executa ENTRE o plano e o assign_shots: para cada entity com
         # deficit > 0, faz rondas de Pexels-search → ingest → re-measure.

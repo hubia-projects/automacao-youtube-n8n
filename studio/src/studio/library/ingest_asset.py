@@ -132,6 +132,8 @@ def ingest_asset(
     expected_shots: int = 1,
     state_store: Optional[AssetStateStore] = None,
     requirement_prompts: Optional[dict] = None,
+    requirement_embeddings: Optional[dict] = None,
+    visual_prompt_embeddings: Optional[dict] = None,
 ) -> tuple[IngestResult, AssetStateRecord]:
     """Wrapper canónico de ingest_file com P5+P6 invariantes.
 
@@ -165,6 +167,8 @@ def ingest_asset(
         result = ingest_file(
             path, license_raw, db, settings, embedder,
             requirement_prompts=requirement_prompts,
+            requirement_embeddings=requirement_embeddings,
+            visual_prompt_embeddings=visual_prompt_embeddings,
         )
     except LicenseError as exc:
         # Permanent failure — license invalid; retry will not change outcome.

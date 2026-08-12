@@ -43,6 +43,7 @@ from pydantic import BaseModel, Field, PrivateAttr
 
 from studio.config import Settings
 from studio.library.db import LibraryDB
+from studio.library.requirement_index import CS_CONFIRMED, CS_NOT_REQUIRED
 from studio.perf import Profiler
 from studio.script.entities import EntitySpan
 
@@ -347,6 +348,77 @@ def measure_coverage(
                   exc.__class__.__name__)
 
     return coverage
+
+
+def measure_coverage_from_index(
+    coverage: "EntityCoverage",
+    workset_ctx,
+    ri,
+    db: LibraryDB,
+) -> bool:
+    """item E/F/G (closure pass): RequirementIndex como fonte primária de
+    coverage — em vez de rescanear a biblioteca por LIKE textual
+    (`measure_coverage`, sujeito a falsos positivos/negativos de
+    substring), usa os matches JÁ persistidos e semanticamente filtrados
+    por `requirement_matching.matches_for_shot` (cosine contra
+    requirement_embeddings/visual_prompt_embeddings).
+
+    Só aplica quando o workset tem uma RequirementSpec para esta entity
+    (`workset_ctx.req_by_canonical`) E a RequirementIndex já tem pelo
+    menos 1 match para essa requirement — caso contrário (workset
+    novo/frio, ainda sem `index_existing_shots_against_workset` corrido)
+    devolve False e o caller mantém `measure_coverage()` (scan CSV) como
+    fallback — nunca regride para pior que o comportamento anterior.
+
+    Muta `coverage` in-place (mesmo contrato de `measure_coverage`).
+    Devolve True se aplicou, False se fallback é necessário.
+    """
+    if workset_ctx is None or ri is None:
+        return False
+    spec = workset_ctx.req_by_canonical(coverage.canonical_name)
+    if spec is None:
+        return False
+    matches = ri.list_for_requirement(workset_ctx.workset_id, spec.requirement_id)
+    if not matches:
+        return False
+
+    eligible_statuses = ({CS_CONFIRMED} if coverage.strict
+                         else {CS_CONFIRMED, CS_NOT_REQUIRED})
+    eligible = [m for m in matches if m.confirmation_status in eligible_statuses]
+    if not eligible:
+        # há matches (PENDING/REJECTED) mas nenhum elegível ainda — 0
+        # disponível é uma resposta VÁLIDA do índice (não um "sem dados"
+        # que justificasse cair no fallback CSV, que ignoraria o gate de
+        # confirmação estrito).
+        coverage.available_seconds = 0.0
+        coverage.available_distinct_shots = 0
+        coverage.available_files = 0
+        coverage.available_shot_ids = set()
+        coverage._per_shot_durations = {}
+        return True
+
+    dist_shots = {m.shot_id for m in eligible}
+    intervals_by_media: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    per_shot_dur: dict[str, float] = {}
+    dist_files: set[str] = set()
+    for shot_id in dist_shots:
+        row = db.get_shot(shot_id)
+        if not row:
+            continue
+        t_in = float(row.get("t_in", 0.0))
+        t_out = float(row.get("t_out", 0.0))
+        per_shot_dur[shot_id] = max(0.0, t_out - t_in)
+        sha = row.get("media_sha")
+        if sha:
+            dist_files.add(sha)
+            intervals_by_media[sha].append((t_in, t_out))
+    real_secs = sum(_union_seconds(ivs) for ivs in intervals_by_media.values())
+    coverage.available_seconds = round(real_secs, 3)
+    coverage.available_distinct_shots = len(dist_shots)
+    coverage.available_files = len(dist_files)
+    coverage.available_shot_ids = dist_shots
+    coverage._per_shot_durations = per_shot_dur
+    return True
 
 
 # ----------------- query hierarchy -----------------

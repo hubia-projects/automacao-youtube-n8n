@@ -198,6 +198,8 @@ def ingest_file(
     embedder: Embedder,
     *,
     requirement_prompts: dict[str, str] | None = None,
+    requirement_embeddings: dict[str, np.ndarray] | None = None,
+    visual_prompt_embeddings: dict[str, list] | None = None,
 ) -> IngestResult:
     """Ingerir 1 ficheiro na biblioteca. Instrumentada via Profiler.
 
@@ -210,6 +212,14 @@ def ingest_file(
         requirement_prompts: canonical_entity -> text_en. Pre-calculado pelo
             reconcile (uma embed_text() por canonical). None ou vazio →
             fallback legacy per-shot analyze_shot (retro-compat).
+        requirement_embeddings / visual_prompt_embeddings: item G (closure
+            pass) — embeddings JÁ computadas por
+            `workset_context.load_workset_context()` (1× por run, cacheadas
+            no SiglipEmbedder). Quando fornecido, tem PRIORIDADE sobre
+            `requirement_prompts` — evita recomputar embed_text() por
+            ficheiro ingerido. `visual_prompt_embeddings` (bank multi-prompt)
+            tem prioridade sobre `requirement_embeddings` (single vector)
+            por canonical.
 
     try/finally garante Profiler.record("ingest_file") em TODOS os caminhos
     (happy / rejected / skipped_duplicate).
@@ -306,7 +316,23 @@ def ingest_file(
         # §P4 (TEST 5C): cache key estruturada estável — caller passa
         # workflow_id+req_id+prompt_v+model_id para dedup cross-call.
         req_text_embeds: dict[str, np.ndarray] = {}
-        if requirement_prompts:
+        if requirement_embeddings or visual_prompt_embeddings:
+            # item G (closure pass): embeddings JÁ computadas 1× por
+            # load_workset_context() (WorksetContext.requirement_embeddings /
+            # visual_prompt_embeddings) — sem isto, cada ficheiro ingerido
+            # refazia embed_text() por canonical (redundante: mesmo texto,
+            # mesmo modelo, N vezes por workset). Bank multi-prompt tem
+            # prioridade (mesma semântica de _triage_shots: max cosine).
+            for canon in set(requirement_embeddings or {}) | set(
+                    visual_prompt_embeddings or {}):
+                bank = (visual_prompt_embeddings or {}).get(canon)
+                if bank:
+                    req_text_embeds[canon] = bank
+                    continue
+                single = (requirement_embeddings or {}).get(canon)
+                if single is not None:
+                    req_text_embeds[canon] = single
+        elif requirement_prompts:
             t_triage = time.perf_counter()
             # Captura contexto uma vez por asset/call. Cached em SiglipEmbedder.
             _wf = (getattr(settings, "video_id", None) or "wf")

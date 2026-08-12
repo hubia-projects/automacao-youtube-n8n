@@ -87,3 +87,50 @@ def matches_for_shot(
             evidence=("semantic_triage",),
         ))
     return out
+
+
+def index_existing_shots_against_workset(
+    workset_ctx,
+    db,
+    ri,
+    *,
+    limit: int = 5000,
+    min_quality: int = 4,
+    min_similarity: float = DEFAULT_MIN_SIMILARITY,
+) -> dict:
+    """item E/G: biblioteca global EXISTENTE primeiro, sem re-embed.
+
+    Scan directo de `db.iter_rows` (os vectores SigLIP já estão
+    armazenados por shot — nunca se re-embed aqui), aplica
+    `matches_for_shot` por linha e persiste os matches semanticamente
+    justificados via `ri.upsert_match`. Chamado ANTES de qualquer decisão
+    de aquisição — a RequirementIndex fica populada com o que a biblioteca
+    JÁ tem antes de decidir o que falta comprar (evita repetir sweeps para
+    entities que a biblioteca global já cobre).
+
+    Devolve stats {"shots_scanned": N, "matches_written": M} para log/
+    telemetria do caller.
+    """
+    stats = {"shots_scanned": 0, "matches_written": 0}
+    if workset_ctx is None:
+        return stats
+    rows = db.iter_rows(
+        f"quality >= {int(min_quality)} AND revoked = false", limit=limit)
+    stats["shots_scanned"] = len(rows)
+    for row in rows:
+        shot_id = row.get("shot_id") or ""
+        if not shot_id:
+            continue
+        matches = matches_for_shot(
+            shot_id=shot_id,
+            media_sha=row.get("media_sha", ""),
+            t_in=float(row.get("t_in", 0.0)),
+            t_out=float(row.get("t_out", 0.0)),
+            shot_vec=row.get("vec"),
+            workset_ctx=workset_ctx,
+            min_similarity=min_similarity,
+        )
+        for m in matches:
+            if ri.upsert_match(m):
+                stats["matches_written"] += 1
+    return stats
