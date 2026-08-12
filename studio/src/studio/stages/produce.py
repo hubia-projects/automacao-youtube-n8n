@@ -530,7 +530,7 @@ class S08Matching:
         from studio.library.db import LibraryDB
         from studio.matching.assigner import assign_shots
         from studio.matching.briefs import VisualBrief
-        from studio.matching.coverage_plan import build_coverage_plan, write_plan
+        from studio.matching.coverage_plan import write_plan
         from studio.script.entities import EntitySpan
         from studio.script.scenes import Scene
 
@@ -566,10 +566,36 @@ class S08Matching:
 
             embedder = SiglipEmbedder()
         db = LibraryDB(ctx.settings.library_root)
-        plan = build_coverage_plan(spans, db, ctx.settings, topic=topic)
+
+        # item B (closure pass): S08 vivo passa a usar o workset genérico
+        # (build_workset/load_workset_context) em vez de chamar
+        # build_coverage_plan directamente sem scenes/include_filler —
+        # workset_builder já invoca build_coverage_plan(scenes=...,
+        # include_filler=True) internamente e persiste o resultado em
+        # data/library/worksets/<workset_id>/ (SSoT partilhada com
+        # reconcile.py/discovery.py).
+        from studio.library.workset_builder import build_workset
+        from studio.library.workset_context import (
+            MODE_WORKFLOW,
+            load_workset_context,
+        )
+        script_path = ctx.run_dir / "03_script" / "script.md"
+        script_text = script_path.read_text("utf-8") if script_path.exists() else ""
+        theme_spec = _theme_spec(ctx)
+        workset_result = build_workset(
+            theme_spec, script_text, scenes, spans, db, ctx.settings,
+            workset_id=ctx.video_id,
+        )
+        plan = workset_result.plan
+        workset_ctx = load_workset_context(
+            workflow_id=workset_result.workset_id,
+            workset_dir=workset_result.workset_dir,
+            embedder=embedder, mode=MODE_WORKFLOW,
+        )
         write_plan(plan, d / "coverage_plan.json")
-        log.info("coverage_plan: %d entities (top=%s)",
-                 len(plan.ranked_entities),
+        log.info("workset=%s (reused=%s, ready=%s): %d entities (top=%s)",
+                 workset_result.workset_id, workset_result.reused,
+                 workset_result.is_workset_ready, len(plan.ranked_entities),
                  plan.ranked_entities[0].canonical_name if plan.ranked_entities else "—")
 
         # Fase D — top-up inteligente baseado em deficit do CoveragePlan.
@@ -928,6 +954,26 @@ class S08Matching:
                 scenes=scenes, briefs=briefs, segments=result.segments,
                 entity_spans=spans, coverage_plan=plan, settings=ctx.settings,
             )
+
+        # item B (closure pass): coverage.json REAL do workset — reflecte o
+        # que foi de facto confirmado nesta run (não o scaffold vazio do
+        # build_workset inicial). confirmed_index vem do warm-up de Fase E
+        # (canon_lower -> [shot_id, ...]).
+        from studio.matching.coverage_plan import write_workset_readiness
+        confirmed_index = {
+            canon: [row.get("shot_id") for row in rows if row.get("shot_id")]
+            for canon, rows in confirmed_entities.items()
+        }
+        try:
+            write_workset_readiness(
+                plan, db, ctx.settings,
+                workset_result.workset_dir / "coverage.json",
+                confirmed_index=confirmed_index, remeasure=False,
+            )
+        except Exception as exc:
+            log.warning("S08: write_workset_readiness final falhou (não "
+                        "fatal, coverage.json fica no estado do build "
+                        "inicial): %s", exc.__class__.__name__)
 
         # Escreve repair_log.json SEMPRE (audit trail) — mesmo em fail-closed.
         (d / "repair_log.json").write_text(
