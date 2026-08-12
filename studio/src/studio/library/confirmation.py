@@ -24,11 +24,13 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
+import httpx
 from pydantic import ValidationError
 
 from studio.config import Settings
 from studio.library.db import LibraryDB
 from studio.library.metadata import DetectedEntity
+from studio.library.rate_limit import get_gemini_limiter
 
 log = logging.getLogger("studio.confirmation")
 
@@ -151,6 +153,16 @@ def generate_multimodal(parts: list[dict], settings: Settings,
                 "application/json" if json_mode else "text/plain"),
         },
     }
+    # item 21 (Gemini Vision único): esta função nunca passava pelo
+    # GeminiRateLimiter partilhado com metadata.py — cada caller (batch
+    # de metadados vs confirmação de entidades) hamartelava a API
+    # independentemente, e o próprio docstring de rate_limit.py já listava
+    # esta função como consumer esperado. Fail-fast (sem HTTP) se o
+    # circuit-breaker estiver aberto, tal como metadata.py.
+    limiter = get_gemini_limiter(settings)
+    if not limiter.acquire(timeout=30.0):
+        log.warning("Vision %s: circuit breaker open — fail-fast", tag)
+        return '{"rejected": true, "reason": "circuit_breaker_open"}', 0.0
     try:
         with httpx.Client(timeout=60) as c:
             r = c.post(url,

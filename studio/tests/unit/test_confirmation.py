@@ -190,8 +190,6 @@ class TestRequireEntityConfirmation(unittest.TestCase):
 
 
 
-@unittest.skip("mock httpx.Client é frágil fora do integration test; "
-               "Vision real path exercido em Fase F E2E smoke run")
 class TestEVisionHttpx(unittest.TestCase):
     """T_Vision_Httpx — regression: Vision real path (não mock) usa
     httpx generateContent com payload multimodal. Patch httpx.Client.post
