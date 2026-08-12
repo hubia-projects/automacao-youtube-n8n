@@ -406,6 +406,12 @@ def main() -> int:
     # substituível por `workset_ctx is not None`. Continua a funcionar se
     # load_workset_context levantar (a except external ao scope).
     workset_ctx = None
+    # item 8 (RequirementIndex singleton por serviço): instanciado UMA vez
+    # aqui (se/quando um workset_ctx existir), reutilizado no loop de
+    # ingest em vez de recriado por asset — RequirementIndex.__init__ é
+    # leve (só resolve paths), mas recriar por chamada é o anti-padrão que
+    # a doutrina pede para eliminar.
+    ri_instance = None
     if args.workflow:
         from studio.library.buckets import read_workflow, get_progress
         workflow_data = read_workflow(args.workflow)
@@ -556,9 +562,18 @@ def main() -> int:
                 # (S08Matching, repair loop) poderem ler persistência.
                 try:
                     from studio.library.requirement_index import RequirementIndex
-                    state["_requirement_index_initialized"] = True
+                    # BUG CORRIGIDO (item 8): esta flag chamava-se
+                    # "_requirement_index_initialized" mas o guard mais
+                    # abaixo (persistência de RequirementMatch pós-DONE)
+                    # verificava state.get("_requirement_index") — chave
+                    # diferente, nunca coincidia, bloco de persistência
+                    # nunca executava. Agora a MESMA chave é usada, e a
+                    # instância (não serializável) fica em `ri_instance`
+                    # no scope da função — singleton por run, não por asset.
+                    ri_instance = RequirementIndex(db)
+                    state["_requirement_index"] = True
                     log.info("RequirementIndex pronto (tabela: %s) — "
-                             "instância em state._ri_inst (não serializada)",
+                             "instância única em ri_instance (não serializada)",
                              "requirement_matches")
                 except Exception as exc_ri:
                     log.debug("RequirementIndex init skip: %s", exc_ri.__class__.__name__)
@@ -720,12 +735,10 @@ def main() -> int:
                         from studio.library.requirement_index import (
                             RequirementMatch, CS_CONFIRMED, CS_PENDING,
                         )
-                        # P7 — load_workset_context já produz WorksetContext rich.
-                        # Para persistir RequirementMatch pós-DONE, precisamos
-                        # do RequirementIndex instance (não-em-state, recriado
-                        # por run). Inicialização explícita + scope-check.
-                        from studio.library.requirement_index import RequirementIndex
-                        ri = RequirementIndex(db)
+                        # item 8: reutiliza a instância única criada no
+                        # arranque do reconcile (ri_instance), em vez de
+                        # recriar RequirementIndex por asset.
+                        ri = ri_instance or RequirementIndex(db)
                         # Lemos TODOS os shots com este media_sha e, para
                         # cada requirement do workset_ctx, criamos uma
                         # match PENDING. Em modos com Vision-oracle
@@ -1006,11 +1019,28 @@ def _p11_acquire(state, db, embedder, settings, video_id, workset_ctx) -> None:
             except Exception:
                 return False
 
+        # item 9: provider_resolver REAL (não o stub `lambda q, lvl: []`
+        # que fazia desta service "canónica" nunca chamar a rede). Fica
+        # fail-closed em mock_mode/sem API key — mesmo comportamento
+        # seguro de antes nesses casos, mas agora funciona de verdade
+        # quando há credenciais.
+        if settings.mock_mode or not getattr(settings, "pexels_api_key", ""):
+            provider_resolver = lambda q, lvl: []
+            log.info("reconcile: P11 provider_resolver=stub "
+                     "(mock_mode=%s, pexels_api_key=%s)",
+                     settings.mock_mode,
+                     bool(getattr(settings, "pexels_api_key", "")))
+        else:
+            from studio.library.acquisition import make_provider_resolver
+            dest = settings.runs_root / "_acquisition_tmp"
+            provider_resolver = make_provider_resolver(
+                settings, dest, providers=("pexels",))
+
         acq = acquire_for_deficits(
             workset_ctx=workset_ctx,
             db=db, embedder=embedder, settings=settings,
             deficit_items=deficit_items,
-            provider_resolver=lambda q, lvl: [],
+            provider_resolver=provider_resolver,
             remeasure_coverage=_remeasure,
             max_iterations=4,
         )

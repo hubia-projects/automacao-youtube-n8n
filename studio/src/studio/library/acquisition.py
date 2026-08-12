@@ -38,6 +38,70 @@ from typing import Callable, Optional
 
 log = logging.getLogger("studio.acquisition")
 
+def _load_provider_sweep(provider: str) -> Callable:
+    """Import lazy do `sweep()` concreto — sem cache module-level: os
+    módulos `sources/*.py` só importam httpx/config (leve), e cachear a
+    função directamente quebrava `unittest.mock.patch("...pexels.sweep")`
+    entre testes (referência antiga ficava presa após o patch reverter —
+    bug real descoberto ao escrever os testes deste módulo)."""
+    if provider == "pexels":
+        from studio.library.sources import pexels as _mod
+    elif provider == "pixabay":
+        from studio.library.sources import pixabay as _mod
+    elif provider == "vimeo":
+        from studio.library.sources import vimeo as _mod
+    elif provider == "wikimedia":
+        from studio.library.sources import wikimedia as _mod
+    else:
+        raise ValueError(f"provider desconhecido: {provider!r}")
+    return _mod.sweep
+
+
+def make_provider_resolver(
+    settings,
+    dest: Path,
+    *,
+    providers: tuple[str, ...] = ("pexels",),
+    count_per_query: int = 2,
+) -> Callable[[str, int], list[tuple[Path, dict]]]:
+    """Adapter REAL (item 9) — liga `acquire_for_deficits()` aos providers
+    concretos (`pexels.sweep`/`pixabay.sweep`/`vimeo.sweep`/`wikimedia.sweep`,
+    todos com a mesma assinatura `sweep(query, count, settings, dest)`),
+    uniformizando para `provider_resolver(query, level) -> list[(Path, dict)]`.
+
+    Antes desta função, o único caller de `acquire_for_deficits`
+    (`reconcile.py`) passava `provider_resolver=lambda q, lvl: []` — a
+    aquisição "canónica" nunca fazia uma chamada de rede real.
+
+    `count_per_query` pequeno por defeito — micro-waves (doutrina: nunca
+    `sweep(50)` de uma vez), não um scrape em massa."""
+    dest.mkdir(parents=True, exist_ok=True)
+
+    def _resolver(query: str, level: int) -> list[tuple[Path, dict]]:
+        out: list[tuple[Path, dict]] = []
+        for provider in providers:
+            try:
+                fn = _load_provider_sweep(provider)
+            except ValueError:
+                log.warning(
+                    "make_provider_resolver: provider '%s' desconhecido — skip",
+                    provider)
+                continue
+            try:
+                results = fn(query, count_per_query, settings, dest)
+            except Exception as exc:
+                log.warning(
+                    "make_provider_resolver: %s.sweep(%r) falhou: %s",
+                    provider, query, exc.__class__.__name__)
+                continue
+            for path, meta in results:
+                meta = dict(meta)
+                meta.setdefault("provider", provider)
+                out.append((path, meta))
+        return out
+
+    return _resolver
+
 
 @dataclass
 class DeficitItem:
@@ -168,6 +232,7 @@ def acquire_for_deficits(
     query_history_db: Optional[object] = None,
     n_levels: int = 4,
     max_iterations: int = 8,
+    max_downloads: int = 200,
     remeasure_coverage: Optional[Callable[[], bool]] = None,
 ) -> AcquisitionReport:
     """Pipeline aquisição unificada por deficits.
@@ -183,6 +248,9 @@ def acquire_for_deficits(
         query_history_db: QueryHistory (não repete queries que deram 0).
         n_levels: nº de níveis hierárquicos a tentar por item antes de avançar.
         max_iterations: nº máximo de outer loops antes de STOP forçado.
+        max_downloads: absolute_safety_cap (doutrina item 11) — nunca uma
+            meta, só um limite catastrófico. STOP HONESTO reporta deficits
+            exactos se atingido antes de coverage_ready.
         remeasure_coverage: callable () -> bool. Gate STOP. Se None, usa
             fallback: assumes stop quando todos deficits<=0.
 
@@ -209,6 +277,14 @@ def acquire_for_deficits(
     # Iteração outer — cada iteração tenta satisfazer top deficit.
     for it in range(max_iterations):
         rep.iterations = it + 1
+        if rep.downloads_succeeded >= max_downloads:
+            log.warning(
+                "acquire_for_deficits: max_downloads=%d atingido — STOP "
+                "HONESTO (safety cap, não é meta). Deficits restantes: %s",
+                max_downloads,
+                [d.canonical_entity for d in deficit_items if d.deficit_seconds > 0],
+            )
+            break
         # P11 fix (code-reviewer): remeasure MUST fire at start of every
         # outer iteration regardless of provider resolvability. With
         # provider_resolver=[] (test T17), inner loop runs queries with
