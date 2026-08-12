@@ -11,6 +11,7 @@ import logging
 
 from studio.approvals.gates import GatePending, request_gate
 from studio.orchestrator.stage import RunContext, StageResult
+from studio.theme import ThemeSpec
 from studio.script.lint import lint, normalize_for_tts, scrub_safety_phrases
 from studio.script.scenes import segment_scenes
 from studio.script.writer import (
@@ -257,6 +258,15 @@ def _params(ctx: RunContext) -> tuple[str, float]:
     topic = ctx.params.get("topic") or ctx.state.topic
     duration = float(ctx.params.get("duration_minutes", 12.0))
     return topic, duration
+
+
+def _theme_spec(ctx: RunContext) -> ThemeSpec:
+    """ThemeSpec do run — retrocompatível com runs sem `theme_spec` em params."""
+    spec = ThemeSpec.from_params(ctx.params)
+    if not spec.theme:
+        topic, duration = _params(ctx)
+        spec = ThemeSpec(theme=topic, target_duration_minutes=duration)
+    return spec
 
 
 class S01Topic:

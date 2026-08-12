@@ -12,6 +12,7 @@ from pathlib import Path
 from studio.config import get_settings
 from studio.logging_setup import configure_logging
 from studio.orchestrator.runner import PipelineRunner, StageFailed, WaitingApproval, resume
+from studio.theme import ThemeSpec
 from studio.orchestrator.stage import RunContext
 from studio.orchestrator.state import load_state, new_state, save_state, state_path
 
@@ -38,15 +39,32 @@ def _ctx(video_id: str, params: dict | None = None) -> RunContext:
 def cmd_run(args: argparse.Namespace) -> int:
     settings = get_settings()
     video_id = args.video_id or datetime.now().strftime("%Y%m%d-%H%M%S")
-    ctx = _ctx(video_id, {"topic": args.topic,
-                          "duration_minutes": args.duration,
+
+    if getattr(args, "brief_file", None):
+        theme_spec = ThemeSpec.from_brief_file(args.brief_file)
+    else:
+        theme_spec = ThemeSpec.from_cli(
+            topic=args.topic,
+            duration_minutes=args.duration,
+            required_topics=args.required_topics,
+            optional_topics=args.optional_topics,
+            language=args.language,
+            location=args.location,
+        )
+    if not theme_spec.theme:
+        raise SystemExit("tema vazio — usa --topic ou --brief-file")
+
+    ctx = _ctx(video_id, {"topic": theme_spec.theme,
+                          "duration_minutes": theme_spec.target_duration_minutes,
                           "gate_script": args.gate_script,
-                          "upload": args.upload})
+                          "upload": args.upload,
+                          "auto_acquire_library": args.auto_acquire_library,
+                          "theme_spec": theme_spec.to_params()})
 
     if state_path(ctx.run_dir).exists():
         raise SystemExit(f"run {video_id} já existe — usa `studio resume {video_id}`")
 
-    state = new_state(video_id, args.topic or "", settings.budget_usd_per_run,
+    state = new_state(video_id, theme_spec.theme, settings.budget_usd_per_run,
                       params=ctx.params)
     save_state(state, ctx.run_dir)
     return _execute(ctx, _build_stages(args.pipeline), state)
@@ -375,6 +393,20 @@ def main(argv: list[str] | None = None) -> int:
                        help="gate humano de aprovação do roteiro")
     p_run.add_argument("--upload", action="store_true",
                        help="publica no YouTube (privado) após aprovação")
+    p_run.add_argument("--required-topic", action="append", dest="required_topics",
+                       default=[], metavar="TOPIC",
+                       help="tópico obrigatório no roteiro (repetível)")
+    p_run.add_argument("--optional-topic", action="append", dest="optional_topics",
+                       default=[], metavar="TOPIC",
+                       help="tópico editorial opcional (repetível)")
+    p_run.add_argument("--language", default="pt-PT")
+    p_run.add_argument("--location", default=None)
+    p_run.add_argument("--brief-file", type=Path, default=None,
+                       help="JSON com theme/target_duration_minutes/mandatory_topics/"
+                            "optional_topics/language/location — sobrepõe as outras flags")
+    p_run.add_argument("--auto-acquire-library", action="store_true",
+                       help="adquire assets automaticamente até 100%% de cobertura, "
+                            "sem gate manual (default: FALSE — pede aprovação)")
     p_run.set_defaults(func=cmd_run)
 
     p_res = sub.add_parser("resume", help="retomar run onde parou")
