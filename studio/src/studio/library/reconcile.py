@@ -589,6 +589,44 @@ def main() -> int:
                 "reconcile prossegue sem gate autoritativo: %s",
                 exc.__class__.__name__)
 
+    already_done = {d["file"] for d in state["done"]}
+    already_failed_files = {f["file"] for f in state["failed"]}
+    # UPSTREAM-CHANGE 2026-08-11 §T1: --force-redo-done TEST-ONLY. NÃO
+    # persistimos a limpeza — o reconcile original adiciona novos done a
+    # state[\"done\"]; com flag activa, começamos com lista vazia em memória
+    # para esta run apenas (state.json mantém-se intacto até _save_state).
+    if args.force_redo_done:
+        log.warning("--force-redo-done ACTIVE: ignorando state[\"done\"] em "
+                    "memória (apenas este run); state.json será actualizado "
+                    "no fim do loop com novos done entries")
+        already_done = set()
+    # BUG CORRIGIDO (item T): esta atribuição de `candidates` estava DEPOIS
+    # do bloco DISCOVERY_LITE que a lia — `UnboundLocalError` garantido em
+    # toda run, sempre engolido pelo `except Exception` do bloco e logado
+    # como "skipped" (nunca corria de facto). Movida para ANTES.
+    candidates = sorted(
+        mp4 for mp4 in MEDIA_DIR.iterdir()
+        if mp4.suffix.lower() == ".mp4"
+        and mp4.name not in already_done
+        and mp4.name not in already_failed_files
+    )
+    if args.limit:
+        candidates = candidates[:args.limit]
+    # PHASE 1 — Cheap pre-filter OPT-IN (default OFF).
+    # Os mp4 órfãos têm filenames tipo hash do Pexels (`00a47a9...47d.mp4`), sem
+    # keywords do topic. Aplicar pre-filter por substrings do nome=drop-out 100%.
+    # Em vez disso, confiamos em Gemini Vision (places_csv/landmarks_csv) para
+    # tagagem, + is_ready stop quando a meta do workflow é atingida.
+    if args.workflow and topics and getattr(args, "lazy_filter", False):
+        norm_topics = [t.lower().replace("-", "").replace("_", "").replace(" ", "")
+                       for t in topics if t.strip()]
+        candidates = [m for m in candidates if any(
+            nt and nt in m.name.lower().replace("-", "").replace("_", "").replace(" ", "")
+            for nt in norm_topics
+        )]
+        log.info("workflow LAZY pre-filter: %d/%d ficheiros passam (user opt-in)",
+                 len(candidates), len(norm_topics))
+
     # P8 (2026-08-11): DISCOVERY LITE phase ANTES do main ingest loop.
     # Substitui "full ingest 908 cada" por scan_batch com 1 frame + SigLIP
     # image batch (poupa 90× wall-clock vs SceneDetect+Gemini por ficheiro).
@@ -640,39 +678,6 @@ def main() -> int:
         log.warning("reconcile: DISCOVERY_LITE skipped: %s",
                     exc.__class__.__name__)
 
-    already_done = {d["file"] for d in state["done"]}
-    already_failed_files = {f["file"] for f in state["failed"]}
-    # UPSTREAM-CHANGE 2026-08-11 §T1: --force-redo-done TEST-ONLY. NÃO
-    # persistimos a limpeza — o reconcile original adiciona novos done a
-    # state[\"done\"]; com flag activa, começamos com lista vazia em memória
-    # para esta run apenas (state.json mantém-se intacto até _save_state).
-    if args.force_redo_done:
-        log.warning("--force-redo-done ACTIVE: ignorando state[\"done\"] em "
-                    "memória (apenas este run); state.json será actualizado "
-                    "no fim do loop com novos done entries")
-        already_done = set()
-    candidates = sorted(
-        mp4 for mp4 in MEDIA_DIR.iterdir()
-        if mp4.suffix.lower() == ".mp4"
-        and mp4.name not in already_done
-        and mp4.name not in already_failed_files
-    )
-    if args.limit:
-        candidates = candidates[:args.limit]
-    # PHASE 1 — Cheap pre-filter OPT-IN (default OFF).
-    # Os mp4 órfãos têm filenames tipo hash do Pexels (`00a47a9...47d.mp4`), sem
-    # keywords do topic. Aplicar pre-filter por substrings do nome=drop-out 100%.
-    # Em vez disso, confiamos em Gemini Vision (places_csv/landmarks_csv) para
-    # tagagem, + is_ready stop quando a meta do workflow é atingida.
-    if args.workflow and topics and getattr(args, "lazy_filter", False):
-        norm_topics = [t.lower().replace("-", "").replace("_", "").replace(" ", "")
-                       for t in topics if t.strip()]
-        candidates = [m for m in candidates if any(
-            nt and nt in m.name.lower().replace("-", "").replace("_", "").replace(" ", "")
-            for nt in norm_topics
-        )]
-        log.info("workflow LAZY pre-filter: %d/%d ficheiros passam (user opt-in)",
-                 len(candidates), len(norm_topics))
     total_today = len(candidates)
     total_ever = total_today + len(already_done)
     log.info("reconcile: candidatos=%d  já done=%d  já fail=%d  total_pool=%d",
@@ -732,9 +737,6 @@ def main() -> int:
                         and res["result"].media_sha
                         and state.get("_requirement_index") is not None):
                     try:
-                        from studio.library.requirement_index import (
-                            RequirementMatch, CS_CONFIRMED, CS_PENDING,
-                        )
                         # item 8: reutiliza a instância única criada no
                         # arranque do reconcile (ri_instance), em vez de
                         # recriar RequirementIndex por asset.
@@ -748,31 +750,33 @@ def main() -> int:
                                      .where(f"media_sha = '{res['result'].media_sha}'")
                                      .limit(50).to_list())
                         if workset_ctx is not None:
+                            # BUG CORRIGIDO (item F): antes criava-se um
+                            # RequirementMatch PENDING para CADA shot ×
+                            # CADA requirement do workset, com
+                            # similarity=0.0 hardcoded (all-shots×all-
+                            # requirements, o anti-padrão que a doutrina
+                            # pede para eliminar). Agora usa
+                            # requirement_matching.matches_for_shot —
+                            # função partilhada (item U) que só persiste
+                            # match para requirement(s) semanticamente
+                            # justificados (cosine >= floor).
+                            from studio.library.requirement_matching import (
+                                matches_for_shot,
+                            )
+                            n_persisted = 0
                             for row in shot_rows[:10]:    # cap 10/per asset
-                                shot_id = row.get("shot_id", "")
-                                # default PENDING (SigLIP triage OK mas
-                                # ainda não correu Vision oracle nesta
-                                # entity — primeira run)
-                                for canon in workset_ctx.canonicals():
-                                    spec = workset_ctx.req_by_canonical(canon)
-                                    if spec is None:
-                                        continue
-                                    # PENDING strict→não passa; non-strict OK
-                                    ri.upsert_match(RequirementMatch(
-                                        workset_id=workset_ctx.workset_id,
-                                        requirement_id=spec.requirement_id,
-                                        shot_id=shot_id,
-                                        media_sha=res["result"].media_sha,
-                                        similarity=0.0,
-                                        duration=float(row.get("t_out", 0.0))
-                                                  - float(row.get("t_in", 0.0)),
-                                        confirmation_status=CS_PENDING,
-                                        confirmation_confidence=0.0,
-                                        strict_eligible=bool(spec.strict),
-                                        evidence=("triage_pending",),
-                                    ))
-                            log.debug("reconcile: persisti %d RequirementMatch PENDING",
-                                      len(shot_rows[:10]) * len(workset_ctx.canonicals()))
+                                for m in matches_for_shot(
+                                    shot_id=row.get("shot_id", ""),
+                                    media_sha=res["result"].media_sha,
+                                    t_in=float(row.get("t_in", 0.0)),
+                                    t_out=float(row.get("t_out", 0.0)),
+                                    shot_vec=row.get("vec"),
+                                    workset_ctx=workset_ctx,
+                                ):
+                                    ri.upsert_match(m)
+                                    n_persisted += 1
+                            log.debug("reconcile: persisti %d RequirementMatch "
+                                      "(semanticamente filtrados)", n_persisted)
                     except Exception as exc:
                         log.debug("reconcile: RequirementIndex persist skip: %s",
                                   exc.__class__.__name__)
