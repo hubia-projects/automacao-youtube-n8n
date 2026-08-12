@@ -21,6 +21,8 @@ from studio.config import Settings
 from studio.library.metadata import (
     ShotMetadata,
     analyze_shots_batch,
+    get_gemini_telemetry,
+    reset_gemini_telemetry,
 )
 from studio.library.rate_limit import reset_singleton
 
@@ -291,6 +293,45 @@ def test_split_progressivo_on_parse_failure(tmp_path: Path):
 
 
 # ---------- Test 5: mock_mode → per-shot determinístico ---------------------------
+# ---------- T17 (closure pass, item M): 403 é fail-fast, NUNCA split ------------
+def test_403_permanent_credential_error_no_split_single_request(tmp_path: Path):
+    """Bug corrigido: 401/403/404 (excepto 429) caía no MESMO
+    _split_on_failure progressivo (8→4+4→2+2→1) que timeouts/parse errors
+    — um erro de credencial gastava N chamadas HTTP redundantes com o
+    MESMO 403 antes de desistir. Agora: 1 request, sem split, todos os
+    shots METADATA_INCOMPLETE imediatamente."""
+    reset_singleton()
+    reset_gemini_telemetry()
+    settings = _mock_settings(mock_mode=False)
+    kfs = _fake_keyframes(tmp_path, 2)
+    shots = [("shot_a", [kfs[0]]), ("shot_b", [kfs[1]])]
+    post_calls = []
+
+    def fake_post(url, **kwargs):
+        post_calls.append(url)
+        return SimpleNamespace(
+            status_code=403, headers={}, json=lambda: {"error": "PERMISSION_DENIED"},
+        )
+
+    with patch("studio.library.metadata.httpx.post", side_effect=fake_post):
+        with patch("studio.library.rate_limit.GeminiRateLimiter.acquire",
+                   return_value=True):
+            out = analyze_shots_batch(shots, settings)
+
+    assert len(post_calls) == 1, (
+        f"403 devia ser fail-fast (1 request, sem split); "
+        f"obtido {len(post_calls)} calls"
+    )
+    assert out["shot_a"][0] is None
+    assert out["shot_b"][0] is None
+    tel = get_gemini_telemetry()
+    assert tel.actual_http_requests == 1
+    assert tel.actual_http_4xx_failfast == 1
+    assert tel.actual_split_count == 0, (
+        "403 não deve accionar _split_on_failure"
+    )
+
+
 def test_mock_mode_deterministic():
     """Em mock_mode (sem gemini_api_key ou settings.mock_mode), per-shot
     fallback usa _mock_metadata (determinístico por nome do ficheiro).

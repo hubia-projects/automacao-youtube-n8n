@@ -344,6 +344,21 @@ def _gemini_batched_with_retry(
     Profiler.record("gemini_http", time.perf_counter() - t_http, items=len(shots))
     _t.actual_http_s += time.perf_counter() - t_http
 
+    # BUG CORRIGIDO (item M — closure pass): 401/403/404/... (4xx permanente,
+    # excepto 429) já incrementava actual_http_4xx_failfast acima, mas
+    # depois caía no MESMO `_split_on_failure` progressivo (8→4+4→2+2→1)
+    # usado para timeouts/parse errors — um erro de credencial/permissão
+    # gastava N chamadas HTTP redundantes (todas com o mesmo 403) antes de
+    # desistir. Um erro permanente não melhora ao dividir o batch: fail-fast
+    # com 1 única request, sem split, sem fan-out per-shot.
+    if 400 <= resp.status_code < 500 and resp.status_code != 429:
+        log.error("_gemini_batched_with_retry: status %d (4xx permanente) — "
+                  "fail-fast, %d shots METADATA_INCOMPLETE (1 request, "
+                  "sem split)", resp.status_code, len(shots))
+        for sid, _ks in shots:
+            out[sid] = (None, 0.0)
+        return out
+
     # 4) 429 → retry BATCH (NÃO split).
     if resp.status_code == 429:
         retry_after = _parse_retry_after(resp.headers)
