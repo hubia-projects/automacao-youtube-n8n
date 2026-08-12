@@ -1083,6 +1083,42 @@ class S08Matching:
                         "fatal, coverage.json fica no estado do build "
                         "inicial): %s", exc.__class__.__name__)
 
+        # item I/J (closure pass): allocação REAL de shots por requirement
+        # (nunca mais o scaffold vazio `{"by_entity": {}}`) + selection
+        # feasibility — a mesma cobertura medida pode ser inatingível na
+        # prática se dois requirements dependessem do MESMO shot; o
+        # allocator greedy garante que cada shot só é usado uma vez.
+        try:
+            from studio.library.selection import allocate_shots
+            alloc = allocate_shots(plan, workset_ctx, ri)
+            by_canonical: dict[str, list[str]] = {}
+            for ent in plan.ranked_entities:
+                spec = workset_ctx.req_by_canonical(ent.canonical_name)
+                by_canonical[ent.canonical_name] = (
+                    alloc.by_requirement.get(spec.requirement_id, [])
+                    if spec is not None else [])
+            (workset_result.workset_dir / "selected_shots.json").write_text(
+                json.dumps({
+                    "schema_version": "1.0",
+                    "workset_id": workset_result.workset_id,
+                    "selection_policy": "greedy: strict CONFIRMED > "
+                        "core NOT_REQUIRED/CONFIRMED > filler; "
+                        "sem reuso de shot_id; cap por media_sha",
+                    "selection_feasible": alloc.selection_feasible,
+                    "by_entity": by_canonical,
+                }, ensure_ascii=False, indent=2), "utf-8")
+            cov_path = workset_result.workset_dir / "coverage.json"
+            cov_doc = json.loads(cov_path.read_text("utf-8"))
+            cov_doc["selection_feasible"] = alloc.selection_feasible
+            cov_doc["overall_ready"] = bool(
+                cov_doc.get("is_workset_ready")) and alloc.selection_feasible
+            cov_path.write_text(
+                json.dumps(cov_doc, ensure_ascii=False, indent=2), "utf-8")
+        except Exception as exc:
+            log.warning("S08: allocate_shots falhou (não fatal, "
+                        "selected_shots.json fica no estado anterior): %s",
+                        exc.__class__.__name__)
+
         # Escreve repair_log.json SEMPRE (audit trail) — mesmo em fail-closed.
         (d / "repair_log.json").write_text(
             json.dumps(repair_log, ensure_ascii=False, indent=2), "utf-8")

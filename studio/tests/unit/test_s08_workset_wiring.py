@@ -99,3 +99,13 @@ def test_s08_matching_integration_cria_workset_no_disco(tmp_path, monkeypatch):
     vr = json.loads((wdir / "visual_requirements.json").read_text("utf-8"))
     canons = {r["canonical_entity"] for r in vr["requirements"]}
     assert "Francesinha" in canons
+
+    # item I/J: selected_shots.json deixou de ser o scaffold vazio
+    # {"by_entity": {}} — tem selection_feasible + by_entity real
+    # (biblioteca vazia no FakeDB -> feasible=False, mas a CHAVE existe).
+    sel = json.loads((wdir / "selected_shots.json").read_text("utf-8"))
+    assert "selection_feasible" in sel
+    assert "Francesinha" in sel["by_entity"]
+    cov = json.loads((wdir / "coverage.json").read_text("utf-8"))
+    assert "selection_feasible" in cov
+    assert "overall_ready" in cov
