@@ -222,6 +222,7 @@ def build_workset(
         total_script_seconds=total_script_seconds,
         scenes=scenes,
         include_filler=True,
+        location=theme_spec.location or "",
     )
     _ensure_mandatory_topics(plan, theme_spec.mandatory_topics, scenes, db, settings)
 

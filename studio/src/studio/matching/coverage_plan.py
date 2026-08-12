@@ -491,13 +491,24 @@ def measure_filler_coverage(
     *,
     min_quality: int = 4,
     exclude_shot_ids: set[str] | None = None,
+    location: str = "",
 ) -> EntityCoverage:
     """Mede cobertura GENÉRICA (sem match por nome de entity) — candidatos
     para preencher janelas narrativas sem anchor strict. `exclude_shot_ids`
     evita que o filler "reclame" para si shots já candidatos de uma
     requirement core (não impede reuse — a feasibility final é decidida na
-    camada de selecção, item 10 — mas evita medir cobertura inflada aqui)."""
+    camada de selecção, item 10 — mas evita medir cobertura inflada aqui).
+
+    `location` (item H — closure pass): quando não vazio, restringe a
+    genérico à mesma geografia do vídeo (places_csv OU landmarks_csv) —
+    sem isto, filler "contextual" aceitava QUALQUER shot não-revogado,
+    incluindo b-roll de outra cidade/país. Vazio = sem filtro (retro-compat
+    com chamadas antigas/testes sem ThemeSpec.location)."""
     clause = f"quality >= {int(min_quality)} AND revoked = false"
+    if location:
+        loc_safe = location.strip().replace("'", "''")
+        clause += (f" AND (places_csv LIKE '%{loc_safe}%' "
+                   f"OR landmarks_csv LIKE '%{loc_safe}%')")
     rows = db.iter_rows(clause, limit=20_000)
     exclude = exclude_shot_ids or set()
     if not rows:
@@ -581,6 +592,7 @@ def build_coverage_plan(
     extra_features_by_entity: dict[str, list[str]] | None = None,
     scenes: list | None = None,
     include_filler: bool = False,
+    location: str = "",
 ) -> CoveragePlan:
     """Constroi o CoveragePlan completo: ranking + measure + queries.
 
@@ -634,15 +646,21 @@ def build_coverage_plan(
                 continue
             if sp.location_context:
                 _loc_index[k] = sp.location_context
-        location = _loc_index.get(ent.canonical_name.strip().lower(), "")
+        # BUG CORRIGIDO (item H closure pass): esta variável chamava-se
+        # `location` — colidia com o parâmetro `location` da função
+        # (ThemeSpec.location, item H), sobrescrevendo-o silenciosamente a
+        # cada iteração. O bloco `include_filler` abaixo lia sempre o
+        # `location` da ÚLTIMA entity iterada (tipicamente "") em vez do
+        # `location` do vídeo passado pelo caller.
+        ent_location = _loc_index.get(ent.canonical_name.strip().lower(), "")
         # code-reviewer item #3: entity strict NÃO recebe nível 4
         # (contexto genérico sem entity) — top-up futuro cai em tentação de
         # buscar "Porto food dish" quando precisamos Francesinha explícita.
         query_levels = (settings.query_levels - 1) if ent.strict else settings.query_levels
-        ent.location = location  # Fase D fix-2: persiste location no plano
+        ent.location = ent_location  # Fase D fix-2: persiste location no plano
         ent.queries = build_query_hierarchy(
             ent.canonical_name,
-            location=location,
+            location=ent_location,
             entity_type=ent.entity_type,
             features=(extra_features_by_entity or {}).get(ent.canonical_name, []),
             levels=query_levels,
@@ -652,13 +670,20 @@ def build_coverage_plan(
     # core já medidas (precisa dos required_seconds finais para saber o
     # deficit de timeline).
     if include_filler:
+        # item H (closure pass): location REAL do ThemeSpec (ex.: "Porto")
+        # em vez do genérico "Portugal" — sem isto, o filler não tinha
+        # nenhum viés geográfico e podia devolver b-roll de outra cidade.
+        filler_location = location or next(
+            (e.location for e in ranked if e.location), "")
         filler_ent = build_filler_requirement(
-            ranked, total_script_seconds, settings, topic=topic)
+            ranked, total_script_seconds, settings, topic=topic,
+            location=filler_location)
         if filler_ent is not None:
             exclude_ids: set[str] = set()
             for e in ranked:
                 exclude_ids |= e.available_shot_ids
-            measure_filler_coverage(filler_ent, db, exclude_shot_ids=exclude_ids)
+            measure_filler_coverage(filler_ent, db, exclude_shot_ids=exclude_ids,
+                                    location=filler_location)
             filler_ent.deficit_seconds = round(
                 max(0.0, filler_ent.target_seconds - filler_ent.available_seconds), 3)
             ranked.append(filler_ent)
