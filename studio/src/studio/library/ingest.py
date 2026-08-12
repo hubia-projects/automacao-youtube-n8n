@@ -266,7 +266,11 @@ def ingest_file(
             t_triage = time.perf_counter()
             # Captura contexto uma vez por asset/call. Cached em SiglipEmbedder.
             _wf = (getattr(settings, "video_id", None) or "wf")
-            _md = (getattr(settings, "whisper_model", None) or "siglip-base")
+            # BUG CORRIGIDO (item 11): usava settings.whisper_model (nome do
+            # modelo Whisper/ASR, ex.: "base") como model_id do cache SigLIP
+            # — poluía a chave de cache com um valor sem relação ao modelo
+            # de embedding real. model_id=None deixa embed_text() usar o seu
+            # próprio default (embed.MODEL_ID, "google/siglip-base-...").
             _pv = "v1"
             for canon, text_en in requirement_prompts.items():
                 if not text_en:
@@ -277,7 +281,6 @@ def ingest_file(
                         requirement_id=canon,
                         prompt_version=_pv,
                         workflow_id=_wf,
-                        model_id=_md,
                     )
                 except Exception as exc:
                     log.debug("ingest.embed_text('%s') falhou (%s) — skip prompt",
