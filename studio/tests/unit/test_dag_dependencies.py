@@ -107,7 +107,7 @@ def test_dag_no_wave_with_parallel_invalid_pairs():
                 f"DAG inválido: {wave_name} precisa de {dep} mas aparece antes"
 
 
-def test_dag_pipeline_runner_rejects_wave_smaller_than_input(tmp_path):
+def test_dag_pipeline_runner_rejects_wave_smaller_than_input(tmp_path, monkeypatch):
     """Demonstra que o runner CONSIDERA outputs já escritos como done.
     Quando wave tem 1 stage e essa stage é pré-marcada done, salta-a
     (caching do resume)."""
@@ -136,14 +136,14 @@ def test_dag_pipeline_runner_rejects_wave_smaller_than_input(tmp_path):
     rec.outputs = [str(out)]
     rec.finished_at = "2026-08-08T00:00:00+00:00"
 
-    runner_mod.check_budget = lambda s: None
+    monkeypatch.setattr(runner_mod, "check_budget", lambda s: None)
     runner = PipelineRunner([[s_a]])
     runner.run(ctx, state)
     # MagicMock.run NÃO foi chamado (resume salta)
     assert not s_a.run.called
 
 
-def test_dag_wave_chain_finishes_inputs_before_next(tmp_path):
+def test_dag_wave_chain_finishes_inputs_before_next(tmp_path, monkeypatch):
     """Embutido nos testes acima: proof of life que stages sequenciais no
     DAG FUNCIONAM via fixtures SimpleNamespace. Aqui validamos que
     PipelineRunner chama stages em ordem."""
@@ -154,7 +154,7 @@ def test_dag_wave_chain_finishes_inputs_before_next(tmp_path):
     settings.budget_usd_per_run = 500.0
     settings.perf_enabled = False
     settings.runs_root = tmp_path
-    runner_mod.check_budget = lambda s: None
+    monkeypatch.setattr(runner_mod, "check_budget", lambda s: None)
 
     class _Recording:
         def __init__(self, name):

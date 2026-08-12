@@ -126,20 +126,29 @@ def probe_duration(video_path: Path) -> float:
 def _merge_adjacent_shots(
     raw: list[tuple[float, float]],
     *,
+    min_seconds: float = MIN_SHOT_SECONDS,
     max_gap_seconds: float = 0.5,
 ) -> list[tuple[float, float]]:
-    """Combina shots adjacentes (gap <= max_gap_seconds) num único shot
-    que cobre [first_start, last_end].
+    """Combina shots SÓ quando (a) há overlap real (próximo começa antes do
+    corrente acabar) — sempre funde, toma max(end) — ou (b) o shot corrente
+    ainda está sub-`min_seconds` E o gap para o próximo é <= max_gap_seconds.
+    Nunca funde dois shots já utilizáveis (>= min_seconds) que apenas
+    estejam contíguos ou levemente separados.
 
     Edge cases:
       - raw vazio → [].
       - 1 shot → [raw[0]].
-      - shots sobrepostos → merge toma max(end).
-      - shots afastados > max_gap → break em merged list.
+      - shot corrente já >= min_seconds e sem overlap → NUNCA funde com o
+        seguinte, mesmo contíguo (gap=0) — pyscenedetect devolve sempre
+        cenas contíguas (fim da cena N = início da N+1); fundir só por
+        adjacência (sem o guard de duração) fundia TODAS as cenas de
+        qualquer vídeo num único shot — bug real, corrigido aqui.
+      - shots afastados > max_gap (e já sub-min) → break em merged list.
 
     Finalidade: TEST 5C §P2 — quando pyscenedetect devolve várias cenas
     sub-1s (ex: [0–0.4, 0.4–0.9, 0.9–1.4]), merge gera um único shot
-    com duração ≥ MIN_SHOT_SECONDS.
+    com duração ≥ MIN_SHOT_SECONDS. Vídeos com cortes normais (≥1s cada)
+    mantêm-se como shots distintos.
     """
     if not raw:
         return []
@@ -147,7 +156,9 @@ def _merge_adjacent_shots(
     merged: list[tuple[float, float]] = []
     cur_start, cur_end = sorted_shots[0]
     for s, e in sorted_shots[1:]:
-        if s <= cur_end + max_gap_seconds:
+        gap = s - cur_end
+        overlap = gap < 0
+        if overlap or ((cur_end - cur_start) < min_seconds and gap <= max_gap_seconds):
             cur_end = max(cur_end, e)
         else:
             merged.append((cur_start, cur_end))
