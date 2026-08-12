@@ -274,6 +274,7 @@ def acquire_for_deficits(
     max_downloads: int = 200,
     remeasure_coverage: Optional[Callable[[], bool]] = None,
     refresh_deficit: Optional[Callable[[DeficitItem], float]] = None,
+    requirement_index: Optional[object] = None,
 ) -> AcquisitionReport:
     """Pipeline aquisição unificada por deficits.
 
@@ -301,6 +302,13 @@ def acquire_for_deficits(
             passou no início da chamada — a escolha de "maior deficit
             actual" em iterações seguintes usa números obsoletos mesmo
             depois de um requirement já ter sido fechado por esta run.
+        requirement_index: RequirementIndex (item U — closure pass). Quando
+            fornecido, cada ingest bem-sucedido gera `RequirementMatch`
+            semanticamente filtrados (`requirement_matching.matches_for_shot`)
+            para os shots recém-ingeridos — media nova entra no workset com
+            matches REAIS, nunca com o anti-padrão "all shots × all
+            requirements, similarity=0" (bug histórico, ver reconcile.py).
+            None (default) = comportamento anterior, sem persistência.
 
     Returns:
         AcquisitionReport agregado.
@@ -503,6 +511,31 @@ def acquire_for_deficits(
                             db.cache_mark(provider_name, source_url,
                                            media_sha=result.media_sha,
                                            status="DONE")
+                        # item U: media nova entra no workset com matches
+                        # reais — nunca o anti-padrão cego.
+                        if requirement_index is not None:
+                            try:
+                                from studio.library.requirement_matching import (
+                                    matches_for_shot,
+                                )
+                                new_rows = db.iter_rows(
+                                    f"media_sha = '{result.media_sha}'",
+                                    limit=200)
+                                for row in new_rows:
+                                    for m in matches_for_shot(
+                                        shot_id=row.get("shot_id", ""),
+                                        media_sha=result.media_sha,
+                                        t_in=float(row.get("t_in", 0.0)),
+                                        t_out=float(row.get("t_out", 0.0)),
+                                        shot_vec=row.get("vec"),
+                                        workset_ctx=workset_ctx,
+                                    ):
+                                        requirement_index.upsert_match(m)
+                            except Exception as exc:
+                                log.debug(
+                                    "acquire: indexação de media nova "
+                                    "falhou (não fatal): %s",
+                                    exc.__class__.__name__)
                     else:
                         rep.downloads_rejected_license += 1
                         if hasattr(db, "cache_mark_rejected"):

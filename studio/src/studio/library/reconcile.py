@@ -1064,6 +1064,7 @@ def _p11_acquire(state, db, embedder, settings, video_id, workset_ctx) -> None:
         from studio.library.requirement_index import QueryHistory
         query_history_db = QueryHistory(db)
 
+        from studio.library.requirement_index import RequirementIndex
         acq = acquire_for_deficits(
             workset_ctx=workset_ctx,
             db=db, embedder=embedder, settings=settings,
@@ -1072,6 +1073,7 @@ def _p11_acquire(state, db, embedder, settings, video_id, workset_ctx) -> None:
             query_history_db=query_history_db,
             remeasure_coverage=_remeasure,
             max_iterations=4,
+            requirement_index=RequirementIndex(db),
         )
         log.info("reconcile: P11 queries=%d down=%d ready=%s",
                  acq.queries_run, acq.downloads_attempted,

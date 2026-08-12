@@ -668,6 +668,14 @@ class S08Matching:
         )
         write_topup_log(topup, d / "topup_log.json")
 
+        # item U: media adquirida pelo topup acima entra no workset com
+        # matches REAIS — re-corre a indexação (idempotente via
+        # upsert_match) para cobrir o que acabou de ser ingerido.
+        idx_stats_post = index_existing_shots_against_workset(workset_ctx, db, ri)
+        log.info("workset=%s: re-indexed pós-topup (scanned=%d, matches=%d)",
+                 workset_result.workset_id, idx_stats_post["shots_scanned"],
+                 idx_stats_post["matches_written"])
+
         # Pass 3: cache_prune_by_ttl cleanup periódico no fim de S08.
         # Rows mais antigas que Settings.negative_cache_ttl_days (default
         # 90) são apagadas; restantes ficam intactas. Fail-soft: não
