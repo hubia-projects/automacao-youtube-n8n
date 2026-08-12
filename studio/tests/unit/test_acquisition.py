@@ -159,3 +159,74 @@ def test_coverage_ja_pronta_zero_chamadas_ao_provider():
     assert acq.coverage_ready is True
     assert acq.downloads_attempted == 0
     assert acq.queries_run == 0
+
+
+# ---------------------------------------------------------------------------
+# Item Q (closure pass) — deficits nunca podem ficar congelados. A com
+# deficit=30 fecha na 1ª wave (via refresh_deficit); a wave seguinte tem de
+# escolher B (deficit=20), NUNCA voltar a pedir A.
+# ---------------------------------------------------------------------------
+def test_stale_deficit_corrigido_proxima_wave_escolhe_b_depois_de_a_fechar():
+    spec_a = _ReqSpec("A")
+    spec_b = _ReqSpec("B")
+    ctx = _workset_ctx_stub([spec_a, spec_b])
+    deficit_a = DeficitItem(
+        canonical_entity="A", requirement_id=spec_a.requirement_id,
+        target_seconds=30.0, deficit_seconds=30.0, min_distinct_shots=1,
+        priority_score=1.0,
+    )
+    deficit_b = DeficitItem(
+        canonical_entity="B", requirement_id=spec_b.requirement_id,
+        target_seconds=20.0, deficit_seconds=20.0, min_distinct_shots=1,
+        priority_score=1.0,
+    )
+    queries_for = {"A": 0, "B": 0}
+
+    def resolver(query, level):
+        if query.startswith("A"):
+            queries_for["A"] += 1
+            return [(Path(f"/tmp/fakeA_{queries_for['A']}.mp4"),
+                     {"provider": "pexels", "source_url": f"uA{queries_for['A']}"})]
+        queries_for["B"] += 1
+        return []  # B nunca resolve — força o loop a continuar a tentar B
+
+    def refresh(item):
+        # simula remeasure real: a wave que ingeriu algo para A fecha-o.
+        return 0.0 if item.canonical_entity == "A" else item.deficit_seconds
+
+    db = MagicMock()
+    db.cache_get.return_value = None
+
+    with patch("studio.library.acquisition.preflight_media",
+              return_value=(True, "")):
+        with patch("studio.library.ingest_asset.ingest_asset") as mock_ingest:
+            mock_ingest.return_value = (
+                MagicMock(status="ingested", media_sha="shaA", shots_added=1),
+                MagicMock(),
+            )
+            acq = acquire_for_deficits(
+                workset_ctx=ctx, db=db, embedder=MagicMock(),
+                settings=MagicMock(mock_mode=True),
+                deficit_items=[deficit_a, deficit_b],
+                provider_resolver=resolver,
+                remeasure_coverage=lambda: False,
+                refresh_deficit=refresh,
+                max_iterations=5,
+                # 1 nível por wave (doutrina item R: uma wave = uma
+                # decisão) — evita que o mesmo canonical de 1 palavra
+                # produza 2 níveis idênticos ("A","A") dentro da MESMA
+                # wave, o que confundiria a asserção de "nunca mais
+                # pedido depois de fechado" com "pedido 2x na wave que o
+                # fechou".
+                n_levels=1,
+            )
+    assert deficit_a.deficit_seconds == 0.0, (
+        "refresh_deficit devia ter actualizado deficit_a in-place"
+    )
+    assert queries_for["A"] == 1, (
+        f"A devia ser pedido exactamente 1x (fecha na wave que o resolve); "
+        f"pedido {queries_for['A']}x — deficit congelado voltaria a pedir A"
+    )
+    assert queries_for["B"] >= 1, "B devia continuar a ser tentado após A fechar"
+    assert acq.coverage_status["A"]["deficit_seconds"] == 0.0
+    assert acq.coverage_status["A"]["is_covered"] is True

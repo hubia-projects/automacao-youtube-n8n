@@ -234,6 +234,7 @@ def acquire_for_deficits(
     max_iterations: int = 8,
     max_downloads: int = 200,
     remeasure_coverage: Optional[Callable[[], bool]] = None,
+    refresh_deficit: Optional[Callable[[DeficitItem], float]] = None,
 ) -> AcquisitionReport:
     """Pipeline aquisição unificada por deficits.
 
@@ -253,6 +254,14 @@ def acquire_for_deficits(
             exactos se atingido antes de coverage_ready.
         remeasure_coverage: callable () -> bool. Gate STOP. Se None, usa
             fallback: assumes stop quando todos deficits<=0.
+        refresh_deficit: callable(DeficitItem) -> float. Chamado depois de
+            cada ingest bem-sucedido (item Q — closure pass): recalcula o
+            deficit REAL desse item (ex.: via measure_coverage) e o valor
+            devolvido é escrito de volta em `item.deficit_seconds`. Sem
+            isto, `deficit_items` fica congelado nos valores que o caller
+            passou no início da chamada — a escolha de "maior deficit
+            actual" em iterações seguintes usa números obsoletos mesmo
+            depois de um requirement já ter sido fechado por esta run.
 
     Returns:
         AcquisitionReport agregado.
@@ -437,6 +446,20 @@ def acquire_for_deficits(
                         rep.downloads_succeeded += 1
                         rep.shots_ingested += result.shots_added
                         one_iteration_added += 1
+                        # item Q: deficits não podem ficar congelados —
+                        # recalcula o deficit REAL deste item já.
+                        if refresh_deficit is not None:
+                            try:
+                                item.deficit_seconds = float(refresh_deficit(item))
+                                rep.coverage_status[item.canonical_entity] = {
+                                    "deficit_seconds": item.deficit_seconds,
+                                    "is_covered": item.is_covered,
+                                }
+                            except Exception as exc:
+                                log.debug(
+                                    "acquire: refresh_deficit('%s') falhou "
+                                    "(não fatal): %s", item.canonical_entity,
+                                    exc.__class__.__name__)
                         if hasattr(db, "cache_mark"):
                             db.cache_mark(provider_name, source_url,
                                            media_sha=result.media_sha,
