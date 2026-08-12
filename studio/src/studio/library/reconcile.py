@@ -1036,11 +1036,18 @@ def _p11_acquire(state, db, embedder, settings, video_id, workset_ctx) -> None:
             provider_resolver = make_provider_resolver(
                 settings, dest, providers=("pexels",))
 
+        # item 17 (master doc): QueryHistory já existia em
+        # requirement_index.py mas nunca era passado aqui — cada wave
+        # repetia queries vazias/erradas sem memória entre chamadas.
+        from studio.library.requirement_index import QueryHistory
+        query_history_db = QueryHistory(db)
+
         acq = acquire_for_deficits(
             workset_ctx=workset_ctx,
             db=db, embedder=embedder, settings=settings,
             deficit_items=deficit_items,
             provider_resolver=provider_resolver,
+            query_history_db=query_history_db,
             remeasure_coverage=_remeasure,
             max_iterations=4,
         )
