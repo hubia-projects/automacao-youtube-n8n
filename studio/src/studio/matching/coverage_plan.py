@@ -152,9 +152,19 @@ def rank_entity_importance(
     *,
     total_script_seconds: float,
     topic: str,
+    scenes: list | None = None,
 ) -> list[EntityCoverage]:
     """Ordena entity_spans por prioridade (45% duração + 25% frequência
-    + 20% importance + 10% specificity). Determinístico."""
+    + 20% importance + 10% specificity). Determinístico.
+
+    `scenes` (item 6 — required_seconds correcto): quando fornecido, a
+    duração REQUERIDA de cada entity vem da soma das janelas de `Scene`
+    (`Scene.t_in`/`t_out`) cujo `primary_entity` é essa entity — a janela
+    narrativa COMPLETA dedicada à entidade — em vez da duração do
+    `EntitySpan` (que é só o alinhamento da FRASE que a nomeia, ex.:
+    "Livraria Lello" dura ~1-2s de fala, mesmo dentro de uma cena de 15s
+    sobre a livraria). Sem `scenes`, mantém o fallback por EntitySpan
+    (retrocompatibilidade com chamadas antigas/testes sem Scene)."""
     if not entity_spans:
         return []
 
@@ -170,13 +180,24 @@ def rank_entity_importance(
 
     max_mentions = max(len(v) for v in buckets.values()) or 1
 
+    scene_seconds: dict[str, float] = {}
+    for sc in (scenes or []):
+        pe = (getattr(sc, "primary_entity", "") or "").strip().lower()
+        if not pe:
+            continue
+        scene_seconds[pe] = scene_seconds.get(pe, 0.0) + max(
+            0.0, float(sc.t_out) - float(sc.t_in))
+
     out: list[EntityCoverage] = []
     for key, spans in buckets.items():
         canon = meta[key].canonical_name
         etype = meta[key].entity_type
         importance = float(meta[key].importance)
         strict = bool(meta[key].strict_visual)
-        required_s = round(sum(max(0.0, s.t_out - s.t_in) for s in spans), 3)
+        if key in scene_seconds:
+            required_s = round(scene_seconds[key], 3)
+        else:
+            required_s = round(sum(max(0.0, s.t_out - s.t_in) for s in spans), 3)
         duration_rel = (required_s / total_script_seconds) if total_script_seconds > 0 else 0.0
         frequency_rel = len(spans) / max_mentions
         spec = _specificity_score(canon, topic)
@@ -230,6 +251,26 @@ def _entity_match_clause(canonical: str, entity_type: str) -> str:
             f"food_csv LIKE '%{safe}%'")
 
 
+def _union_seconds(intervals: list[tuple[float, float]]) -> float:
+    """União de intervalos [t_in, t_out) — soma segundos SEM contar
+    overlap duas vezes. Ex.: [(0,5),(4,9),(20,25)] → (0,9)+(20,25) = 14s,
+    NÃO 25s (item 9 — max(t_out) por media_sha sobrestimava sempre que um
+    media_sha tinha múltiplos shots disjuntos)."""
+    ivs = sorted((lo, hi) for lo, hi in intervals if hi > lo)
+    if not ivs:
+        return 0.0
+    total = 0.0
+    cur_lo, cur_hi = ivs[0]
+    for lo, hi in ivs[1:]:
+        if lo <= cur_hi:
+            cur_hi = max(cur_hi, hi)
+        else:
+            total += cur_hi - cur_lo
+            cur_lo, cur_hi = lo, hi
+    total += cur_hi - cur_lo
+    return total
+
+
 def measure_coverage(
     coverage: EntityCoverage,
     db: LibraryDB,
@@ -242,27 +283,31 @@ def measure_coverage(
     simplicidade/LanceDB não-vector-searchable nativamente."""
     clause = (f"({_entity_match_clause(coverage.canonical_name, coverage.entity_type)})"
               f" AND quality >= {int(min_quality)} AND revoked = false")
-    # code-reviewer item #1+#2: API pública + cap por media_sha real duração
+    # code-reviewer item #1+#2: API pública + união de intervalos por media_sha
     rows = db.iter_rows(clause, limit=20_000)
     if not rows:
         coverage.notes.append("sem shots na biblioteca — top-up obrigatório")
-    secs = 0.0
     dist_shots: set[str] = set()
     dist_files: set[str] = set()
-    media_max_out: dict[str, float] = {}  # cap real duração por media_sha
+    intervals_by_media: dict[str, list[tuple[float, float]]] = defaultdict(list)
     per_shot_dur: dict[str, float] = {}
     for r in rows:
-        secs += max(0.0, float(r.get("t_out", 0.0)) - float(r.get("t_in", 0.0)))
-        if r.get("shot_id"):
-            dist_shots.add(r["shot_id"])
+        t_in = float(r.get("t_in", 0.0))
+        t_out = float(r.get("t_out", 0.0))
+        dur = max(0.0, t_out - t_in)
+        shot_id = r.get("shot_id")
+        if shot_id:
+            dist_shots.add(shot_id)
+            # item 9: preencher de facto (bug anterior: dict nunca escrito,
+            # deixava strict_available_seconds sempre 0 em is_workset_ready).
+            per_shot_dur[shot_id] = per_shot_dur.get(shot_id, 0.0) + dur
         sha = r.get("media_sha")
         if sha:
             dist_files.add(sha)
-            media_max_out[sha] = max(media_max_out.get(sha, 0.0),
-                                     float(r.get("t_out", 0.0)))
-    # segundos reais = soma do t_out máximo por media (não soma de shots,
-    # porque 3 shots do mesmo vídeo não podem render mais que sua duração).
-    real_secs = sum(media_max_out.values()) if media_max_out else secs
+            intervals_by_media[sha].append((t_in, t_out))
+    # segundos reais = união de intervalos por media_sha (não max(t_out) —
+    # sobrestimava; não soma simples de shots — ignorava overlap).
+    real_secs = sum(_union_seconds(ivs) for ivs in intervals_by_media.values())
     coverage.available_seconds = round(real_secs, 3)
     coverage.available_distinct_shots = len(dist_shots)
     coverage.available_files = len(dist_files)
@@ -364,6 +409,95 @@ def build_query_hierarchy(
     return deduped
 
 
+# ----------------- item 7 — contextual filler -----------------
+FILLER_ENTITY_TYPE = "filler"
+
+
+def measure_filler_coverage(
+    coverage: EntityCoverage,
+    db: LibraryDB,
+    *,
+    min_quality: int = 4,
+    exclude_shot_ids: set[str] | None = None,
+) -> EntityCoverage:
+    """Mede cobertura GENÉRICA (sem match por nome de entity) — candidatos
+    para preencher janelas narrativas sem anchor strict. `exclude_shot_ids`
+    evita que o filler "reclame" para si shots já candidatos de uma
+    requirement core (não impede reuse — a feasibility final é decidida na
+    camada de selecção, item 10 — mas evita medir cobertura inflada aqui)."""
+    clause = f"quality >= {int(min_quality)} AND revoked = false"
+    rows = db.iter_rows(clause, limit=20_000)
+    exclude = exclude_shot_ids or set()
+    if not rows:
+        coverage.notes.append("sem shots na biblioteca — top-up obrigatório")
+    dist_shots: set[str] = set()
+    dist_files: set[str] = set()
+    intervals_by_media: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    per_shot_dur: dict[str, float] = {}
+    for r in rows:
+        shot_id = r.get("shot_id")
+        if shot_id and shot_id in exclude:
+            continue
+        t_in = float(r.get("t_in", 0.0))
+        t_out = float(r.get("t_out", 0.0))
+        dur = max(0.0, t_out - t_in)
+        if shot_id:
+            dist_shots.add(shot_id)
+            per_shot_dur[shot_id] = per_shot_dur.get(shot_id, 0.0) + dur
+        sha = r.get("media_sha")
+        if sha:
+            dist_files.add(sha)
+            intervals_by_media[sha].append((t_in, t_out))
+    real_secs = sum(_union_seconds(ivs) for ivs in intervals_by_media.values())
+    coverage.available_seconds = round(real_secs, 3)
+    coverage.available_distinct_shots = len(dist_shots)
+    coverage.available_files = len(dist_files)
+    coverage.available_shot_ids = dist_shots
+    coverage._per_shot_durations = per_shot_dur
+    return coverage
+
+
+def build_filler_requirement(
+    ranked_entities: list[EntityCoverage],
+    total_script_seconds: float,
+    settings: Settings,
+    *,
+    topic: str = "",
+    location: str = "",
+) -> EntityCoverage | None:
+    """Requirement sintético que cobre `target_duration - core_seconds`
+    (soma dos required_seconds das entities core). `None` se o core já
+    cobre toda a timeline (nada a preencher).
+
+    NUNCA satisfaz requirement strict (strict=False sempre) e tem
+    priority_score mínimo — core antes de filler em qualquer alocação
+    (item 10, greedy determinístico: strict/core primeiro)."""
+    core_seconds = sum(e.required_seconds for e in ranked_entities)
+    filler_seconds = round(max(0.0, total_script_seconds - core_seconds), 3)
+    if filler_seconds <= 0.0:
+        return None
+    target = round(filler_seconds * settings.coverage_buffer, 3)
+    min_shots = max(
+        1, -(-int(target) // int(max(1.0, settings.min_shots_by_duration))))
+    canon = f"filler:{topic}".strip(":") or "filler"
+    ent = EntityCoverage(
+        canonical_name=canon,
+        entity_type=FILLER_ENTITY_TYPE,
+        priority_score=-1.0,
+        mention_count=0,
+        required_seconds=filler_seconds,
+        target_seconds=target,
+        min_distinct_shots=min_shots,
+        strict=False,
+        location=location,
+    )
+    ent.notes.append("contextual filler — preenche o tempo restante da "
+                     "timeline; nunca satisfaz requirement strict")
+    loc_q = f"{location or 'Portugal'} b-roll cityscape street scene".strip()
+    ent.queries = [loc_q, "generic b-roll cityscape street scene"]
+    return ent
+
+
 # ----------------- write_plan -----------------
 def build_coverage_plan(
     entity_spans: list[EntitySpan],
@@ -373,15 +507,28 @@ def build_coverage_plan(
     topic: str = "",
     total_script_seconds: float | None = None,
     extra_features_by_entity: dict[str, list[str]] | None = None,
+    scenes: list | None = None,
+    include_filler: bool = False,
 ) -> CoveragePlan:
     """Constroi o CoveragePlan completo: ranking + measure + queries.
+
+    `scenes` (item 6): ver `rank_entity_importance` — quando fornecido,
+    required_seconds usa a janela narrativa da Scene, não a duração da
+    frase do EntitySpan.
+
+    `include_filler` (item 7): quando True, acrescenta ao fim de
+    `ranked_entities` uma EntityCoverage sintética (`FILLER_ENTITY_TYPE`)
+    cobrindo o tempo da timeline não atribuído a nenhuma entity core.
+    Default False para não alterar o shape do plano em chamadas antigas.
 
     Idempotente — sem estado partilhado. Determinístico byte-equality
     se entidades e library forem iguais (sem uso de GPU/timestamps).
     """
     # 1) obter duração do script se não foi passada (soma t_out spans)
     if total_script_seconds is None:
-        if entity_spans:
+        if scenes:
+            total_script_seconds = max(sc.t_out for sc in scenes)
+        elif entity_spans:
             total_script_seconds = max(s.t_out for s in entity_spans)
         else:
             total_script_seconds = 0.0
@@ -392,6 +539,7 @@ def build_coverage_plan(
         entity_spans,
         total_script_seconds=total_script_seconds,
         topic=topic,
+        scenes=scenes,
     )
 
     # 3) measure de cobertura (LibraryDB scan)
@@ -427,6 +575,21 @@ def build_coverage_plan(
             features=(extra_features_by_entity or {}).get(ent.canonical_name, []),
             levels=query_levels,
         )
+
+    # 3b) filler contextual (item 7) — opt-in, sempre depois das entities
+    # core já medidas (precisa dos required_seconds finais para saber o
+    # deficit de timeline).
+    if include_filler:
+        filler_ent = build_filler_requirement(
+            ranked, total_script_seconds, settings, topic=topic)
+        if filler_ent is not None:
+            exclude_ids: set[str] = set()
+            for e in ranked:
+                exclude_ids |= e.available_shot_ids
+            measure_filler_coverage(filler_ent, db, exclude_shot_ids=exclude_ids)
+            filler_ent.deficit_seconds = round(
+                max(0.0, filler_ent.target_seconds - filler_ent.available_seconds), 3)
+            ranked.append(filler_ent)
 
     # 4) summary legível
     lines = [

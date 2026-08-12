@@ -28,10 +28,12 @@ sys.path.insert(0, str(ROOT))
 
 from studio.config import Settings
 from studio.script.entities import EntitySpan
+from studio.script.scenes import Scene
 from studio.matching.coverage_plan import (
     EntityCoverage,
     build_coverage_plan,
     build_query_hierarchy,
+    measure_coverage,
     rank_entity_importance,
     write_plan,
 )
@@ -410,6 +412,204 @@ class TestCoverageSufficient(unittest.TestCase):
         self.assertEqual(ent.available_seconds, 25.0)
         # boundary: 0 deficit (>=), não negativo
         self.assertEqual(ent.deficit_seconds, 0.0)
+
+
+# ----------------- item 6 / T3 — required_seconds vem da Scene, não da frase
+class TestRequiredSecondsFromScene(unittest.TestCase):
+    def test_scene_15s_gera_requirement_15s_nao_1s(self):
+        """T3 do enunciado: uma Scene de 15s sobre Lello gera requirement
+        ~15s, mesmo que o EntitySpan (duração da FRASE "Livraria Lello")
+        dure só ~1.5s dentro dessa cena."""
+        s = Settings()
+        # EntitySpan estreito: só a frase "Livraria Lello" (t=5.0-6.5, 1.5s)
+        span = _span("Livraria Lello", "landmark", t_in=5.0, t_out=6.5)
+        # Scene larga: toda a secção narrativa sobre a livraria (0-15s)
+        scenes = [Scene(scene_id="s001", t_in=0.0, t_out=15.0,
+                        text="cena sobre a Livraria Lello",
+                        primary_entity="Livraria Lello",
+                        primary_entity_type="landmark")]
+        ranked = rank_entity_importance(
+            [span], total_script_seconds=60.0, topic="Porto", scenes=scenes)
+        self.assertEqual(len(ranked), 1)
+        self.assertAlmostEqual(ranked[0].required_seconds, 15.0, places=2)
+
+    def test_sem_scenes_mantem_fallback_por_entityspan(self):
+        """Retrocompatibilidade: sem `scenes`, required_seconds continua a
+        vir da soma dos EntitySpans (comportamento antigo)."""
+        span = _span("Livraria Lello", "landmark", t_in=5.0, t_out=6.5)
+        ranked = rank_entity_importance(
+            [span], total_script_seconds=60.0, topic="Porto")
+        self.assertAlmostEqual(ranked[0].required_seconds, 1.5, places=2)
+
+    def test_scene_sem_primary_entity_nao_afeta_ranking(self):
+        """Scenes sem primary_entity (filler/generic) são ignoradas no
+        índice de duração por entidade — não corrompem outras entities."""
+        span = _span("Francesinha", "food", t_in=0.0, t_out=2.0)
+        scenes = [
+            Scene(scene_id="s001", t_in=0.0, t_out=20.0,
+                 text="cena sobre a Francesinha", primary_entity="Francesinha",
+                 primary_entity_type="food"),
+            Scene(scene_id="s002", t_in=20.0, t_out=25.0, text="filler genérico"),
+        ]
+        ranked = rank_entity_importance(
+            [span], total_script_seconds=60.0, topic="Porto", scenes=scenes)
+        self.assertAlmostEqual(ranked[0].required_seconds, 20.0, places=2)
+
+    def test_build_coverage_plan_aceita_scenes_kwarg(self):
+        """build_coverage_plan propaga `scenes` até rank_entity_importance."""
+        s = Settings()
+        span = _span("Livraria Lello", "landmark", t_in=5.0, t_out=6.5)
+        scenes = [Scene(scene_id="s001", t_in=0.0, t_out=15.0,
+                        text="x", primary_entity="Livraria Lello",
+                        primary_entity_type="landmark")]
+        plan = build_coverage_plan(
+            [span], _fake_db([]), s, topic="Porto",
+            total_script_seconds=60.0, scenes=scenes)
+        self.assertAlmostEqual(plan.ranked_entities[0].required_seconds, 15.0,
+                               places=2)
+
+
+# ----------------- item 9 / T6 — união de intervalos por media_sha ----------
+class TestUnionOfIntervals(unittest.TestCase):
+    def test_disjoint_intervals_same_media_sha_nao_duplicam(self):
+        """Doutrina: media A com shots [0,5],[4,9],[20,25] -> usable union
+        = 14s (9 + 5), NUNCA 25s (max(t_out)) nem 15s (soma simples com
+        overlap [0,5]+[4,9] contado 2x)."""
+        s = Settings()
+        row = _span("Livraria Lello", "landmark", t_in=0, t_out=10)
+        rows = [
+            {"shot_id": "sh1", "media_sha": "shaA", "t_in": 0.0, "t_out": 5.0,
+             "quality": 5, "revoked": False, "places_csv": "",
+             "landmarks_csv": "Livraria Lello", "food_csv": ""},
+            {"shot_id": "sh2", "media_sha": "shaA", "t_in": 4.0, "t_out": 9.0,
+             "quality": 5, "revoked": False, "places_csv": "",
+             "landmarks_csv": "Livraria Lello", "food_csv": ""},
+            {"shot_id": "sh3", "media_sha": "shaA", "t_in": 20.0, "t_out": 25.0,
+             "quality": 5, "revoked": False, "places_csv": "",
+             "landmarks_csv": "Livraria Lello", "food_csv": ""},
+        ]
+        plan = build_coverage_plan([row], _fake_db(rows), s, topic="Porto",
+                                   total_script_seconds=60.0)
+        ent = plan.ranked_entities[0]
+        self.assertAlmostEqual(ent.available_seconds, 14.0, places=2)
+        self.assertEqual(ent.available_distinct_shots, 3)
+        self.assertEqual(ent.available_files, 1)
+
+    def test_per_shot_durations_preenchido_item9(self):
+        """_per_shot_durations (PrivateAttr) deixa de ficar vazio — bug
+        anterior fazia strict_available_seconds ser sempre 0."""
+        s = Settings()
+        row = _span("Francesinha", "food", t_in=0, t_out=10)
+        rows = [
+            {"shot_id": "sh1", "media_sha": "shaA", "t_in": 0.0, "t_out": 6.0,
+             "quality": 5, "revoked": False, "places_csv": "",
+             "landmarks_csv": "", "food_csv": "Francesinha"},
+        ]
+        plan = build_coverage_plan([row], _fake_db(rows), s, topic="Porto",
+                                   total_script_seconds=60.0)
+        ent = plan.ranked_entities[0]
+        self.assertEqual(ent._per_shot_durations, {"sh1": 6.0})
+
+    def test_shot_unico_media_com_t_in_nao_zero_conta_duracao_real(self):
+        """Bug adicional descoberto: um único shot com t_in!=0 usava
+        t_out como se fosse a duração inteira (ignorava t_in). Union fix
+        corrige isto também para o caso de 1 shot só."""
+        s = Settings()
+        row = _span("Francesinha", "food", t_in=0, t_out=10)
+        rows = [
+            {"shot_id": "sh1", "media_sha": "shaA", "t_in": 5.0, "t_out": 15.0,
+             "quality": 5, "revoked": False, "places_csv": "",
+             "landmarks_csv": "", "food_csv": "Francesinha"},
+        ]
+        plan = build_coverage_plan([row], _fake_db(rows), s, topic="Porto",
+                                   total_script_seconds=60.0)
+        ent = plan.ranked_entities[0]
+        # duração real = 15-5 = 10s, não t_out=15s
+        self.assertAlmostEqual(ent.available_seconds, 10.0, places=2)
+
+
+# ----------------- item 10 / T7 — mesmo shot não conta 3x para 3 requirements
+class TestSameShotNotArtificiallyTriple(unittest.TestCase):
+    def test_shot_partilhado_entre_3_entities_nao_infla_disponibilidade(self):
+        """measure_coverage() é chamado por-entity — um shot cujos metadados
+        batem em 3 entities distintas conta available_seconds/shots em
+        CADA entity individualmente (correcto para medir candidatos), mas
+        a FEASIBILITY real (selected_shots.json, item 10 da doutrina) tem
+        de impedir que esse shot seja alocado a mais de 1 requirement no
+        vídeo final — isso é responsabilidade da camada de selecção
+        (workset_builder/assigner), não de measure_coverage. Este teste
+        documenta o comportamento actual de measure_coverage (mede
+        candidatos, não aloca) para não confundir os dois níveis."""
+        s = Settings()
+        shared_row = {
+            "shot_id": "sh_shared", "media_sha": "shaShared",
+            "t_in": 0.0, "t_out": 8.0, "quality": 5, "revoked": False,
+            "places_csv": "Porto", "landmarks_csv": "Livraria Lello",
+            "food_csv": "Francesinha",
+        }
+        spans = [
+            _span("Livraria Lello", "landmark", t_in=0, t_out=5),
+            _span("Francesinha", "food", t_in=10, t_out=15),
+        ]
+        plan = build_coverage_plan(spans, _fake_db([shared_row]), s,
+                                   topic="Porto", total_script_seconds=60.0)
+        by_name = {e.canonical_name: e for e in plan.ranked_entities}
+        # ambos os requirements VEEM o shot como candidato (measure é
+        # por-entity, não sabe que é o MESMO shot físico) — mas cada um
+        # regista o mesmo shot_id, permitindo à camada de selecção
+        # detectar o conflito via intersecção de available_shot_ids.
+        self.assertIn("sh_shared", by_name["Livraria Lello"].available_shot_ids)
+        self.assertIn("sh_shared", by_name["Francesinha"].available_shot_ids)
+
+
+# ----------------- item 7 / T8 — contextual filler completa a timeline ----
+class TestContextualFiller(unittest.TestCase):
+    def test_filler_completa_tempo_restante(self):
+        """video=180s, core narrative windows=125s -> filler ~55s
+        (+ buffer no target)."""
+        s = Settings()
+        span = _span("Livraria Lello", "landmark", t_in=0, t_out=125)
+        plan = build_coverage_plan(
+            [span], _fake_db([]), s, topic="Porto",
+            total_script_seconds=180.0, include_filler=True)
+        names = [e.canonical_name for e in plan.ranked_entities]
+        filler = next(e for e in plan.ranked_entities
+                      if e.entity_type == "filler")
+        self.assertEqual(len(plan.ranked_entities), 2)
+        self.assertAlmostEqual(filler.required_seconds, 55.0, places=2)
+        self.assertFalse(filler.strict, "filler nunca é strict")
+        self.assertIn("Livraria Lello", names)
+
+    def test_sem_filler_quando_core_cobre_tudo(self):
+        """Core já cobre a timeline inteira -> nenhum requirement filler
+        é acrescentado (None, não uma entity de 0s)."""
+        s = Settings()
+        span = _span("Livraria Lello", "landmark", t_in=0, t_out=180)
+        plan = build_coverage_plan(
+            [span], _fake_db([]), s, topic="Porto",
+            total_script_seconds=180.0, include_filler=True)
+        self.assertEqual(len(plan.ranked_entities), 1)
+
+    def test_include_filler_false_nao_altera_shape_antigo(self):
+        """Default include_filler=False preserva o comportamento antigo
+        (retrocompatibilidade com callers que não pedem filler)."""
+        s = Settings()
+        span = _span("Livraria Lello", "landmark", t_in=0, t_out=20)
+        plan = build_coverage_plan(
+            [span], _fake_db([]), s, topic="Porto", total_script_seconds=180.0)
+        self.assertEqual(len(plan.ranked_entities), 1)
+
+    def test_filler_nunca_satisfaz_strict(self):
+        """Filler é sempre strict=False mesmo se todas as entities core
+        forem strict — nunca pode substituir footage estrito."""
+        s = Settings()
+        span = _span("Francesinha", "food", t_in=0, t_out=10, strict=True)
+        plan = build_coverage_plan(
+            [span], _fake_db([]), s, topic="Porto",
+            total_script_seconds=100.0, include_filler=True)
+        filler = next(e for e in plan.ranked_entities
+                      if e.entity_type == "filler")
+        self.assertFalse(filler.strict)
 
 
 if __name__ == "__main__":
