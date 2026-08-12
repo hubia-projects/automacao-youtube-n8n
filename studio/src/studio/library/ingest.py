@@ -87,36 +87,80 @@ def _cosine(a: np.ndarray, b: np.ndarray) -> float:
 
 def _triage_shots(
     shot_vecs: dict[str, np.ndarray],
-    req_text_embeds: dict[str, np.ndarray],
+    req_text_embeds: dict[str, np.ndarray | list[np.ndarray]],
     settings: Settings,
 ) -> dict[str, str]:
     """Cosine entre shot_vec e cada requirement_text_embed; classifica tier.
 
+    Item 20 (retrieval relativo/calibrado, favorece recall): além do
+    threshold absoluto (floor de segurança, mantido), um shot também
+    entra em TIER_HIGH se estiver no Top-K de candidatos de QUALQUER
+    requirement E tiver uma margem sobre a mediana dessa requirement —
+    cobre o caso de um requirement específico (ex.: "Livraria Lello") cuja
+    melhor correspondência real na biblioteca fica ligeiramente abaixo do
+    threshold global 0.30 (thresholds absolutos fixos nunca calibram bem
+    para toda a variedade de entidades nomeadas). SigLIP continua a ser
+    candidate generator (recall alto) — a confirmação final é o Vision
+    oracle (confirmation.py), não este triage.
+
     Args:
         shot_vecs: shot_id -> vec já calculado em Phase B.
-        req_text_embeds: canonical_entity -> text_vec (SigLIP EN).
+        req_text_embeds: canonical_entity -> text_vec OU lista de
+                          text_vecs (multi-prompt bank — item 16 doutrina,
+                          score = MAX cosine entre os prompts do banco).
                           Pode ser vazio (sem triage).
-        settings: thresholds (library_triage_high_threshold / possible_threshold).
+        settings: thresholds (library_triage_high_threshold / possible_threshold
+                  / library_triage_top_k / library_triage_margin).
 
     Returns:
         dict[shot_id -> TIER_HIGH|...] (TIER_GLOBAL se req_text_embeds vazio).
     """
     high_t = float(getattr(settings, "library_triage_high_threshold", 0.30) or 0.30)
     pos_t = float(getattr(settings, "library_triage_possible_threshold", 0.18) or 0.18)
+    top_k = int(getattr(settings, "library_triage_top_k", 20) or 20)
+    margin = float(getattr(settings, "library_triage_margin", 0.05) or 0.05)
 
     if not req_text_embeds or not shot_vecs:
         # Sem requirements → tudo fica GLOBAL_ONLY (fallback conservativo;
         # caller decide se ainda vale a pena chamar Gemini ou não).
         return {sid: TIER_GLOBAL for sid in shot_vecs}
 
-    out: dict[str, str] = {}
+    # multi-prompt bank: normaliza para lista de vectores por requirement.
+    req_vecs: dict[str, list[np.ndarray]] = {
+        canon: (v if isinstance(v, list) else [v])
+        for canon, v in req_text_embeds.items()
+    }
+
+    shot_best: dict[str, float] = {}
+    per_req_scores: dict[str, dict[str, float]] = {c: {} for c in req_vecs}
     for sid, svec in shot_vecs.items():
-        best = 0.0
-        for _canon, rvec in req_text_embeds.items():
-            sim = _cosine(svec, rvec)
-            if sim > best:
-                best = sim
-        if best >= high_t:
+        best_overall = 0.0
+        for canon, rvecs in req_vecs.items():
+            best_for_req = max((_cosine(svec, rv) for rv in rvecs), default=0.0)
+            per_req_scores[canon][sid] = best_for_req
+            if best_for_req > best_overall:
+                best_overall = best_for_req
+        shot_best[sid] = best_overall
+
+    # Top-K + margem por requirement: um shot no Top-K de UMA requirement
+    # com margem clara sobre a mediana desse grupo conta como HIGH mesmo
+    # sem bater o threshold absoluto global. Com poucos candidatos
+    # (n pequeno), a margem sobre a mediana tende a zero — não promove
+    # nada indevidamente; só ajuda quando há sinal relativo real.
+    top_k_shots: set[str] = set()
+    for scores in per_req_scores.values():
+        if len(scores) < 3:
+            continue  # amostra pequena — sinal relativo não é fiável
+        ordered = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+        vals = sorted(scores.values())
+        median = vals[len(vals) // 2]
+        for sid, sc in ordered[:top_k]:
+            if sc - median >= margin:
+                top_k_shots.add(sid)
+
+    out: dict[str, str] = {}
+    for sid, best in shot_best.items():
+        if best >= high_t or sid in top_k_shots:
             out[sid] = TIER_HIGH
         elif best >= pos_t:
             out[sid] = TIER_POSSIBLE

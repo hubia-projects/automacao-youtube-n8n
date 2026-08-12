@@ -123,3 +123,73 @@ def test_zero_thresholds_treats_any_positive_as_high():
     shot_vecs = {"s1": _vec([0.5, 0.5])}    # coseno ≈ 0.707
     out = _triage_shots(shot_vecs, req, settings)
     assert out["s1"] == TIER_HIGH
+
+
+# ---------- Item 20 — multi-prompt bank (score = MAX entre prompts) --------------
+def test_multi_prompt_bank_usa_max_score_entre_prompts():
+    """req_text_embeds pode ter uma LISTA de vectores por canonical (visual
+    prompt bank) — score = max cosine entre todos os prompts do banco."""
+    settings = _settings(high_t=0.30, poss_t=0.18)
+    prompt_ok = _vec([1.0, 0.0])       # cosine alto
+    prompt_ruim = _vec([0.0, 1.0])     # cosine ~0 com o shot
+    req = {"Lello": [prompt_ruim, prompt_ok]}
+    shot_vecs = {"s1": _vec([0.99, 0.05])}
+    out = _triage_shots(shot_vecs, req, settings)
+    assert out["s1"] == TIER_HIGH  # pega o melhor prompt do banco, não o pior
+
+
+# ---------- Item 20 — Top-K + margem promove candidato claramente melhor ---------
+import math
+
+
+def _vec_cos(cos_theta: float) -> np.ndarray:
+    """Vector unitário 2D com cosine EXACTO `cos_theta` contra [1,0] — mais
+    directo do que adivinhar componentes cruas (_vec() normaliza, então a
+    RAZÃO entre componentes é que conta, não a magnitude)."""
+    cos_theta = max(-1.0, min(1.0, cos_theta))
+    sin_theta = math.sqrt(max(0.0, 1.0 - cos_theta * cos_theta))
+    return np.array([cos_theta, sin_theta], dtype=np.float32)
+
+
+def test_top_k_margin_promove_shot_relativamente_melhor_mesmo_sob_threshold():
+    """5 shots candidatos a uma entity específica: 1 claramente melhor que
+    os outros 4 mas abaixo do threshold absoluto 0.30 -> promovido a HIGH
+    por retrieval relativo (doutrina item 20: thresholds fixos não
+    calibram bem para toda entidade nomeada)."""
+    settings = _settings(high_t=0.30, poss_t=0.18)
+    req = {"Livraria Lello": _vec_cos(1.0)}
+    shot_vecs = {
+        "best": _vec_cos(0.28),   # melhor do grupo, mas < high_t=0.30
+        "s2": _vec_cos(0.05),
+        "s3": _vec_cos(0.02),
+        "s4": _vec_cos(0.01),
+        "s5": _vec_cos(-0.5),
+    }
+    out = _triage_shots(shot_vecs, req, settings)
+    assert out["best"] == TIER_HIGH, (
+        "shot claramente melhor do grupo devia ser promovido via Top-K/margem"
+    )
+    assert out["s5"] == TIER_GLOBAL  # o pior do grupo não é afectado
+
+
+def test_top_k_margin_nao_promove_grupo_pequeno_sem_sinal_relativo():
+    """Com <3 candidatos por requirement, o sinal relativo não é fiável —
+    comportamento idêntico ao threshold absoluto antigo (retrocompat)."""
+    settings = _settings(high_t=0.30, poss_t=0.18)
+    req = {"req1": _vec_cos(1.0)}
+    shot_vecs = {
+        "a": _vec_cos(0.25),   # abaixo do threshold, só 2 candidatos
+        "b": _vec_cos(-1.0),
+    }
+    out = _triage_shots(shot_vecs, req, settings)
+    assert out["a"] != TIER_HIGH  # sem promoção indevida com amostra pequena
+
+
+def test_top_k_margin_nao_promove_grupo_homogeneo_sem_margem():
+    """5 candidatos todos parecidos (sem margem sobre a mediana) — nenhum
+    é promovido via retrieval relativo; só o threshold absoluto decide."""
+    settings = _settings(high_t=0.30, poss_t=0.18)
+    req = {"req1": _vec_cos(1.0)}
+    shot_vecs = {f"s{i}": _vec_cos(0.20 + i * 0.001) for i in range(5)}
+    out = _triage_shots(shot_vecs, req, settings)
+    assert all(v != TIER_HIGH for v in out.values())

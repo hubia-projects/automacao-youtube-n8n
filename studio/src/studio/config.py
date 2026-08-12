@@ -347,6 +347,15 @@ class Settings(BaseSettings):
         default=0.30, alias="STUDIO_LIBRARY_TRIAGE_HIGH_THRESHOLD")
     library_triage_possible_threshold: float = Field(
         default=0.18, alias="STUDIO_LIBRARY_TRIAGE_POSSIBLE_THRESHOLD")
+    # item 20 — retrieval relativo: um shot no Top-K de candidatos de uma
+    # requirement específica com margem (`library_triage_margin`) sobre a
+    # mediana desse grupo conta HIGH mesmo sem bater o threshold absoluto
+    # acima (thresholds fixos não calibram bem para toda a variedade de
+    # entidades nomeadas). SigLIP continua candidate generator, não oráculo.
+    library_triage_top_k: int = Field(
+        default=20, alias="STUDIO_LIBRARY_TRIAGE_TOP_K")
+    library_triage_margin: float = Field(
+        default=0.05, alias="STUDIO_LIBRARY_TRIAGE_MARGIN")
     # True = buckets.py update_topic_hit NÃO copia MP4 para bucket/shots/.
     # Cada MP4 vive UMA única vez em media/<sha>.<ext>; o workset guarda
     # apenas referências (shot_id + media_sha) em topic_topics.json e
