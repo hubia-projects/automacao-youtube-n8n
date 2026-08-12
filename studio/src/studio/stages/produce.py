@@ -574,7 +574,10 @@ class S08Matching:
         # include_filler=True) internamente e persiste o resultado em
         # data/library/worksets/<workset_id>/ (SSoT partilhada com
         # reconcile.py/discovery.py).
-        from studio.library.workset_builder import build_workset
+        from studio.library.workset_builder import (
+            MandatoryTopicUnresolvedError,
+            build_workset,
+        )
         from studio.library.workset_context import (
             MODE_WORKFLOW,
             load_workset_context,
@@ -582,10 +585,20 @@ class S08Matching:
         script_path = ctx.run_dir / "03_script" / "script.md"
         script_text = script_path.read_text("utf-8") if script_path.exists() else ""
         theme_spec = _theme_spec(ctx)
-        workset_result = build_workset(
-            theme_spec, script_text, scenes, spans, db, ctx.settings,
-            workset_id=ctx.video_id,
-        )
+        try:
+            workset_result = build_workset(
+                theme_spec, script_text, scenes, spans, db, ctx.settings,
+                workset_id=ctx.video_id,
+            )
+        except MandatoryTopicUnresolvedError as exc:
+            # item D: fail-closed — tópico obrigatório do operador não
+            # aparece em NENHUMA Scene do script. S09/S10 não podem
+            # arrancar sem que isto seja resolvido a montante (roteiro).
+            return StageResult(
+                status="failed",
+                notes=f"mandatory_topics sem cobertura em nenhuma Scene "
+                      f"(fail-closed, item D): {exc.topics}",
+            )
         plan = workset_result.plan
         workset_ctx = load_workset_context(
             workflow_id=workset_result.workset_id,

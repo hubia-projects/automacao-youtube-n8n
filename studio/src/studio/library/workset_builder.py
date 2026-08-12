@@ -30,12 +30,28 @@ from studio.config import Settings
 from studio.library.db import LibraryDB
 from studio.matching.coverage_plan import (
     CoveragePlan,
+    EntityCoverage,
     build_coverage_plan,
+    build_query_hierarchy,
+    measure_coverage,
     write_workset_readiness,
 )
 from studio.script.entities import EntitySpan
 from studio.script.scenes import Scene
+from studio.script.validate_topics import is_topic_present
 from studio.theme import ThemeSpec
+
+
+class MandatoryTopicUnresolvedError(RuntimeError):
+    """item D (closure pass): fail-closed — um `mandatory_topic` do
+    ThemeSpec não foi resolvido a nenhum EntityCoverage NEM a nenhuma
+    Scene do script (nada no run para ancorar duração/queries). Runs
+    reais NUNCA devem silenciosamente perder um tópico obrigatório."""
+
+    def __init__(self, topics: list[str]):
+        self.topics = topics
+        super().__init__(
+            f"mandatory_topics sem cobertura no script/scenes: {topics}")
 
 _SCAFFOLD_DEFAULTS = {
     "selected_shots.json": lambda wid: {
@@ -82,6 +98,68 @@ def compute_workset_id(theme_spec: ThemeSpec, script_text: str) -> str:
 
 def workset_dir(settings: Settings, workset_id: str) -> Path:
     return settings.library_root / "worksets" / workset_id
+
+
+def _ensure_mandatory_topics(
+    plan: CoveragePlan,
+    mandatory_topics: list[str],
+    scenes: list[Scene],
+    db: LibraryDB,
+    settings: Settings,
+) -> None:
+    """item D: `mandatory_topics` do ThemeSpec NUNCA podem desaparecer do
+    workset — mesmo quando o extractor de entidades os perdeu (miss real,
+    já observado em produção). Para cada tópico sem EntityCoverage
+    correspondente, procura Scenes cujo `.text` o cita (mesmo matcher
+    accent/case-insensitive de `validate_topics.is_topic_present`) e
+    ancora a duração nessas janelas. Sintético, strict=True por defeito —
+    conteúdo visual nomeado explicitamente pelo operador é conservador.
+
+    Fail-closed: se NENHUMA Scene cita o tópico, não há nada no run para
+    ancorar duração/queries — levanta `MandatoryTopicUnresolvedError` em
+    vez de silenciosamente perder o tópico obrigatório.
+    """
+    if not mandatory_topics:
+        return
+    existing = {ent.canonical_name.strip().lower() for ent in plan.ranked_entities}
+    unresolved: list[str] = []
+    for topic in mandatory_topics:
+        key = topic.strip().lower()
+        if not key or key in existing:
+            continue
+        matching_scenes = [sc for sc in scenes if is_topic_present(sc.text, topic)]
+        if not matching_scenes:
+            unresolved.append(topic)
+            continue
+        required_s = round(
+            sum(max(0.0, sc.t_out - sc.t_in) for sc in matching_scenes), 3)
+        ent = EntityCoverage(
+            canonical_name=topic, entity_type="place",
+            priority_score=1.0, mention_count=len(matching_scenes),
+            required_seconds=required_s, target_seconds=0.0,
+            min_distinct_shots=0, strict=True,
+        )
+        ent = measure_coverage(ent, db)
+        # mesmo cálculo de buffer/min_shots de build_coverage_plan (§3
+        # acima) — mantém o schema idêntico entre entities extraídas e
+        # entities sintéticas de mandatory_topic.
+        ent.target_seconds = round(ent.required_seconds * settings.coverage_buffer, 3)
+        ent.min_distinct_shots = max(
+            1, -(-int(ent.target_seconds)
+                 // int(max(1.0, settings.min_shots_by_duration))))
+        ent.deficit_seconds = round(
+            max(0.0, ent.target_seconds - ent.available_seconds), 3)
+        ent.queries = build_query_hierarchy(
+            ent.canonical_name, location="", entity_type=ent.entity_type,
+            features=[], levels=max(1, settings.query_levels - 1),
+        )
+        ent.notes.append(
+            "mandatory_topic sem EntitySpan — ancorado por texto de Scene "
+            "(item D closure pass)")
+        plan.ranked_entities.append(ent)
+        existing.add(key)
+    if unresolved:
+        raise MandatoryTopicUnresolvedError(unresolved)
 
 
 def _topic_id(index: int, canonical: str) -> str:
@@ -145,6 +223,7 @@ def build_workset(
         scenes=scenes,
         include_filler=True,
     )
+    _ensure_mandatory_topics(plan, theme_spec.mandatory_topics, scenes, db, settings)
 
     topic_ids = [_topic_id(i, ent.canonical_name)
                 for i, ent in enumerate(plan.ranked_entities)]

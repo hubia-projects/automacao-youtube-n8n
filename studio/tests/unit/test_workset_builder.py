@@ -98,7 +98,8 @@ def test_reuse_nao_sobrescreve_theme_json(settings, tmp_path):
     r1 = build_workset(theme, "script fixo", scenes, spans, db, settings)
     original = (r1.workset_dir / "theme.json").read_text("utf-8")
 
-    # segunda chamada com scenes/spans DIFERENTES não deve alterar theme.json
-    # (identidade já existe — só topics/coverage remedem)
-    r2 = build_workset(theme, "script fixo", [], [], db, settings)
+    # segunda chamada (mesmas scenes/spans — mandatory_topics precisam de
+    # continuar ancorados a alguma Scene, item D) não deve alterar
+    # theme.json (identidade já existe — só topics/coverage remedem)
+    r2 = build_workset(theme, "script fixo", scenes, spans, db, settings)
     assert (r2.workset_dir / "theme.json").read_text("utf-8") == original
