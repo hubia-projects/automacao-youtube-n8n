@@ -534,6 +534,20 @@ class S08Matching:
         from studio.script.entities import EntitySpan
         from studio.script.scenes import Scene
 
+        # item N (closure pass): 1 chamada barata ANTES de qualquer
+        # confirmação Vision/aquisição — descobrir uma credencial inválida
+        # cedo é muito mais barato do que descobrir a meio de N cenas
+        # strict (cada uma já fail-fast em metadata.py, mas só depois de
+        # muito trabalho de scene/coverage já feito).
+        from studio.library.gemini_preflight import preflight_gemini_credentials
+        cred_ok, cred_reason = preflight_gemini_credentials(ctx.settings)
+        if not cred_ok:
+            return StageResult(
+                status="failed",
+                notes=f"S08 abortou antes de iniciar (fail-fast, item N): "
+                      f"{cred_reason}",
+            )
+
         scenes = [Scene.model_validate(s) for s in json.loads(
             (ctx.run_dir / "06_scenes" / "scenes.json").read_text("utf-8"))]
         briefs = [VisualBrief.model_validate(b) for b in json.loads(

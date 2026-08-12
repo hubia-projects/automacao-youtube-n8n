@@ -506,6 +506,12 @@ def measure_filler_coverage(
     com chamadas antigas/testes sem ThemeSpec.location)."""
     clause = f"quality >= {int(min_quality)} AND revoked = false"
     if location:
+        # escapa aspas (quebra de string — o único vector de injecção real
+        # neste dialecto DataFusion/LanceDB, que não trata `\` como escape
+        # LIKE sem uma clause ESCAPE explícita). `location` vem de
+        # ThemeSpec/CLI — mesmo trust boundary (operador, não input remoto
+        # não confiável) que os outros WHERE clauses desta camada
+        # (`_entity_match_clause`, negative-cache lens abaixo).
         loc_safe = location.strip().replace("'", "''")
         clause += (f" AND (places_csv LIKE '%{loc_safe}%' "
                    f"OR landmarks_csv LIKE '%{loc_safe}%')")

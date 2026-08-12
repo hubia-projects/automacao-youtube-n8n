@@ -401,6 +401,15 @@ def main() -> int:
     settings = get_settings()
     log.info("reconcile: LibraryDB + SiglipEmbedder + Settings prontos")
 
+    # item N (closure pass): 1 chamada barata ANTES de qualquer confirmação
+    # Vision/aquisição longa — doutrina explícita: não gastar a sessão a
+    # tentar a mesma key inválida repetidamente.
+    from studio.library.gemini_preflight import preflight_gemini_credentials
+    cred_ok, cred_reason = preflight_gemini_credentials(settings)
+    if not cred_ok:
+        log.error("reconcile: abortando (fail-fast, item N): %s", cred_reason)
+        return 1
+
     # PHASE 1 — Workflow-driven mode (--workflow <id>): carrega workflow.json
     # que define tema + target_topics + meta_coverage. Se já existir bucket
     # com is_ready=true, abort fail-closed (a meta já está coberta).
