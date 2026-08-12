@@ -1038,7 +1038,7 @@ def _p11_acquire(state, db, embedder, settings, video_id, workset_ctx) -> None:
             from studio.library.acquisition import make_provider_resolver
             dest = settings.runs_root / "_acquisition_tmp"
             provider_resolver = make_provider_resolver(
-                settings, dest, providers=("pexels",))
+                settings, dest, providers=("pexels",), db=db)
 
         # item 17 (master doc): QueryHistory já existia em
         # requirement_index.py mas nunca era passado aqui — cada wave

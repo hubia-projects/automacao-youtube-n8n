@@ -24,6 +24,7 @@ import concurrent.futures
 import logging
 import threading
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import httpx
@@ -107,14 +108,24 @@ def _download_one(url: str, target: Path) -> Path:
     raise last_exc if last_exc else RuntimeError("pexels: retries esgotados")
 
 
-def sweep(query_en: str, count: int, settings: Settings, dest: Path) -> list[tuple[Path, dict]]:
-    """Pesquisa + download paralelo. Devolve [(ficheiro, licença)] NA ORDEM
-    do ranking Pexels (determinístico — `executor.map` preserva inputs)."""
+@dataclass
+class CandidateMetadata:
+    """Resultado de `search()` — ZERO bytes de vídeo transferidos ainda
+    (item P do closure pass: separa search de download para permitir
+    dedup ANTES do byte vir da rede)."""
+    provider: str
+    provider_id: str
+    source_url: str
+    download_url: str
+    license: dict = field(default_factory=dict)
+
+
+def search(query_en: str, count: int, settings: Settings) -> list[CandidateMetadata]:
+    """Fase 1 (só SEARCH): 1 GET à SEARCH_URL, zero downloads de vídeo.
+    Devolve candidatos NA ORDEM do ranking Pexels."""
     if not settings.pexels_api_key:
         raise RuntimeError("PEXELS_API_KEY em falta")
-    dest.mkdir(parents=True, exist_ok=True)
 
-    # 1) SEARCH — 1 GET sequencial (a ordem dos vídeos define ordem da saída)
     t0 = time.perf_counter()
     with httpx.Client(timeout=30) as c:
         resp = c.get(
@@ -127,51 +138,64 @@ def sweep(query_en: str, count: int, settings: Settings, dest: Path) -> list[tup
     videos = resp.json().get("videos", [])[:count]
     search_elapsed = time.perf_counter() - t0
 
-    if not videos:
-        log.info("pexels-sweep '%s': 0 resultados (search %.1fs)", query_en, search_elapsed)
-        return []
-
-    # 2) PREPARE TASKS (sem I/O ainda)
-    tasks: list[tuple[Path, str, int, str]] = []  # (target, url, video_id, author)
+    out: list[CandidateMetadata] = []
     for video in videos:
         files = [f for f in video.get("video_files", [])
                  if f.get("height") and f["height"] <= MAX_HEIGHT]
         if not files:
             continue
         best = max(files, key=lambda f: f["height"])
-        target = dest / f"pexels_{video['id']}.mp4"
+        vid_id = int(video["id"])
         author = (video.get("user") or {}).get("name", "")
-        tasks.append((target, best["link"], int(video["id"]), author))
+        out.append(CandidateMetadata(
+            provider="pexels",
+            provider_id=str(vid_id),
+            source_url=f"https://www.pexels.com/video/{vid_id}/",
+            download_url=best["link"],
+            license={
+                "source": "pexels",
+                "source_url": f"https://www.pexels.com/video/{vid_id}/",
+                "license": "pexels",
+                "author": author,
+                "verified_by": "api",
+            },
+        ))
+    log.info("pexels-search '%s': %d candidatos (search=%.1fs) — "
+             "0 bytes de vídeo transferidos", query_en, len(out), search_elapsed)
+    return out
 
-    if not tasks:
+
+def download(candidate: CandidateMetadata, settings: Settings, dest: Path) -> Path:
+    """Fase 2 (só DOWNLOAD): 1 candidato já filtrado por dedup (pre-download,
+    item P). Caller decide QUAIS candidatos chegam aqui."""
+    dest.mkdir(parents=True, exist_ok=True)
+    target = dest / f"pexels_{candidate.provider_id}.mp4"
+    return _download_one(candidate.download_url, target)
+
+
+def sweep(query_en: str, count: int, settings: Settings, dest: Path) -> list[tuple[Path, dict]]:
+    """Wrapper legacy (compat CLI/testes/callers antigos): search()+
+    download() paralelo, SEM dedup pré-download — quem quiser dedup real
+    antes do byte vir da rede usa `search()`+`download()` directamente
+    (ver `acquisition.make_provider_resolver`). Devolve [(ficheiro,
+    licença)] NA ORDEM do ranking Pexels (determinístico — `executor.map`
+    preserva inputs)."""
+    candidates = search(query_en, count, settings)
+    if not candidates:
         return []
+    dest.mkdir(parents=True, exist_ok=True)
 
-    # 3) DOWNLOADS PARALELOS (executor.map preserva ordem dos inputs)
     t1 = time.perf_counter()
-    workers = min(_DOWNLOAD_MAX_WORKERS, len(tasks))
-    # Construímos pares (url, target) ANTES de chamar map — evita o bug de
-    # ordem dos argumentos quando passados como lambda com t[0]/t[1] dentro
-    # do closure (troca silenciosa de url↔target). executor.map aceita
-    # qualquer iterable de args e preserva ordem dos inputs.
-    url_target_pairs = [(t[1], t[0]) for t in tasks]  # (url, target)
+    workers = min(_DOWNLOAD_MAX_WORKERS, len(candidates))
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
-        # map() itera sequencialmente pelos resultados pela ordem dos inputs
-        run_with_retries = lambda pair: _download_one(pair[0], pair[1])
-        results = list(ex.map(run_with_retries, url_target_pairs))
+        run_with_retries = lambda cand: download(cand, settings, dest)
+        results = list(ex.map(run_with_retries, candidates))
     download_elapsed = time.perf_counter() - t1
-    log.info("pexels-sweep '%s': %d/%d em search=%.1fs + dl=%.1fs (workers=%d)",
-             query_en, len(results), len(tasks), search_elapsed, download_elapsed, workers)
+    log.info("pexels-sweep '%s': %d/%d download em %.1fs (workers=%d)",
+             query_en, len(results), len(candidates), download_elapsed, workers)
 
-    # 4) MONTA OUTPUTS NA ORDEM (zip garante preservação)
     out: list[tuple[Path, dict]] = []
-    for (target, _url, vid_id, author), _path in zip(tasks, results):
-        license_rec = {
-            "source": "pexels",
-            "source_url": f"https://www.pexels.com/video/{vid_id}/",
-            "license": "pexels",
-            "author": author,
-            "verified_by": "api",
-        }
-        out.append((target, license_rec))
-        log.info("pexels: %s", target.name)
+    for cand, path in zip(candidates, results):
+        out.append((path, cand.license))
+        log.info("pexels: %s", path.name)
     return out

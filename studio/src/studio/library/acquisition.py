@@ -38,12 +38,12 @@ from typing import Callable, Optional
 
 log = logging.getLogger("studio.acquisition")
 
-def _load_provider_sweep(provider: str) -> Callable:
-    """Import lazy do `sweep()` concreto — sem cache module-level: os
-    módulos `sources/*.py` só importam httpx/config (leve), e cachear a
-    função directamente quebrava `unittest.mock.patch("...pexels.sweep")`
-    entre testes (referência antiga ficava presa após o patch reverter —
-    bug real descoberto ao escrever os testes deste módulo)."""
+def _load_provider_module(provider: str):
+    """Import lazy do módulo concreto — sem cache module-level: os módulos
+    `sources/*.py` só importam httpx/config (leve), e cachear a função
+    directamente quebrava `unittest.mock.patch("...pexels.sweep")` entre
+    testes (referência antiga ficava presa após o patch reverter — bug
+    real descoberto ao escrever os testes deste módulo)."""
     if provider == "pexels":
         from studio.library.sources import pexels as _mod
     elif provider == "pixabay":
@@ -54,7 +54,7 @@ def _load_provider_sweep(provider: str) -> Callable:
         from studio.library.sources import wikimedia as _mod
     else:
         raise ValueError(f"provider desconhecido: {provider!r}")
-    return _mod.sweep
+    return _mod
 
 
 def make_provider_resolver(
@@ -63,15 +63,24 @@ def make_provider_resolver(
     *,
     providers: tuple[str, ...] = ("pexels",),
     count_per_query: int = 2,
+    db=None,
 ) -> Callable[[str, int], list[tuple[Path, dict]]]:
     """Adapter REAL (item 9) — liga `acquire_for_deficits()` aos providers
-    concretos (`pexels.sweep`/`pixabay.sweep`/`vimeo.sweep`/`wikimedia.sweep`,
-    todos com a mesma assinatura `sweep(query, count, settings, dest)`),
-    uniformizando para `provider_resolver(query, level) -> list[(Path, dict)]`.
+    concretos, uniformizando para
+    `provider_resolver(query, level) -> list[(Path, dict)]`.
 
     Antes desta função, o único caller de `acquire_for_deficits`
     (`reconcile.py`) passava `provider_resolver=lambda q, lvl: []` — a
     aquisição "canónica" nunca fazia uma chamada de rede real.
+
+    item P (closure pass) — pre-download dedup real: quando `db` é
+    passado e o módulo do provider expõe `search()`/`download()`
+    (2 fases, ver `sources/pexels.py`), faz SEARCH primeiro (zero bytes de
+    vídeo), verifica `is_provider_already_taken()` ANTES de qualquer
+    download, e só chama `download()` para candidatos novos. Providers
+    sem API de 2 fases ainda (ou chamadas sem `db`) caem no `sweep()`
+    legacy (search+download acoplados, dedup só depois do byte já ter
+    vindo da rede — comportamento anterior, preservado para compat).
 
     `count_per_query` pequeno por defeito — micro-waves (doutrina: nunca
     `sweep(50)` de uma vez), não um scrape em massa."""
@@ -81,14 +90,44 @@ def make_provider_resolver(
         out: list[tuple[Path, dict]] = []
         for provider in providers:
             try:
-                fn = _load_provider_sweep(provider)
+                mod = _load_provider_module(provider)
             except ValueError:
                 log.warning(
                     "make_provider_resolver: provider '%s' desconhecido — skip",
                     provider)
                 continue
+
+            two_phase = db is not None and hasattr(mod, "search") and hasattr(mod, "download")
+            if two_phase:
+                try:
+                    candidates = mod.search(query, count_per_query, settings)
+                except Exception as exc:
+                    log.warning(
+                        "make_provider_resolver: %s.search(%r) falhou: %s",
+                        provider, query, exc.__class__.__name__)
+                    continue
+                for cand in candidates:
+                    if is_provider_already_taken(cand.provider, cand.source_url, db):
+                        log.debug(
+                            "make_provider_resolver: %s/%s já conhecido "
+                            "(hit/rejected) — 0 bytes de download "
+                            "(pre-download dedup)", cand.provider, cand.source_url)
+                        continue
+                    try:
+                        path = mod.download(cand, settings, dest)
+                    except Exception as exc:
+                        log.warning(
+                            "make_provider_resolver: %s.download(%r) falhou: %s",
+                            provider, cand.source_url, exc.__class__.__name__)
+                        continue
+                    meta = dict(cand.license)
+                    meta.setdefault("provider", provider)
+                    meta.setdefault("source_url", cand.source_url)
+                    out.append((path, meta))
+                continue
+
             try:
-                results = fn(query, count_per_query, settings, dest)
+                results = mod.sweep(query, count_per_query, settings, dest)
             except Exception as exc:
                 log.warning(
                     "make_provider_resolver: %s.sweep(%r) falhou: %s",

@@ -17,6 +17,7 @@ from studio.library.acquisition import (
     acquire_for_deficits,
     make_provider_resolver,
 )
+from studio.library.sources.pexels import CandidateMetadata
 
 
 def test_make_provider_resolver_chama_sweep_real_com_assinatura_certa(tmp_path):
@@ -230,3 +231,70 @@ def test_stale_deficit_corrigido_proxima_wave_escolhe_b_depois_de_a_fechar():
     assert queries_for["B"] >= 1, "B devia continuar a ser tentado após A fechar"
     assert acq.coverage_status["A"]["deficit_seconds"] == 0.0
     assert acq.coverage_status["A"]["is_covered"] is True
+
+
+# ---------------------------------------------------------------------------
+# Item P (closure pass) — pre-download dedup REAL: candidato já conhecido
+# (cache_get hit) nunca deve chegar a `download()` — zero GET de vídeo.
+# ---------------------------------------------------------------------------
+def test_make_provider_resolver_pre_download_dedup_skip_conhecidos(tmp_path):
+    known = CandidateMetadata(
+        provider="pexels", provider_id="111",
+        source_url="https://www.pexels.com/video/111/",
+        download_url="http://x/111.mp4", license={"source": "pexels"},
+    )
+    fresh = CandidateMetadata(
+        provider="pexels", provider_id="222",
+        source_url="https://www.pexels.com/video/222/",
+        download_url="http://x/222.mp4", license={"source": "pexels"},
+    )
+    download_calls = []
+
+    def fake_search(query, count, settings):
+        return [known, fresh]
+
+    def fake_download(candidate, settings, dest):
+        download_calls.append(candidate.provider_id)
+        return tmp_path / f"pexels_{candidate.provider_id}.mp4"
+
+    def fake_cache_get(provider, source_url):
+        if source_url == known.source_url:
+            return {"status": "HIT"}
+        return None
+
+    db = MagicMock()
+    db.cache_get.side_effect = fake_cache_get
+
+    with patch("studio.library.sources.pexels.search", side_effect=fake_search), \
+         patch("studio.library.sources.pexels.download", side_effect=fake_download):
+        resolver = make_provider_resolver(
+            MagicMock(), tmp_path / "dest", providers=("pexels",), db=db)
+        results = resolver("Livraria Lello Porto", 0)
+
+    assert download_calls == ["222"], (
+        "candidato já conhecido (cache HIT) não devia chegar a download() — "
+        "pre-download dedup falhou"
+    )
+    assert len(results) == 1
+    assert results[0][1]["source_url"] == fresh.source_url
+
+
+def test_make_provider_resolver_sem_db_cai_no_sweep_legacy(tmp_path):
+    """Sem `db`, o resolver não tem como verificar dedup pré-download —
+    deve continuar a usar o `sweep()` legacy (comportamento anterior),
+    nunca chamar `search()`/`download()` directamente."""
+    calls = []
+
+    def fake_sweep(query, count, settings, dest):
+        calls.append(query)
+        return [(tmp_path / "clip.mp4", {"source_url": "http://x/clip.mp4"})]
+
+    (tmp_path / "clip.mp4").write_bytes(b"fake")
+
+    with patch("studio.library.sources.pexels.sweep", side_effect=fake_sweep):
+        resolver = make_provider_resolver(
+            MagicMock(), tmp_path / "dest", providers=("pexels",))
+        results = resolver("Sé do Porto", 0)
+
+    assert calls == ["Sé do Porto"]
+    assert len(results) == 1
