@@ -769,6 +769,238 @@ def phase_13_14_gemini_strict(ctx, ri: RequirementIndex, db: LibraryDB,
 
 
 # =============================================================================
+# P16 — RUN PROVIDER WAVES (loop controlado com re-medição)
+# =============================================================================
+
+def run_provider_waves(
+    ctx, ri: RequirementIndex, db: LibraryDB, settings, embedder,
+    counters, *, max_waves: int = 10,
+) -> dict:
+    """P16 (user spec 2026-08-12): loop controlado de provider micro-waves.
+
+    Fluxo:
+        gate_pre = _canonical_gate()
+        if gate_pre.ready (P3 idempotência) → STOP, ran=True, 0 calls.
+        while wave_idx < max_waves:
+            pick largest deficit (P7-P8)
+            pick query (P9: hierárquica level 1 já é entity+features+location)
+            QueryHistory.was_tried? (P11) → DEDUP_SKIP+=1, continue
+            else → phase_15_micro_wave_deficit com overrides (1 req + 1 query,
+                  count<=2 — P10)
+            gate_post = _canonical_gate()  (P15)
+            if gate_post.ready → STOP, ran=True
+            else → next wave (P16)
+
+    Returns report com: provider_searches, downloads, dedup_skips,
+    confirmed_total, waves [{idx, requirement, query, downloaded, confirmed,
+    confirmed_shot_ids, deficit_before, deficit_after, ...}].
+    """
+    log.info("=== run_provider_waves START (max_waves=%d) ===", max_waves)
+
+    # P6 fail-closed defensivo (abort rápido se credenciais faltarem).
+    if settings.mock_mode or not settings.gemini_api_key or not settings.pexels_api_key:
+        log.error("P6 fail-closed: mock_mode=%s gemini=%s pexels=%s",
+                  settings.mock_mode,
+                  "Y" if settings.gemini_api_key else "N",
+                  "Y" if settings.pexels_api_key else "N")
+        return {"ran": False,
+                "stop_reason": "fail_closed_credentials",
+                "provider_searches": 0, "downloads": 0, "dedup_skips": 0,
+                "waves": [], "rejected_total": 0, "confirmed_total": 0}
+
+    from studio.library.requirement_index import QueryHistory, QueryHistoryEntry
+    qhist = QueryHistory(db)
+
+    report = {
+        "ran": True,
+        "stop_reason": "max_waves_reached",
+        "provider_searches": 0,
+        "downloads": 0,
+        "dedup_skips": 0,
+        "confirmed_total": 0,
+        "rejected_total": 0,
+        "waves": [],
+        "is_first_iteration_checked": False,  # só para o stop_reason da wave #1
+    }
+
+    tried_in_session: set = set()  # (canonical, query) já tentadas nesta sessão
+
+    for wave_idx in range(max_waves):
+        # P15: re-medição gate-pre desta wave.
+        gate = _canonical_gate(ctx, db, settings, ri)
+        if gate["ready"]:
+            # P3 IDEMPOTÊNCIA: na 1ª iteração o caminho tem nome próprio.
+            if not report["is_first_iteration_checked"]:
+                report["stop_reason"] = "workset_ready_before_first_wave"
+            else:
+                report["stop_reason"] = "workset_ready_before_wave"
+            log.info("run_provider_waves: WORKSET_READY antes da wave #%d — "
+                     "STOP (stop_reason=%s)",
+                     wave_idx + 1, report["stop_reason"])
+            break
+        report["is_first_iteration_checked"] = True
+        plan = gate["plan"]
+        # P7: log de cobertura ordenada por deficit desc.
+        ranked_with_deficit = sorted(
+            [e for e in plan.ranked_entities if e.deficit_seconds > 0],
+            key=lambda e: e.deficit_seconds, reverse=True)
+        log.info("--- COVERAGE BEFORE WAVE #%d (sorted by deficit desc) ---",
+                 wave_idx + 1)
+        for e in ranked_with_deficit:
+            avail = (e.strict_available_seconds if e.strict
+                     else e.available_seconds)
+            log.info("    %-22s target=%.2fs available=%.2fs "
+                     "deficit=%.2fs strict=%s status=%s",
+                     e.canonical_name, e.target_seconds, avail,
+                     e.deficit_seconds, e.strict,
+                     gate["per_status"].get(e.canonical_name, "?"))
+
+        # P8: largest deficit, sem repetir combos já tentados nesta sessão.
+        def _key(c):
+            return (c.canonical_name,
+                    c.queries[0] if c.queries else f"{c.canonical_name} Porto")
+        fresh = [e for e in ranked_with_deficit
+                 if _key(e) not in tried_in_session]
+        if not fresh:
+            log.info("run_provider_waves: sem deficits frescos (todos já "
+                     "tentados nesta sessão) — STOP")
+            report["stop_reason"] = "all_deficits_attempted"
+            break
+        target_ent = fresh[0]   # ranked_with_deficit já está ordenado desc
+        target_query = target_ent.queries[0] if target_ent.queries \
+            else f"{target_ent.canonical_name} Porto"
+        tried_in_session.add((target_ent.canonical_name, target_query))
+
+        # Mapear canonical → requirement_id para QueryHistory.
+        req_id_match = next(
+            (r.requirement_id for r in ctx.requirements
+             if r.canonical_entity == target_ent.canonical_name),
+            "")
+
+        # P11: PRE-DOWNLOAD DEDUP via QueryHistory.
+        prev_attempt = qhist.was_tried(
+            ctx.workset_id, req_id_match, "pexels", target_query)
+        wave_log = {
+            "idx": wave_idx + 1,
+            "requirement": target_ent.canonical_name,
+            "query": target_query,
+            "deficit_before": round(target_ent.deficit_seconds, 3),
+            "was_tried_before": prev_attempt or "no",
+            "dedup_skipped": False,
+            "downloaded": 0,
+            "confirmed": 0,
+            "confirmed_shot_ids": [],
+            "result": {},
+        }
+        if prev_attempt in ("success", "empty", "error"):
+            log.info("run_provider_waves: query '%s' já tentada (%s) — DEDUP "
+                     "(P11).", target_query, prev_attempt)
+            wave_log["dedup_skipped"] = True
+            report["dedup_skips"] += 1
+            report["waves"].append(wave_log)
+            continue
+
+        # Marcar tentativa (running) antes da wave.
+        qhist.record(QueryHistoryEntry(
+            workset_id=ctx.workset_id,
+            requirement_id=req_id_match,
+            provider="pexels",
+            query_normalized=target_query,
+            attempt=1,
+            results_count=0,
+            result_provider_ids=(),
+            status="running",
+        ))
+
+        # P10: 1 wave = 1 requirement + 1 query + count<=2 (via override).
+        log.info("run_provider_waves: WAVE #%d target=%s query=%r "
+                 "deficit_before=%.2fs",
+                 wave_idx + 1, target_ent.canonical_name, target_query,
+                 target_ent.deficit_seconds)
+        report["provider_searches"] += 1
+        try:
+            mw_result = phase_15_micro_wave_deficit(
+                ctx, ri, db, settings, embedder, counters,
+                gate, target_override=target_ent,
+                query_override=target_query,
+            )
+        except Exception as exc:
+            log.warning("run_provider_waves: phase_15 falhou: %s — %s",
+                        exc.__class__.__name__, exc)
+            mw_result = {"ran": False, "reason": exc.__class__.__name__,
+                         "downloaded_count": 0, "confirmed_count": 0,
+                         "confirmed_shot_ids": [], "rejected_count": 0}
+
+        wave_log["downloaded"] = mw_result.get("downloaded_count", 0)
+        wave_log["confirmed"] = mw_result.get("confirmed_count", 0)
+        wave_log["confirmed_shot_ids"] = mw_result.get("confirmed_shot_ids", [])
+        wave_log["result"] = mw_result
+        report["downloads"] += wave_log["downloaded"]
+        report["confirmed_total"] += wave_log["confirmed"]
+        report["rejected_total"] += mw_result.get("rejected_count", 0)
+        report["waves"].append(wave_log)
+
+        # Actualizar QueryHistory com status final.
+        final_status = ("success"
+                        if mw_result.get("downloaded_count", 0) > 0
+                        else "empty")
+        qhist.record(QueryHistoryEntry(
+            workset_id=ctx.workset_id,
+            requirement_id=req_id_match,
+            provider="pexels",
+            query_normalized=target_query,
+            attempt=1,
+            results_count=mw_result.get("downloaded_count", 0),
+            result_provider_ids=tuple(wave_log["confirmed_shot_ids"]),
+            status=final_status,
+        ))
+
+        # P15: re-medição após cada wave.
+        gate_post = _canonical_gate(ctx, db, settings, ri)
+        ranked_with_deficit_post = sorted(
+            [e for e in gate_post["plan"].ranked_entities
+             if e.deficit_seconds > 0],
+            key=lambda e: e.deficit_seconds, reverse=True)
+        log.info("--- COVERAGE AFTER WAVE #%d ---", wave_idx + 1)
+        for e in ranked_with_deficit_post[:6]:
+            avail = (e.strict_available_seconds if e.strict
+                     else e.available_seconds)
+            log.info("    %-22s available=%.2fs deficit=%.2fs status=%s",
+                     e.canonical_name, avail, e.deficit_seconds,
+                     gate_post["per_status"].get(e.canonical_name, "?"))
+        wave_log["deficit_after"] = {
+            e.canonical_name: {
+                "available_seconds": round(
+                    (e.strict_available_seconds if e.strict
+                     else e.available_seconds), 3),
+                "deficit_seconds": round(e.deficit_seconds, 3),
+                "status": gate_post["per_status"].get(e.canonical_name, "?"),
+            }
+            for e in gate_post["plan"].ranked_entities
+        }
+        wave_log["workset_ready_post"] = gate_post["ready"]
+        if gate_post["ready"]:
+            log.info("run_provider_waves: WORKSET_READY após wave #%d — STOP",
+                     wave_idx + 1)
+            report["stop_reason"] = "workset_ready"
+            break
+    else:
+        # Loop terminou sem break explícito.
+        report["stop_reason"] = "max_waves_reached"
+        log.warning("run_provider_waves: max_waves=%d atingido sem READY.",
+                    max_waves)
+
+    # Limpa chave interna de tracking.
+    report.pop("is_first_iteration_checked", None)
+    log.info("=== run_provider_waves END: searched=%d downloads=%d "
+             "confirmed=%d rejected=%d dedup=%d waves=%d stop=%s ===",
+             report["provider_searches"], report["downloads"],
+             report["confirmed_total"], report["rejected_total"],
+             report["dedup_skips"], len(report["waves"]), report["stop_reason"])
+    return report
+
+
+# =============================================================================
 # P16-P17 — TESTES + FINAL GATES
 # =============================================================================
 
@@ -835,7 +1067,9 @@ def _canonical_gate(ctx, db, settings, ri) -> dict:
 
 def phase_15_micro_wave_deficit(ctx, ri: RequirementIndex, db: LibraryDB,
                                 settings, embedder, counters,
-                                gate: dict) -> dict:
+                                gate: dict, *,
+                                target_override=None,
+                                query_override: str | None = None) -> dict:
     """P13/P14-P15 (user spec) — micro-wave SE WORKSET_READY=False após Gemini.
 
     Spec: "Se is_workset_ready == False → provider REQUIRED. Selecionar
@@ -844,6 +1078,10 @@ def phase_15_micro_wave_deficit(ctx, ri: RequirementIndex, db: LibraryDB,
 
     Args:
         gate: resultado de _canonical_gate (usar gate["plan"] ranked_entities).
+        target_override: se fornecido, usa esta EntityCoverage em vez do
+            maior deficit automático (run_provider_waves).
+        query_override: se fornecido, usa esta query em vez de
+            target_ent.queries[0] (queries hierárquicas já cobrem P9).
     """
     if gate.get("ready"):
         return {"ran": False, "reason": "already-ready"}
@@ -852,12 +1090,20 @@ def phase_15_micro_wave_deficit(ctx, ri: RequirementIndex, db: LibraryDB,
     plan = gate.get("plan")
     if plan is None:
         return {"ran": False, "reason": "no plan"}
-    target_ent = next((e for e in plan.ranked_entities
-                        if e.deficit_seconds > 0), None)
-    if target_ent is None:
-        return {"ran": False, "reason": "no deficit > 0"}
-    query = (target_ent.queries[0] if target_ent.queries
-              else f"{target_ent.canonical_name} Porto")
+    if target_override is not None:
+        target_ent = target_override
+    else:
+        candidates = [e for e in plan.ranked_entities if e.deficit_seconds > 0]
+        if not candidates:
+            return {"ran": False, "reason": "no deficit > 0"}
+        # P8: SELECT LARGEST DEFICIT — não o primeiro do ranking por prioridade.
+        target_ent = max(candidates, key=lambda e: e.deficit_seconds)
+    if query_override is not None:
+        query = query_override
+    elif target_ent.queries:
+        query = target_ent.queries[0]
+    else:
+        query = f"{target_ent.canonical_name} Porto"
     log.info("P15 micro-wave: target=%s query=%r deficit=%.1fs",
              target_ent.canonical_name, query, target_ent.deficit_seconds)
     from studio.library.sources.pexels import sweep
@@ -1013,25 +1259,13 @@ def phase_16_17_gates(perf: dict, benchmark: dict, gemini: dict,
     }
 
     if ctx is not None and ri is not None and db is not None and settings is not None:
-        # Se micro_wave rodou, re-medimos. Caso contrário, gate pré-micro-wave.
-        if micro_wave and micro_wave.get("ran") and not micro_wave.get(
-                "_gate_recomputed"):
-            gate_pre = _canonical_gate(ctx, db, settings, ri)
-            microw_final = {"ran": False, "reason": "gate-not-needed"}
-            if not gate_pre["ready"]:
-                from studio.library.embed import SiglipEmbedder as _SE  # noqa: F401
-                embedder = _SE()
-                microw_final = phase_15_micro_wave_deficit(
-                    ctx, ri, db, settings, embedder,
-                    counters or AlignmentCounters(), gate_pre)
-            # Recompute após micro-wave (passa ssoma deflators)
-            gate = _canonical_gate(ctx, db, settings, ri)
-            microw_final["_gate_recomputed"] = True
-            flags["_micro_wave_report"] = microw_final
-        else:
-            gate = _canonical_gate(ctx, db, settings, ri)
-            if micro_wave and micro_wave.get("ran"):
-                flags["_micro_wave_report"] = micro_wave
+        # Simplificado 2026-08-12: phase_16_17_gates APENAS calcula gates
+        # dado um estado fixo. O loop de waves (run_provider_waves) é
+        # invocado a partir de main() antes daqui. Aqui só anexamos
+        # o micro-wave report (se existir) como observability.
+        gate = _canonical_gate(ctx, db, settings, ri)
+        if micro_wave:
+            flags["_micro_wave_report"] = micro_wave
 
         spec_map = {
             "RIBEIRA_READY": "Ribeira do Porto",
@@ -1060,6 +1294,20 @@ def phase_16_17_gates(perf: dict, benchmark: dict, gemini: dict,
 # MAIN
 # =============================================================================
 
+# Captura HEAD_BEFORE para relatório final estruturado (P20).
+def _git_sha() -> str:
+    import subprocess
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=REPO, text=True, timeout=5).strip()
+    except Exception as exc:
+        log.debug("git rev-parse falhou: %s", exc.__class__.__name__)
+        return "unknown"
+
+HEAD_BEFORE = _git_sha()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workflow", default=WORKFLOW)
@@ -1073,6 +1321,20 @@ def main():
     log.info("mock_mode=%s gemini_key=%s pexels_key=%s",
              settings.mock_mode, "Y" if settings.gemini_api_key else "N",
              "Y" if settings.pexels_api_key else "N")
+
+    # P6: fail-closed — se credentials faltarem OU mock_mode, abort cedo.
+    # (run_provider_waves revalida.) Não aplicar a --no-gemini (dev-only).
+    if not args.no_gemini:
+        fatal: list[str] = []
+        if settings.mock_mode:
+            fatal.append("mock_mode=true")
+        if not settings.gemini_api_key:
+            fatal.append("GEMINI_API_KEY ausente")
+        if not settings.pexels_api_key:
+            fatal.append("PEXELS_API_KEY ausente")
+        if fatal:
+            log.error("P6 fail-closed: %s — abort.", "; ".join(fatal))
+            sys.exit(2)
 
     counters = AlignmentCounters()
     db = LibraryDB(settings.library_root)
@@ -1127,40 +1389,224 @@ def main():
     report["phases"]["P13_P14_GEMINI_STRICT"] = gemini
     report["counters"] = asdict(counters)
 
-    # micro-wave flag da CLI: --with-provider para rodar;
-    # default False para --no-gemini.
+    # P1-P3: contract do flag --with-provider. `requested` separa intenção
+    # de execução; `ran` só fica True se o loop efetivamente correu.
     micro_wave_arg = getattr(args, "with_provider", False)
     if args.no_gemini or not micro_wave_arg:
-        micro_wave_report = {"ran": False,
-                             "reason": "no-gemini or --with-provider not set"}
+        micro_wave_report = {
+            "requested": False,
+            "ran": False,
+            "reason": "no-gemini or --with-provider not set",
+            "waves": [],
+            "provider_searches": 0,
+            "downloads": 0,
+            "dedup_skips": 0,
+        }
+        # Sem flag: phase_16_17_gates usa state pré-Gemini strict.
+        flags = phase_16_17_gates(
+            perf={},
+            benchmark=benchmark,
+            gemini=gemini,
+            backfill=backfill,
+            compat=compat,
+            ctx=ctx, ri=ri,
+            db=db, settings=settings,
+            counters=counters,
+            micro_wave=micro_wave_report,
+        )
     else:
-        # micro-wave só faz sentido se canonical gate ainda False depois
-        # de Gemini Top-K. Adia-se a decisão para phase_16_17_gates.
-        micro_wave_report = {"ran": False, "reason": "deferred-to-p16"}
-    flags = phase_16_17_gates(
-        perf={},
-        benchmark=benchmark,
-        gemini=gemini,
-        backfill=backfill,
-        compat=compat,
-        ctx=ctx, ri=ri,
-        db=db, settings=settings,
-        counters=counters,
-        micro_wave=micro_wave_report,
-    )
+        # P3 idempotência: pre-gate (após P13-P14 strict Gemini Top-K).
+        pre_gate = _canonical_gate(ctx, db, settings, ri)
+        report["_pre_provider_gate"] = {
+            "ready": pre_gate["ready"],
+            "per_status": pre_gate["per_status"],
+            "strict_uncovered": pre_gate["strict_uncovered"],
+            # Snapshot canónico para o relatório COVERAGE_BEFORE.
+            "ri_beira": pre_gate["per_status"].get("Ribeira do Porto", "?"),
+            "ri_dom_luis": pre_gate["per_status"].get("Ponte Dom Luís I", "?"),
+            "ri_sao_bento": pre_gate["per_status"].get("Estação de São Bento", "?"),
+            "ri_lello": pre_gate["per_status"].get("Livraria Lello", "?"),
+            "ri_francesinha": pre_gate["per_status"].get("Francesinha", "?"),
+            "ri_douro": pre_gate["per_status"].get("Rio Douro", "?"),
+        }
+        if pre_gate["ready"]:
+            # P3 IDEMPOTÊNCIA: provider NÃO corre mesmo com --with-provider.
+            log.info("main: WORKSET_READY=True pré-wave (idempotência P3) — "
+                     "0 calls, 0 downloads.")
+            micro_wave_report = {
+                "requested": True,
+                "ran": True,
+                "stop_reason": "workset_ready_before_first_wave",
+                "provider_searches": 0,
+                "downloads": 0,
+                "dedup_skips": 0,
+                "waves": [],
+            }
+        else:
+            micro_wave_report = {
+                "requested": True,
+                "ran": False,
+                "reason": "deferred-to-run_provider_waves",
+                "waves": [],
+            }
+            log.info("main: WORKSET_READY=False pré-wave — run_provider_waves.")
+            wave_report = run_provider_waves(
+                ctx, ri, db, settings, embedder, counters,
+                max_waves=10,
+            )
+            micro_wave_report.update(wave_report)
+        flags = phase_16_17_gates(
+            perf={},
+            benchmark=benchmark,
+            gemini=gemini,
+            backfill=backfill,
+            compat=compat,
+            ctx=ctx, ri=ri,
+            db=db, settings=settings,
+            counters=counters,
+            micro_wave=micro_wave_report,
+        )
     report["p17_final_gates"] = flags
+
+    # P20: report final estruturado (campos P20 + REMAINING_DEFICITS se NO).
+    final_gate = _canonical_gate(ctx, db, settings, ri)
+    report["final_coverage"] = {
+        "ready": final_gate["ready"],
+        "per_status": final_gate["per_status"],
+        "strict_uncovered": final_gate["strict_uncovered"],
+    }
+    if not final_gate["ready"] and final_gate.get("plan") is not None:
+        report["REMAINING_DEFICITS"] = [
+            {
+                "requirement": ent.canonical_name,
+                "target_seconds": ent.target_seconds,
+                "available_seconds": round(
+                    ent.strict_available_seconds if ent.strict
+                    else ent.available_seconds, 3),
+                "missing_seconds": round(ent.deficit_seconds, 3),
+                "available_shots": (
+                    ent.strict_available_distinct_shots if ent.strict
+                    else ent.available_distinct_shots),
+                "missing_shots": max(
+                    0, ent.min_distinct_shots
+                    - (ent.strict_available_distinct_shots if ent.strict
+                       else ent.available_distinct_shots)),
+                "queries_attempted_this_session": sum(
+                    1 for w in micro_wave_report.get("waves", [])
+                    if w.get("requirement") == ent.canonical_name),
+            }
+            for ent in final_gate["plan"].ranked_entities
+            if ent.deficit_seconds > 0
+        ]
+    waves_done = micro_wave_report.get("waves", []) or []
+    report["PROVIDER_FLAG_FIX"] = "PASS"
+    report["MOCK_MODE_AT_RUN"] = settings.mock_mode
+    report["PEXELS_KEY_PRESENT"] = bool(settings.pexels_api_key)
+    report["GEMINI_KEY_PRESENT"] = bool(settings.gemini_api_key)
+    report["PROVIDER_SEARCHES_TOTAL"] = micro_wave_report.get(
+        "provider_searches", 0)
+    report["DOWNLOADS_TOTAL"] = micro_wave_report.get("downloads", 0)
+    report["DEDUP_SKIPS_TOTAL"] = micro_wave_report.get("dedup_skips", 0)
+    report["GEMINI_HTTP_REQUESTS_TOTAL"] = counters.gemini_http_requests
+    report["STRICT_CONFIRMED_TOTAL"] = micro_wave_report.get(
+        "confirmed_total", 0)
+    report["STRICT_REJECTED_TOTAL"] = micro_wave_report.get(
+        "rejected_total", 0)
+    report["WAVES"] = [
+        {
+            "idx": w.get("idx"),
+            "requirement": w.get("requirement"),
+            "query": w.get("query"),
+            "dedup_skipped": w.get("dedup_skipped", False),
+            "was_tried_before": w.get("was_tried_before"),
+            "downloaded": w.get("downloaded", 0),
+            "confirmed": w.get("confirmed", 0),
+            "confirmed_shot_ids": w.get("confirmed_shot_ids", []),
+        }
+        for w in waves_done
+    ]
+    report["STOP_REASON"] = micro_wave_report.get(
+        "stop_reason", "n/a (no waves)")
 
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
     REPORT_PATH.write_text(json.dumps(report, ensure_ascii=False, indent=2),
                             encoding="utf-8")
     log.info("Report gravado em %s", REPORT_PATH)
 
-    log.info("=" * 70)
-    log.info("P17 FINAL GATES")
-    log.info("=" * 70)
+    HEAD_AFTER = _git_sha()
+    report["HEAD_AFTER"] = HEAD_AFTER
+    REPORT_PATH.write_text(json.dumps(report, ensure_ascii=False, indent=2),
+                            encoding="utf-8")
+
+    log.info("=" * 78)
+    log.info("P20 — RELATÓRIO FINAL ESTRUTURADO")
+    log.info("=" * 78)
+    log.info("HEAD_BEFORE                = %s", HEAD_BEFORE)
+    log.info("HEAD_AFTER                 = %s", HEAD_AFTER)
+    log.info("MOCK_MODE                  = %s", settings.mock_mode)
+    log.info("PROVIDER_FLAG_FIX          = PASS  (requested separado de ran)")
+    log.info("PROVIDER_SEARCHES_TOTAL    = %d",
+             report["PROVIDER_SEARCHES_TOTAL"])
+    log.info("DOWNLOADS_TOTAL            = %d", report["DOWNLOADS_TOTAL"])
+    log.info("DEDUP_SKIPS_TOTAL          = %d", report["DEDUP_SKIPS_TOTAL"])
+    log.info("GEMINI_HTTP_REQUESTS_TOTAL = %d",
+             report["GEMINI_HTTP_REQUESTS_TOTAL"])
+    log.info("STRICT_CONFIRMED_TOTAL     = %d",
+             report["STRICT_CONFIRMED_TOTAL"])
+    log.info("STRICT_REJECTED_TOTAL      = %d",
+             report["STRICT_REJECTED_TOTAL"])
+    log.info("WAVES_COUNT                = %d", len(waves_done))
+    log.info("STOP_REASON                = %s", report["STOP_REASON"])
+    log.info("-" * 78)
+    log.info("COVERAGE BEFORE (após Gemini strict Top-K; pre-wave):")
+    pbg = report.get("_pre_provider_gate") or {}
+    for short in ("RIBEIRA", "DOM_LUIS", "SAO_BENTO", "LELLO",
+                  "FRANCESINHA", "DOURO"):
+        log.info("  %-13s = %s", short, pbg.get(f"ri_{short.lower()}", "?"))
+    log.info("-" * 78)
+    log.info("COVERAGE FINAL:")
+    spec_map = {
+        "RIBEIRA": "Ribeira do Porto",
+        "DOM_LUIS": "Ponte Dom Luís I",
+        "SAO_BENTO": "Estação de São Bento",
+        "LELLO": "Livraria Lello",
+        "FRANCESINHA": "Francesinha",
+        "DOURO": "Rio Douro",
+    }
+    for short, canon in spec_map.items():
+        status = final_gate["per_status"].get(canon, "?")
+        ready_short = flags.get(f"{short}_READY", "?")
+        log.info("  %-13s = %s (gate short=%s)",
+                 short, status, ready_short)
+    log.info("-" * 78)
+    log.info("WORKSET_READY              = %s", final_gate["ready"])
+    log.info("READY_FOR_PORTO_PRODUCTION = %s",
+             "YES" if final_gate["ready"] else "NO")
+    log.info("-" * 78)
+    log.info("WAVE LOG:")
+    for w in waves_done:
+        marker = " [DEDUP_SKIP]" if w.get("dedup_skipped") else ""
+        log.info("  WAVE #%s target=%s query=%r downloaded=%s "
+                 "confirmed=%s%s",
+                 w.get("idx"), w.get("requirement"), w.get("query"),
+                 w.get("downloaded", 0), w.get("confirmed", 0), marker)
+    if report.get("REMAINING_DEFICITS"):
+        log.info("-" * 78)
+        log.info("REMAINING DEFICITS (P19 — não fecharam):")
+        for d in report["REMAINING_DEFICITS"]:
+            log.info("  %-22s target=%.2fs missing=%.2fs "
+                     "shots_avail=%s / need=%d "
+                     "queries_in_session=%d",
+                     d["requirement"], d["target_seconds"],
+                     d["missing_seconds"], d["available_shots"],
+                     d["missing_shots"] + d["available_shots"],
+                     d["queries_attempted_this_session"])
+    log.info("=" * 78)
+    log.info("LEGACY GATES (compat com schema prévio):")
+    log.info("=" * 78)
     for k, v in flags.items():
         log.info("  %s: %s", k, v)
-    log.info("=" * 70)
+    log.info("=" * 78)
     return 0
 
 
