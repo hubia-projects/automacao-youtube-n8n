@@ -1,0 +1,16 @@
+# Runtime logs — pode conter dados sensíveis (API keys em query params, etc.)
+*.log
+logs/
+
+# Ambiente/credenciais
+.env
+.env.*
+!.env.example
+
+# Cache/venv locais
+.venv/
+__pycache__/
+*.pyc
+
+# Dados de execução locais (não versionar biblioteca/worksets grandes)
+data/

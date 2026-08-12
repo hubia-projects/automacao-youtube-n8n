@@ -234,8 +234,9 @@ def main():
                     help="Parallel downloads (3-4 safe para rate limit Pexels)")
     args = ap.parse_args()
 
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    from studio.logging_setup import configure_logging
+    configure_logging(level=logging.INFO,
+                       fmt="%(asctime)s %(name)s %(levelname)s %(message)s")
     settings = get_settings()
 
     # 0. Scout mission

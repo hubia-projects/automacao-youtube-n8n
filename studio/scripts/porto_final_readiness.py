@@ -50,9 +50,6 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
 
-# Structured logging
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("studio.porto_final")
 
 # Force HF cache to /tmp if not set (avoid disk fill on subsequent runs)
@@ -60,6 +57,11 @@ os.environ.setdefault("HF_HOME", "/tmp/hf_cache")
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "src"))
+
+from studio.logging_setup import configure_logging  # noqa: E402
+
+configure_logging(level=logging.INFO,
+                   fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
 from studio.config import get_settings  # noqa: E402
 from studio.library.db import LibraryDB  # noqa: E402

@@ -49,6 +49,7 @@ from typing import Callable, Optional
 # momento de processar 1 mp4 é que carregamos o que precisamos.
 from studio.library.buckets import init_bucket, update_topic_hit  # noqa: E402
 from studio.library.models import AssetState, AssetStateRecord  # noqa: E402
+from studio.logging_setup import configure_logging  # noqa: E402
 
 log = logging.getLogger("studio.library.reconcile")
 
@@ -1122,6 +1123,6 @@ def _load_workset_visual_requirements(workflow_id: str) -> Optional[dict]:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    configure_logging(level=logging.INFO,
+                       fmt="%(asctime)s %(name)s %(levelname)s %(message)s")
     sys.exit(main())

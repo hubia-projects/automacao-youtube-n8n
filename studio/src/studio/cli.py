@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from studio.config import get_settings
+from studio.logging_setup import configure_logging
 from studio.orchestrator.runner import PipelineRunner, StageFailed, WaitingApproval, resume
 from studio.orchestrator.stage import RunContext
 from studio.orchestrator.state import load_state, new_state, save_state, state_path
@@ -361,7 +362,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s %(message)s")
+    configure_logging(level=logging.INFO, fmt="%(name)s %(levelname)s %(message)s")
     parser = argparse.ArgumentParser(prog="studio")
     sub = parser.add_subparsers(dest="command", required=True)
 

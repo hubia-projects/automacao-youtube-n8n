@@ -57,8 +57,10 @@ from studio.library.requirement_index import (
     CS_REJECTED,
 )
 
+from studio.logging_setup import configure_logging
+
 log = logging.getLogger("porto_gate")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+configure_logging(level=logging.INFO, fmt="%(asctime)s [%(levelname)s] %(message)s")
 
 DATA_ROOT = REPO / "data"
 MEDIA_DIR = DATA_ROOT / "library" / "media"

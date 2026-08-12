@@ -875,8 +875,9 @@ def main() -> int:
     ap.add_argument("--out", default=None,
                     help="Output path (default data/runs/<workflow_or_ts>/benchmark.json)")
     args = ap.parse_args()
-    logging.basicConfig(level=logging.WARNING,
-                        format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    from studio.logging_setup import configure_logging
+    configure_logging(level=logging.WARNING,
+                       fmt="%(asctime)s %(name)s %(levelname)s %(message)s")
 
     report = run_benchmark(workflow_id=args.workflow,
                             which=args.which, quick=args.quick,

@@ -505,8 +505,9 @@ def main():
     ap.add_argument("--no-save", action="store_true")
     args = ap.parse_args()
 
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    from studio.logging_setup import configure_logging
+    configure_logging(level=logging.INFO,
+                       fmt="%(asctime)s %(name)s %(levelname)s %(message)s")
     print(f"=== TEST 5C REAL v7 (limit={args.limit}) ===")
     print(f"REPO = {REPO}")
     print(f"MEDIA_DIR = {MEDIA_DIR}")

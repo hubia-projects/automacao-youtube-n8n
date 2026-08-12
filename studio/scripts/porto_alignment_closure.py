@@ -39,8 +39,10 @@ from typing import Optional
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "src"))
 
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+from studio.logging_setup import configure_logging  # noqa: E402
+
+configure_logging(level=logging.INFO,
+                   fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("studio.porto.alignment")
 os.environ.setdefault("HF_HOME", "/tmp/hf_cache")
 
