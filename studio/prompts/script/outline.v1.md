@@ -15,8 +15,12 @@ indica que uma entidade é importante (Livraria Lello, Francesinha, Torre
 dos Clérigos, etc), o OUTLINE PODE nomeá-la explicitamente mesmo que ainda
 não haja footage confirmada. O pipeline seguinte vai DETECTAR a falta e
 procurar/ingerir footage específica antes de recorrer a qualquer fallback
-genérico. Não inventes entidades que não estejam no RESEARCH_PACK, mas não
-esconda as que estão.
+genérico. Não inventes entidades que não estejam no RESEARCH_PACK ou nos
+tópicos obrigatórios abaixo, mas não esconda as que estão.
+
+TÓPICOS OBRIGATÓRIOS (têm de aparecer no outline, independentemente da
+biblioteca — o operador exige-os):
+{mandatory_topics}
 
 Cria o OUTLINE do vídeo. Devolve APENAS JSON:
 

@@ -311,12 +311,16 @@ class S03Script:
         from studio.library.inventory import inventory_text
 
         topic, duration = _params(ctx)
+        theme_spec = _theme_spec(ctx)
         d = ctx.stage_dir(self.name)
         research = (ctx.run_dir / "02_research" / "research_pack.md").read_text("utf-8")
         total = 0.0
 
-        # grounding: o guião só pode NOMEAR o que a biblioteca cobre — evita
-        # cenas impossíveis de ilustrar (causa nº1 do score baixo do revisor)
+        # Diagnóstico/observability apenas (item 3): a biblioteca NUNCA
+        # condiciona o que o roteiro pode nomear — isso é decidido por
+        # research_pack + mandatory_topics. O inventário serve só para o
+        # writer priorizar visuais já disponíveis quando editorialmente
+        # equivalente, e para estimar dificuldade de aquisição a jusante.
         inventory = inventory_text(LibraryDB(ctx.settings.library_root))
         (d / "visual_inventory.txt").write_text(inventory, "utf-8")
 
@@ -325,7 +329,8 @@ class S03Script:
         # para Pro multi-pass (build_outline+write_draft) em writer.py.
         outline, draft, c = build_mega_script(topic, research, duration,
                                               ctx.settings,
-                                              visual_inventory=inventory)
+                                              visual_inventory=inventory,
+                                              mandatory_topics=theme_spec.mandatory_topics)
         total += c
         (d / "outline.json").write_text(outline.model_dump_json(indent=2), "utf-8")
         (d / "draft.md").write_text(draft, "utf-8")
@@ -373,13 +378,40 @@ class S03Script:
             return StageResult(status="failed", cost_usd=total,
                                notes=f"lint falhou (pós-correção): {report.errors}")
 
+        # Item 3: validação determinística de mandatory_topics — 1 passe
+        # corretivo, depois fail-closed. A biblioteca nunca entra nesta
+        # decisão (ver comentário acima sobre visual_inventory).
+        from studio.script.validate_topics import find_missing_topics
+
+        missing_before = find_missing_topics(final, theme_spec.mandatory_topics)
+        missing_after = missing_before
+        if missing_before:
+            from studio.script.writer import fix_missing_topics
+
+            final, c = fix_missing_topics(final, missing_before, ctx.settings)
+            total += c
+            final = normalize_for_tts(final)
+            final = scrub_safety_phrases(final)
+            missing_after = find_missing_topics(final, theme_spec.mandatory_topics)
+        topics_report_path = d / "mandatory_topics_report.json"
+        topics_report_path.write_text(json.dumps({
+            "mandatory_topics": theme_spec.mandatory_topics,
+            "missing_before_corrective_pass": missing_before,
+            "missing_after_corrective_pass": missing_after,
+        }, ensure_ascii=False, indent=2), "utf-8")
+        if missing_after:
+            return StageResult(status="failed", cost_usd=total,
+                               outputs=[topics_report_path],
+                               notes=f"mandatory_topics ausentes após corrective pass: "
+                                     f"{missing_after}")
+
         script_md = d / "script.md"
         script_md.write_text(final, "utf-8")
 
         # Code-reviewer final: mega_metrics.json listado em outputs (não só
         # side-file) para o orchestrator propagar para state.json do run
         # → dashboard do operador vê o flash_win_rate sem globbing manual.
-        outputs = [script_md, mega_metrics_path]
+        outputs = [script_md, mega_metrics_path, topics_report_path]
 
         if ctx.params.get("gate_script"):
             try:

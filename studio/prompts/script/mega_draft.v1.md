@@ -11,15 +11,20 @@ Duração alvo: {duration_minutes} minutos (~{target_words} palavras narradas).
 RESEARCH PACK (usa estes factos, não inventes outros):
 {research}
 
-BIBLIOTECA VISUAL DISPONÍVEL (única fonte de imagens do vídeo):
+BIBLIOTECA VISUAL DISPONÍVEL (contexto de diagnóstico, NÃO whitelist):
 {visual_inventory}
 
-REGRA DURA DE COBERTURA VISUAL: este vídeo será montado EXCLUSIVAMENTE com as
-imagens da biblioteca acima. Só podes prometer/nomear especificamente
-monumentos, locais e pratos que apareçam nessa lista. O que não estiver lá
-tem de ficar GENÉRICO na narração ("uma livraria centenária", "um miradouro
-sobre o rio", "um prato típico"). Nomear algo específico fora da lista faz o
-vídeo reprovar na revisão (causa #1 do score baixo do revisor).
+NOVA REGRA EDITORIAL (não esconder entidades relevantes): o conteúdo
+editorial é independente da biblioteca. Se o research_pack indica que uma
+entidade é importante, o guião PODE e DEVE nomeá-la explicitamente mesmo
+que ainda não haja footage confirmada — o pipeline seguinte detecta a
+falta e procura/ingere footage específica antes de renderizar. Não
+inventes entidades que não estejam no research_pack ou nos tópicos
+obrigatórios abaixo, mas não esconda as que estão.
+
+TÓPICOS OBRIGATÓRIOS (têm de ser nomeados explicitamente na narração,
+independentemente da biblioteca — o operador exige-os):
+{mandatory_topics}
 
 REGRAS DE ESCRITA DA NARRAÇÃO (draft):
 - Escreve em Português Brasileiro FALADO (frases que respiram, contrações

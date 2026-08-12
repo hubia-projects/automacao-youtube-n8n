@@ -79,6 +79,12 @@ def _prompt(settings: Settings, name: str, **kw) -> str:
               .replace("\x00", "{").replace("\x01", "}")
 
 
+def _format_mandatory_topics(topics: list[str] | None) -> str:
+    if not topics:
+        return "(nenhum tópico obrigatório específico — usa o research_pack livremente)"
+    return "\n".join(f"- {t}" for t in topics)
+
+
 def _strip_fences(text: str) -> str:
     m = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
     return (m.group(1) if m else text).strip()
@@ -145,22 +151,30 @@ def research_pack(topic: str, settings: Settings) -> tuple[str, float]:
 
 # ---------------------------------------------------------------- Fase 2: mega
 def build_mega_script(topic: str, research: str, duration_minutes: float,
-                      settings: Settings, visual_inventory: str = ""
+                      settings: Settings, visual_inventory: str = "",
+                      mandatory_topics: list[str] | None = None,
                       ) -> tuple[Outline, str, float]:
     """Fase 2: outline+draft numa única chamada Flash.
 
     Devolve (outline, draft, total_cost). Em caso de falha (JSON inválido,
     draft curto, schema violado), faz fallback transparente para o pipeline
     Pro multi-pass (build_outline + write_draft).
+
+    `mandatory_topics`: tópicos que o operador exige no vídeo — nomeados
+    explicitamente na prompt independentemente da biblioteca visual (item 3
+    do master task: a biblioteca nunca pode censurar o roteiro).
     """
     target_words = int(duration_minutes * settings.words_per_minute)
     if settings.mock_mode:
         outline, draft = _mock_mega(topic)
+        if mandatory_topics:
+            draft = draft + " " + " ".join(mandatory_topics) + "."
         return outline, draft, 0.0
 
     prompt = _prompt(settings, "mega_draft", topic=topic, research=research,
                      duration_minutes=duration_minutes, target_words=target_words,
-                     visual_inventory=visual_inventory or "(indisponível)")
+                     visual_inventory=visual_inventory or "(indisponível)",
+                     mandatory_topics=_format_mandatory_topics(mandatory_topics))
 
     total_cost = 0.0
     try:
@@ -188,9 +202,9 @@ def build_mega_script(topic: str, research: str, duration_minutes: float,
         # FALLBACK: Pro multi-pass (mais lento mas Pro é mais robusto em
         # prosa longa + coerência narrativa).
         outline, c1 = build_outline(topic, research, duration_minutes, settings,
-                                    visual_inventory)
+                                    visual_inventory, mandatory_topics)
         draft, c2 = write_draft(outline, research, duration_minutes, settings,
-                               visual_inventory)
+                               visual_inventory, mandatory_topics)
         total_cost += c1 + c2
         log.info("build_mega_script: fallback Pro (Pro multi-pass, "
                  "%d palavras, $%.4f)", len(draft.split()), total_cost)
@@ -199,28 +213,35 @@ def build_mega_script(topic: str, research: str, duration_minutes: float,
 
 # ---------------------------------------------------------------- passes (kept)
 def build_outline(topic: str, research: str, duration_minutes: float,
-                  settings: Settings, visual_inventory: str = ""
+                  settings: Settings, visual_inventory: str = "",
+                  mandatory_topics: list[str] | None = None,
                   ) -> tuple[Outline, float]:
     target_words = int(duration_minutes * settings.words_per_minute)
     if settings.mock_mode:
         return _mock_outline(topic), 0.0
     prompt = _prompt(settings, "outline", topic=topic, research=research,
                      duration_minutes=duration_minutes, target_words=target_words,
-                     visual_inventory=visual_inventory or "(inventário indisponível)")
+                     visual_inventory=visual_inventory or "(inventário indisponível)",
+                     mandatory_topics=_format_mandatory_topics(mandatory_topics))
     data, cost = _generate_json(prompt, settings, model=settings.model_pro,
                                 tag="script_outline", temperature=0.7)
     return Outline.model_validate(data), cost
 
 
 def write_draft(outline: Outline, research: str, duration_minutes: float,
-                settings: Settings, visual_inventory: str = ""
+                settings: Settings, visual_inventory: str = "",
+                mandatory_topics: list[str] | None = None,
                 ) -> tuple[str, float]:
     target_words = int(duration_minutes * settings.words_per_minute)
     if settings.mock_mode:
-        return _MOCK_SCRIPT, 0.0
+        draft = _MOCK_SCRIPT
+        if mandatory_topics:
+            draft = draft + " " + " ".join(mandatory_topics) + "."
+        return draft, 0.0
     prompt = _prompt(settings, "draft", outline=outline.model_dump_json(indent=2),
                      research=research, target_words=target_words,
-                     visual_inventory=visual_inventory or "(inventário indisponível)")
+                     visual_inventory=visual_inventory or "(inventário indisponível)",
+                     mandatory_topics=_format_mandatory_topics(mandatory_topics))
     return generate(prompt, settings, model=settings.model_pro, temperature=0.8,
                     tag="script_draft")
 
@@ -253,3 +274,16 @@ def fix_lint_errors(text: str, errors: list[str], settings: Settings
                      errors="\n".join(f"- {e}" for e in errors))
     return generate(prompt, settings, model=settings.model_flash, temperature=0.3,
                     tag="script_lint_fix")
+
+
+def fix_missing_topics(text: str, missing_topics: list[str], settings: Settings
+                       ) -> tuple[str, float]:
+    """Passe corretivo único (item 3): força a menção explícita de tópicos
+    obrigatórios que o script gerado omitiu. Chamado no máximo 1x — se ainda
+    faltar depois disto, o stage falha fail-closed (não há 2º passe)."""
+    if settings.mock_mode:
+        return text + " " + " ".join(missing_topics) + ".", 0.0
+    prompt = _prompt(settings, "fix_missing_topics", text=text,
+                     missing_topics="\n".join(f"- {t}" for t in missing_topics))
+    return generate(prompt, settings, model=settings.model_flash, temperature=0.3,
+                    tag="script_missing_topics_fix")

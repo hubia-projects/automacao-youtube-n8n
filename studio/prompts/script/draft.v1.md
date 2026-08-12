@@ -26,8 +26,12 @@ Regras de escrita:
   biblioteca visual. Se Livraria Lello é relevante, o guião pode nomeá-la.
   Se Frencesinha é central, o guião pode nomeá-la. O pipeline detecta
   ausência de footage e procura antes de renderizar. Continua VEDADO:
-  inventar entidades que não estejam no research_pack, ou com factos
-  contraditórios.
+  inventar entidades que não estejam no research_pack ou nos tópicos
+  obrigatórios abaixo, ou com factos contraditórios.
+
+TÓPICOS OBRIGATÓRIOS (têm de ser nomeados explicitamente na narração,
+independentemente da biblioteca — o operador exige-os):
+{mandatory_topics}
 - O hook é a PRIMEIRA frase, exatamente como no outline (podes polir).
 - Termina com o CTA discreto de uma frase.
 
