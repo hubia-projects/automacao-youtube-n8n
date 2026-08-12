@@ -566,10 +566,14 @@ def test_targeted_topup_for_entity_runs_sweep_ingest(tmp_path: Path, monkeypatch
         sweep_calls.append(query)
         return [(fake_video, {"license": "pexels", "source_url": "u"})]
 
-    def fake_ingest(path, lic, db_, settings_, embedder_):
+    def fake_ingest_asset(path, lic, db_, settings_, embedder_, **kwargs):
+        # item 19: _targeted_topup_for_entity migrou para ingest_asset()
+        # (studio.library.ingest_asset), não ingest_file() legacy — o
+        # monkeypatch antigo apontava para o símbolo errado (nunca corria).
         ingest_calls.append(str(path))
         from unittest.mock import MagicMock
-        return MagicMock(shots_added=1, status="ingested")
+        return (MagicMock(shots_added=1, status="ingested", media_sha="sha1"),
+               MagicMock())
 
     def fake_measure(ent_, db_):
         ent_.available_seconds = 50.0
@@ -577,7 +581,8 @@ def test_targeted_topup_for_entity_runs_sweep_ingest(tmp_path: Path, monkeypatch
         return ent_
 
     monkeypatch.setattr("studio.library.sources.pexels.sweep", fake_sweep)
-    monkeypatch.setattr("studio.library.ingest.ingest_file", fake_ingest)
+    monkeypatch.setattr("studio.library.ingest_asset.ingest_asset",
+                        fake_ingest_asset)
     monkeypatch.setattr("studio.matching.coverage_plan.measure_coverage",
                         fake_measure)
 

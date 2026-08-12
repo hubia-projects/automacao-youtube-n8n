@@ -217,34 +217,33 @@ def test_3_cache_mark_rejected_em_vision_low_confidence(
 
     db_p3 = LibraryDB(tmp_path)
 
-    # Stub analyze_shot: retorna meta com 0 evidence fields
-    class _SparseMeta:
-        summary = "very sparse shot, no detectable content"
-        places: list[str] = []
-        landmarks: list[str] = []
-        food_items: list[str] = []
-        objects: list[str] = []
-        shot_type = "unknown"
-        camera_motion = "static"
-        time_of_day = "day"
-        indoor_outdoor = "unknown"
-        people_present = False
-        quality = 3
-        has_food = False
-        has_landmark = False
+    # Stub analyze_shot: retorna ShotMetadata REAL (has_food/has_landmark
+    # são @property derivadas de food_items/landmarks — não campos
+    # settable; um duck-type class sem model_dump_json() falhava mais
+    # tarde no ingest, quando a row grava meta_json).
+    from studio.library.metadata import ShotMetadata
 
-    class _AnalyzeResult:
-        def __init__(self):
-            self.meta = _SparseMeta()
-            self.cost = 0.0
+    sparse_meta = ShotMetadata(
+        summary="very sparse shot, no detectable content",
+        places=[], landmarks=[], food_items=[], objects=[],
+        shot_type="unknown", camera_motion="static",
+        time_of_day="day", indoor_outdoor="unknown",
+        people_present=False, quality=3,
+    )
 
     def fake_analyze_shot(keyframes, settings, source_hint):
-        return _AnalyzeResult()
+        # analyze_shot() real devolve (ShotMetadata, cost) — TUPLE, não um
+        # objecto wrapper (ingest.py faz `meta, _cost = analyze_shot(...)`).
+        return sparse_meta, 0.0
 
-    # Patch ingest.py imports via 'from' (NAME local; NAO atributo de origem).
-    import studio.library.metadata as metadata_mod
+    # item 19: ingest.py faz `from studio.library.metadata import
+    # analyze_shot` (name binding no import) — patchar
+    # metadata_mod.analyze_shot não afecta a referência já resolvida em
+    # ingest.py. Tem de se patchar onde é USADO (ingest_mod), não onde é
+    # DEFINIDO (metadata_mod) — sem isto, a chamada real acontecia
+    # (rede real, 403, key exposta no log antes do fix de redaction).
     import studio.library.ingest as ingest_mod
-    monkeypatch.setattr(metadata_mod, "analyze_shot", fake_analyze_shot)
+    monkeypatch.setattr(ingest_mod, "analyze_shot", fake_analyze_shot)
 
     monkeypatch.setattr(
         ingest_mod, "detect_shots",

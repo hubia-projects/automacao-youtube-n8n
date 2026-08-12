@@ -89,7 +89,11 @@ def _init_whisper_model(model_name: str, device: str):
                 "int8_float16",
                 "",
             )
-        except ValueError as exc:
+        except (ValueError, RuntimeError) as exc:
+            # item 19: só ValueError era apanhado, mas o modo de falha REAL
+            # documentado no docstring desta função (CTranslate2 em Pascal/
+            # drivers antigos) levanta RuntimeError — propagava incontrolado
+            # em vez de cair no fail-closed abaixo.
             if "int8_float16" in str(exc):
                 log.warning(
                     "whisper: int8_float16 incompat com CUDA (%s) — fallback int8",

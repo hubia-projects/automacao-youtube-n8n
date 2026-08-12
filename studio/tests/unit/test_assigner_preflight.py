@@ -111,15 +111,20 @@ def test_preflight_dedupes_queries(tmp_path: Path):
         sweep_calls.append((query, count))
         return [(Path("/fake/clip.mp4"), {"source": "pexels", "verified_by": "api"})]
 
-    def fake_ingest(path, lic, db_, settings_, embedder_):
+    def fake_ingest_asset(path, lic, db_, settings_, embedder_, **kwargs):
+        # item 19: _preflight_topups migrou para ingest_asset() (P3
+        # 2026-08-11) — o monkeypatch antigo apontava para ingest_file()
+        # legacy, símbolo que já não é chamado (nunca corria de facto).
         ingest_calls.append(path)
         r = MagicMock()
         r.shots_added = 1
         r.status = "ingested"
-        return r
+        r.media_sha = "sha1"
+        return r, MagicMock()
 
     with patch("studio.library.sources.pexels.sweep", side_effect=fake_sweep), \
-         patch("studio.library.ingest.ingest_file", side_effect=fake_ingest), \
+         patch("studio.library.ingest_asset.ingest_asset",
+               side_effect=fake_ingest_asset), \
          patch("studio.matching.assigner.search_shots", db.search_shots), \
          patch("studio.library.inventory.entity_vocab", side_effect=db.entity_vocab), \
          patch("studio.library.inventory.resolve_entity",

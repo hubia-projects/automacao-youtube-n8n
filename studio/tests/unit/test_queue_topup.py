@@ -180,28 +180,30 @@ def test_q4_sentinel_drains_worker_clean():
 # -----------------------------------------------------------------------
 def test_q5_ingest_worker_single_thread_deterministic(tmp_path):
     """3 assets enfileirados → ingest consome na ordem FIFO (state.ingested_count=3).
-    Patch via setattr em queue_topup module para mockar ingest_file."""
+    Patch via setattr em ingest_asset module (item 19: _worker_ingest migrou
+    de ingest_file() para ingest_asset() — P3 2026-08-11; o monkeypatch
+    antigo apontava para um símbolo que já não existe em queue_topup)."""
+    import studio.library.ingest_asset as ingest_asset_mod
     import studio.library.queue_topup as qt_mod
-    from studio.library.ingest import IngestResult  # vem de ingest.py
 
-    # Cria 3 dummy MP4 files para asset.path existir (ingest_file lê o
-    # mas como o mock devolve IngestResult, não chega a abrir).
+    # Cria 3 dummy MP4 files para asset.path existir.
     paths = []
     for i in range(3):
         p = tmp_path / f"q5_{i}.mp4"
         p.write_bytes(b"\x00" * 16)
         paths.append(p)
 
-    # ingest_file mock — devolve IngestResult ingested com shots=1.
-    real_ingest_file = qt_mod.ingest_file
+    # ingest_asset mock — devolve (IngestResult, state) ingested com shots=1.
+    real_ingest_asset = ingest_asset_mod.ingest_asset
     call_count = [0]
 
-    def fake_ingest(path, lic, db, settings, embedder):
+    def fake_ingest(path, lic, db, settings, embedder, **kwargs):
         call_count[0] += 1
-        return IngestResult(status="ingested", media_sha=path.stem,
-                            shots_added=1, cost_usd=0.01)
+        r = MagicMock(status="ingested", media_sha=path.stem,
+                      shots_added=1, cost_usd=0.01)
+        return r, MagicMock()
 
-    qt_mod.ingest_file = fake_ingest
+    ingest_asset_mod.ingest_asset = fake_ingest
 
     # preflight_check mock — devolve None (skip).
     real_preflight = qt_mod.preflight_check
@@ -233,13 +235,13 @@ def test_q5_ingest_worker_single_thread_deterministic(tmp_path):
                        report, per_entity_map)
 
         assert call_count[0] == 3, (
-            f"ingest_file deveria ter sido chamado 3× (got {call_count[0]})"
+            f"ingest_asset deveria ter sido chamado 3× (got {call_count[0]})"
         )
         assert state.ingested_count == 3
         assert state.total_cost == pytest.approx(0.03, abs=1e-9)
         assert report.total_cost_usd == pytest.approx(0.03, abs=1e-4)
     finally:
-        qt_mod.ingest_file = real_ingest_file
+        ingest_asset_mod.ingest_asset = real_ingest_asset
         qt_mod.preflight_check = real_preflight
 
 
@@ -250,10 +252,9 @@ def test_q6_concurrent_speedup_vs_sequential(tmp_path):
     """2 downloaders concorrentes ESTÃO mais rápidos que 1 sequencial em
     fixture de 4 entities deficitárias. Mock sweep (sleep 0.15s) e
     ingest (instantâneo) via setattr."""
+    import studio.library.ingest_asset as ingest_asset_mod
     import studio.library.queue_topup as qt_mod
     import studio.library.topup as topup_mod
-    import studio.library.ingest as ingest_mod
-    from studio.library.ingest import IngestResult  # vem de ingest.py
     from studio.matching.coverage_plan import CoveragePlan, EntityCoverage
 
     # Plan: 4 entities com deficit. Cada uma tem query distinta.
@@ -299,20 +300,20 @@ def test_q6_concurrent_speedup_vs_sequential(tmp_path):
                 break
         return [per_query_file[query]] if query in per_query_file else []
 
-    def fake_ingest(path, lic, db, settings, embedder):
-        return IngestResult(status="ingested", media_sha=path.stem,
-                            shots_added=1, cost_usd=0.001)
+    def fake_ingest(path, lic, db, settings, embedder, **kwargs):
+        r = MagicMock(status="ingested", media_sha=path.stem,
+                      shots_added=1, cost_usd=0.001)
+        return r, MagicMock()
 
-    real_qt_ingest = qt_mod.ingest_file
+    # item 19: topup_for_plan (sequential) E _worker_ingest (concurrent)
+    # migraram para ingest_asset() (P3 2026-08-11), ambos com lazy import
+    # `from studio.library.ingest_asset import ingest_asset` dentro da
+    # função — patchar o atributo do módulo cobre as duas chamadas.
+    real_ingest_asset = ingest_asset_mod.ingest_asset
     real_qt_preflight = qt_mod.preflight_check
-    # topup_for_plan importa ingest_file LAZY (interior da função),
-    # então temos de patchar o MÓDULO FONTE — `ingest.ingest_file` —
-    # para que a próxima resolução de nome pegue o nosso mock.
-    real_seq_ingest = ingest_mod.ingest_file
 
-    qt_mod.ingest_file = fake_ingest
+    ingest_asset_mod.ingest_asset = fake_ingest
     qt_mod.preflight_check = lambda path, settings: None
-    ingest_mod.ingest_file = fake_ingest
     # Code-reviewer nit: preflight_check em T_Q6 sequential também é
     # lazy-imported em topup.py → patchar qt_mod NÃO chega. Patchamos
     # o módulo FONTE early_reject para fidelity sequencial.
@@ -346,10 +347,8 @@ def test_q6_concurrent_speedup_vs_sequential(tmp_path):
         dt_conc = time.perf_counter() - t0
     finally:
         qt_mod.sweep = real_qt_sweep
-        qt_mod.ingest_file = real_qt_ingest
         qt_mod.build_query_hierarchy = real_qt_bqh
         qt_mod.preflight_check = real_qt_preflight
-        ingest_mod.ingest_file = real_seq_ingest
 
     # ---- RUN SEQUENTIAL (legacy topup_for_plan) ----
     s_seq = _settings_pass5(dl_workers=1)
@@ -373,6 +372,7 @@ def test_q6_concurrent_speedup_vs_sequential(tmp_path):
     finally:
         pexels_mod.sweep = real_pexels_sweep
         early_reject_mod.preflight = real_seq_preflight
+        ingest_asset_mod.ingest_asset = real_ingest_asset
 
     # Speedup assert: 4 sleeps × 0.15s sequential = 0.6s; com 2 workers = 0.3s.
     # Conservador: speedup >= 1.3× para tolerar overhead.
