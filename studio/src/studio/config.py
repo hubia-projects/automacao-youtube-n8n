@@ -139,6 +139,23 @@ class Settings(BaseSettings):
     # → contexto genérico. Menos = queries mais barulhentas; mais = ruído.
     query_levels: int = Field(default=4, alias="STUDIO_QUERY_LEVELS")
 
+    # --- item 32/17 — Quality Gate (S11Review) ---
+    # 75 = mínimo aceitável definido pelo operador (2026-07-14). Era
+    # hardcoded como S11Review.PASS_SCORE; agora configurável via .env
+    # sem editar código (acceptance deste master task pede >=90 — usar
+    # STUDIO_REVIEW_PASS_SCORE=90 sem tocar em produce.py).
+    review_pass_score: float = Field(default=75.0, alias="STUDIO_REVIEW_PASS_SCORE")
+    # 2 = nº de rondas de fix/re-review antes do loop parar bounded (nunca
+    # infinito, mesmo se o score não chegar ao pass_score).
+    review_max_rounds: int = Field(default=2, alias="STUDIO_REVIEW_MAX_ROUNDS")
+
+    # --- item 30 — Library Approval Gate ---
+    # FALSE (default seguro): WORKSET_READY<100% pára em gate humano
+    # ("library"), decidido via `studio approve <video_id> library approve`
+    # ou --auto-acquire-library na CLI. NUNCA activar silenciosamente.
+    auto_acquire_library: bool = Field(
+        default=False, alias="STUDIO_AUTO_ACQUIRE_LIBRARY")
+
     # --- Fase E — Metadata Confidence via Vision ---
     # 0.85 = somente shots com confiança >=85% contam como "confirmados".
     # Abaixo disso → rejeitados do matching de entity strict. Ajustar

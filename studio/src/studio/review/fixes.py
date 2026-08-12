@@ -86,9 +86,30 @@ def apply_fixes(fixes: list[Fix], run_dir: Path, settings: Settings,
                 if k in VisualBrief.model_fields})
         # excluir os shots atuais da cena no re-match (senão volta a escolhê-los)
         bad_shots = {s.shot_id for s in result.segments if s.scene_id == fix.scene_id}
+        # item 13: esta era a única das 5 chamadas a assign_shots que nunca
+        # tinha caminho para confirmed_entities — se o brief é strict, o
+        # gate estrito de assign_shots ficava sempre dormant também aqui
+        # (fail-open, aceitava qualquer shot no re-match de uma cena strict).
+        confirmed_entities: dict[str, list[dict]] | None = None
+        if brief.strict_entity and brief.required_entity:
+            from studio.library.confirmation import require_entity_confirmation
+
+            try:
+                confirmed = require_entity_confirmation(
+                    brief.required_entity, brief.required_entity_type,
+                    db, settings, strict_only=True,
+                )
+            except (TimeoutError, KeyError, ValueError) as exc:
+                log.warning("fix %s: confirmação '%s' falhou (%s) — "
+                            "re-match strict fail-closed sem candidatos",
+                            fix.scene_id, brief.required_entity,
+                            exc.__class__.__name__)
+                confirmed = []
+            confirmed_entities = {
+                brief.required_entity.strip().lower(): confirmed}
         sub = assign_shots([scene], [brief], db, embedder, settings,
                            run_id=f"{video_id}-fix", excluded_shot_ids=bad_shots,
-                           topic=topic)
+                           topic=topic, confirmed_entities=confirmed_entities)
         new_segments = sub.segments
         if not new_segments:
             unsupported.append(f"{fix.scene_id}:sem alternativa no pool")

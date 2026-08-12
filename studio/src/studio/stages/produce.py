@@ -616,17 +616,24 @@ class S08Matching:
         # ter `confirmed_ids` suficiente em rodadas 2..N. Custo: 1 Vision
         # call batched por entity (não N calls), cache write-back por shot.
         from studio.library.confirmation import require_entity_confirmation
-        from studio.library.confirmation import _vision_call  # narrow impl
         warmup_top_k = max(1, int(getattr(ctx.settings,
                                           "s08_warmup_top_k", 4) or 4))
+        # item 13: o retorno de require_entity_confirmation() era descartado
+        # — confirmed_entities nunca chegava a assign_shots (default None),
+        # o gate estrito da Fase F ficava sempre dormant em produção.
+        # Construído aqui e passado a TODAS as chamadas de assign_shots
+        # abaixo (v1 + todas as rondas de repair + post-topup).
+        confirmed_entities: dict[str, list[dict]] = {}
         for ent in plan.ranked_entities:
             if not ent.strict:
                 continue
             try:
-                require_entity_confirmation(
+                confirmed = require_entity_confirmation(
                     ent.canonical_name, ent.entity_type, db, ctx.settings,
                     top_k=warmup_top_k, strict_only=True,
                 )
+                if confirmed:
+                    confirmed_entities[ent.canonical_name.strip().lower()] = confirmed
             except (TimeoutError, KeyError, ValueError) as exc:
                 # narrow: S08 não pode bloquear por Vision API fora do ar
                 # nem por schema inválido do meta_json cache pre-Fase E
@@ -673,6 +680,7 @@ class S08Matching:
                 run_id=ctx.video_id, topic=ctx.state.topic,
                 coverage_plan=plan,
                 excluded_shot_ids=excluded_shots or None,
+                confirmed_entities=confirmed_entities,
             )
             _attach_segment_metadata(result.segments, db)
             if keep_v1 and not v1_exists_already:
@@ -747,6 +755,7 @@ class S08Matching:
                                     topic=ctx.state.topic,
                                     coverage_plan=plan,
                                     excluded_shot_ids=excluded_shots,
+                                    confirmed_entities=confirmed_entities,
                                 )
                                 _attach_segment_metadata(result.segments, db)
                                 repair_log.append({
@@ -786,8 +795,13 @@ class S08Matching:
             excluded_shots.update(new_excluded)
 
             try:
+                # BUG CORRIGIDO (item 14): assinatura é (strict_violations,
+                # plan, db, settings, *, embedder, run_id) — 4 posicionais.
+                # A chamada antiga passava 5 posicionais (embedder duplicado
+                # como db/settings deslizavam), TypeError sempre engolido
+                # pelo except abaixo — este top-up NUNCA corria em produção.
                 _maybe_targeted_topup(
-                    strict_v, plan, db, embedder, ctx.settings,
+                    strict_v, plan, db, ctx.settings,
                     embedder=embedder, run_id=ctx.video_id,
                 )
             except Exception as exc:
@@ -800,6 +814,7 @@ class S08Matching:
                     run_id=ctx.video_id, topic=ctx.state.topic,
                     coverage_plan=plan,
                     excluded_shot_ids=excluded_shots,
+                    confirmed_entities=confirmed_entities,
                 )
                 _attach_segment_metadata(result.segments, db)
                 repair_log.append({
@@ -847,6 +862,7 @@ class S08Matching:
                                     topic=ctx.state.topic,
                                     coverage_plan=plan,
                                     excluded_shot_ids=excluded_shots,
+                                    confirmed_entities=confirmed_entities,
                                 )
                                 _attach_segment_metadata(result.segments, db)
                                 repair_log.append({
@@ -1082,8 +1098,14 @@ class S11Review:
                 log.info("11_review: cache de rondas obsoleto (matching mais "
                          "recente) — limpo")
 
+        # item 17/32: configurável via Settings (era hardcoded na classe).
+        pass_score = float(getattr(ctx.settings, "review_pass_score",
+                                   self.PASS_SCORE) or self.PASS_SCORE)
+        max_rounds = int(getattr(ctx.settings, "review_max_rounds",
+                                 self.MAX_ROUNDS) or self.MAX_ROUNDS)
+
         total_cost, prev_score, report = 0.0, -1, None
-        for rnd in range(1, self.MAX_ROUNDS + 1):
+        for rnd in range(1, max_rounds + 1):
             round_file = d / f"review_r{rnd}.json"
             if round_file.exists():
                 # resume após crash a meio do loop: ronda já paga, não repetir
@@ -1101,7 +1123,7 @@ class S11Review:
                     f"score desceu {prev_score}→{score} na ronda {rnd}\n")
                 break
             prev_score = score
-            if score >= self.PASS_SCORE or rnd == self.MAX_ROUNDS or not report.fixes:
+            if score >= pass_score or rnd == max_rounds or not report.fixes:
                 break
             fixed, unsupported = apply_fixes(report.fixes, ctx.run_dir,
                                              ctx.settings, embedder, ctx.video_id,
@@ -1123,7 +1145,7 @@ class S11Review:
         summary.write_text(json.dumps({
             "final_score": report.overall if report else 0,
             "rounds": prev_score >= 0 and rnd or 0,
-            "passed": bool(report and report.overall >= self.PASS_SCORE),
+            "passed": bool(report and report.overall >= pass_score),
         }), "utf-8")
 
         # gate humano final — SEMPRE, com o relatório (ADR-0005)
