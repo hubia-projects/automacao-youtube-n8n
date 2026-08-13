@@ -382,11 +382,43 @@ def _write_back(db: "LibraryDB", shot: dict, entity_canonical: str,
                      values={"meta_json": new_meta_json})
 
 
+def _confirm_batch(
+    batch: list[dict], canonical: str, entity_type: str, settings: Settings,
+) -> dict[str, DetectedEntity]:
+    """1 Vision call batched (ou per-shot em mock) para `batch`. Extraído
+    de `require_entity_confirmation` (item K/L) para ser chamado em
+    micro-batches progressivos em vez de uma única chamada."""
+    shots_batched = []
+    for cand in batch:
+        kf_csv = (cand.get("keyframes_csv", "") or "").split(",")
+        kf_path = ""
+        for kf in kf_csv[:1]:
+            kf = kf.strip()
+            if kf and Path(kf).exists():
+                kf_path = kf
+                break
+        shots_batched.append({
+            "shot_id": cand["shot_id"],
+            "keyframes_csv": kf_path,  # 1 keyframe para batching
+        })
+    if settings.mock_mode:
+        return {shot["shot_id"]:
+               _mock_confirm(shot["shot_id"], canonical, entity_type)
+               for shot in shots_batched}
+    return _batch_vision_call(shots_batched, canonical, entity_type, settings)
+
+
 def require_entity_confirmation(
     canonical: str, entity_type: str, db: "LibraryDB",
     settings: Settings, *, top_k: int | None = None,
     min_confidence: float | None = None,
     strict_only: bool = True,
+    target_seconds: float | None = None,
+    min_distinct_shots: int | None = None,
+    requirement_id: str | None = None,
+    workset_id: str | None = None,
+    requirement_index: object | None = None,
+    max_batches: int = 5,
 ) -> list[dict]:
     """Devolve shots candidatos confirmados (confidence >= min_confidence).
 
@@ -395,11 +427,28 @@ def require_entity_confirmation(
         entity_type: tipo (food | landmark | place)
         db: LibraryDB
         settings: Settings
-        top_k: limite de shots a confirmar (default settings.entity_confirm_max_k)
+        top_k: limite de shots por MICRO-BATCH Vision (default
+            settings.entity_confirm_max_k). Sem `target_seconds`/
+            `min_distinct_shots`, é também o limite TOTAL de candidatos
+            (comportamento legacy: 1 único micro-batch).
         min_confidence: limiar de confidence (default settings.entity_confirm_min_confidence)
         strict_only: True ⇒ só confirma strict_visual; pre-cache lazy mode para
             backward-compat (shots antigos sem confirmação só precisam lazy confirm
             para strict, conforme task spec).
+        target_seconds / min_distinct_shots: item K/L (closure pass) — quando
+            fornecidos, activa modo PROGRESSIVO: confirma micro-batches de
+            `top_k` shots (nunca todos os candidatos numa só chamada Vision)
+            e PARA assim que a soma de durações confirmadas atingir
+            `target_seconds` E o nº de shots distintos confirmados atingir
+            `min_distinct_shots` — ou quando os candidatos/`max_batches`
+            se esgotarem primeiro (safety cap, nunca Vision ilimitado).
+        requirement_id / workset_id / requirement_index: item K/L — quando
+            fornecidos (RequirementIndex real), dois efeitos: (1) shots já
+            `CS_CONFIRMED`/`CS_REJECTED` nesta requirement são EXCLUÍDOS do
+            próximo batch (nunca re-Vision o mesmo shot); (2) cada resultado
+            (confirmado OU rejeitado) é sincronizado de volta via
+            `ri.upsert_match` com o `confirmation_status` REAL — não só o
+            cache local/`meta_json` (que só guarda os confirmados).
     Returns:
         Lista de shots com meta '__confirmation: DetectedEntity' anexada.
     """
@@ -419,51 +468,96 @@ def require_entity_confirmation(
         where = (f"places_csv LIKE '%{safe}%' OR "
                  f"landmarks_csv LIKE '%{safe}%' OR "
                  f"food_csv LIKE '%{safe}%'")
-    candidates = list(db.iter_rows(where, limit=200))[:top_k]
-    if not candidates:
+    candidates_all = list(db.iter_rows(where, limit=200))
+    if not candidates_all:
         return []
-    # Code-reviewer: eliminei dead code — uso do _batch_vision_call
-    # significa 1 Vision call com N shots (batched) em vez de N chamadas.
-    # Cada shot carrega 1 keyframe (PDF schema já extrai 3 keyframes mas
-    # Vision Flash 1ª linha basta 1 frame para confirmar identidade).
-    shots_batched = []
-    for cand in candidates:
-        kf_csv = (cand.get("keyframes_csv", "") or "").split(",")
-        kf_path = ""
-        for kf in kf_csv[:1]:
-            kf = kf.strip()
-            if kf and Path(kf).exists():
-                kf_path = kf
-                break
-        shots_batched.append({
-            "shot_id": cand["shot_id"],
-            "keyframes_csv": kf_path,  # 1 keyframe para batching
-        })
 
-    # 1 Vision call batched (ou per-shot em mock via loop)
-    if settings.mock_mode:
-        # mock: usa _mock_confirm per-shot (mesmo shape; log-trace claro)
-        batched = {shot["shot_id"]:
-                   _mock_confirm(shot["shot_id"], canonical, entity_type)
-                   for shot in shots_batched}
-    else:
-        batched = _batch_vision_call(shots_batched, canonical,
-                                     entity_type, settings)
+    progressive = target_seconds is not None or min_distinct_shots is not None
+    ri_active = (requirement_index is not None and workset_id
+                and requirement_id)
 
-    # monta out respeitando filters confirmados + cache write-back
+    known_status: set[str] = set()
+    if ri_active:
+        try:
+            from studio.library.requirement_index import (
+                CS_CONFIRMED, CS_REJECTED,
+            )
+            for m in requirement_index.list_for_requirement(
+                    workset_id, requirement_id):
+                if m.confirmation_status in (CS_CONFIRMED, CS_REJECTED):
+                    known_status.add(m.shot_id)
+        except Exception as exc:
+            log.debug("require_entity_confirmation: RequirementIndex "
+                     "lookup falhou (não fatal): %s", exc.__class__.__name__)
+
+    candidates = [c for c in candidates_all
+                 if c.get("shot_id") not in known_status]
+    if not progressive:
+        # legacy exacto: 1 único micro-batch, top_k é o limite TOTAL.
+        candidates = candidates[:top_k]
+
     out: list[dict] = []
-    for cand in candidates:
-        sid = cand["shot_id"]
-        det = batched.get(sid)
-        if det is None:
-            continue  # batch parser miss
-        if not det.is_confirmed(min_conf):
-            continue
-        _write_cache(sid, canonical, det)
-        # DEDUPE prevent write-back duplicado (mesma entity, mesmo shot)
-        # já feito via _local_cache acima
-        _write_back(db, cand, canonical, det)
-        cand_out = dict(cand)
-        cand_out["__confirmation"] = det
-        out.append(cand_out)
+    confirmed_seconds = 0.0
+    confirmed_distinct = 0
+    batches_run = 0
+    idx = 0
+    while idx < len(candidates):
+        if progressive:
+            secs_ok = confirmed_seconds >= (target_seconds or 0.0)
+            shots_ok = confirmed_distinct >= (min_distinct_shots or 0)
+            if secs_ok and shots_ok:
+                break
+            if batches_run >= max_batches:
+                break
+        batch = candidates[idx:idx + top_k]
+        idx += top_k
+        batches_run += 1
+
+        batched = _confirm_batch(batch, canonical, entity_type, settings)
+
+        for cand in batch:
+            sid = cand["shot_id"]
+            det = batched.get(sid)
+            if det is None:
+                continue  # batch parser miss
+            confirmed = det.is_confirmed(min_conf)
+
+            if ri_active:
+                try:
+                    from studio.library.requirement_index import (
+                        CS_CONFIRMED, CS_REJECTED, RequirementMatch,
+                    )
+                    dur = max(0.0, float(cand.get("t_out", 0.0))
+                             - float(cand.get("t_in", 0.0)))
+                    # similarity=0.0: esta match vem de Vision (ground
+                    # truth), não de SigLIP — o sinal real está em
+                    # confirmation_status/confidence/evidence, não aqui.
+                    # Diferente do anti-padrão corrigido no bug 2 (que
+                    # usava similarity=0 SEM nenhuma evidência real).
+                    requirement_index.upsert_match(RequirementMatch(
+                        workset_id=workset_id, requirement_id=requirement_id,
+                        shot_id=sid, media_sha=cand.get("media_sha", ""),
+                        similarity=0.0, duration=dur,
+                        confirmation_status=(CS_CONFIRMED if confirmed
+                                            else CS_REJECTED),
+                        confirmation_confidence=float(det.confidence),
+                        strict_eligible=True,
+                        evidence=tuple(det.evidence or ()),
+                    ))
+                except Exception as exc:
+                    log.debug("require_entity_confirmation: upsert_match "
+                             "falhou (não fatal): %s", exc.__class__.__name__)
+
+            if not confirmed:
+                continue
+            _write_cache(sid, canonical, det)
+            _write_back(db, cand, canonical, det)
+            cand_out = dict(cand)
+            cand_out["__confirmation"] = det
+            out.append(cand_out)
+            if progressive:
+                confirmed_seconds += max(
+                    0.0, float(cand.get("t_out", 0.0))
+                    - float(cand.get("t_in", 0.0)))
+                confirmed_distinct += 1
     return out

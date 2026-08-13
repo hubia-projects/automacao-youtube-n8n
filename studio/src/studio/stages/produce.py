@@ -712,9 +712,19 @@ class S08Matching:
             if not ent.strict:
                 continue
             try:
+                # item K/L: progressivo (para assim que target_seconds/
+                # min_distinct_shots forem atingidos — nunca todos os
+                # candidatos numa só chamada) + sync real com a
+                # RequirementIndex (já populada pelo E/G acima).
+                _spec = workset_ctx.req_by_canonical(ent.canonical_name)
                 confirmed = require_entity_confirmation(
                     ent.canonical_name, ent.entity_type, db, ctx.settings,
                     top_k=warmup_top_k, strict_only=True,
+                    target_seconds=ent.target_seconds,
+                    min_distinct_shots=ent.min_distinct_shots,
+                    requirement_id=(_spec.requirement_id if _spec else None),
+                    workset_id=workset_ctx.workset_id,
+                    requirement_index=ri,
                 )
                 if confirmed:
                     confirmed_entities[ent.canonical_name.strip().lower()] = confirmed
