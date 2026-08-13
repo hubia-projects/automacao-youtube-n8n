@@ -450,17 +450,27 @@ def acquire_for_deficits(
                 try:
                     from studio.library.ingest_asset import ingest_asset
                     from studio.library.licenses import LicenseRecord
-                    lic_dict = meta.get("license") or {}
+                    # BUG REAL (primeira run de produção com Pexels real,
+                    # 2026-08-13): todos os módulos de source (pexels.py
+                    # search()/sweep(), vimeo.py, pixabay.py, wikimedia.py,
+                    # ytdlp_cc.py) devolvem `meta["license"]` como STRING
+                    # plana (ex.: "pexels"), nunca um dict aninhado — o
+                    # `meta.get("license") or {}` seguido de `.get(...)`
+                    # rebentava com AttributeError em 100% dos downloads
+                    # reais (nunca exercido antes: todos os testes usavam
+                    # resolver mockado a devolver [] via mock_mode). Os
+                    # campos vivem todos directamente em `meta` (mesmo
+                    # nível de "provider"/"source_url").
                     lic = LicenseRecord(
                         source=provider_name,
                         source_url=source_url,
-                        license=lic_dict.get("license", "unknown"),
-                        attribution_text=lic_dict.get(
-                            "attribution_text", ""),
-                        share_alike=bool(lic_dict.get("share_alike", False)),
+                        license=str(meta.get("license") or "unknown"),
+                        attribution_text=str(
+                            meta.get("attribution_text") or ""),
+                        share_alike=bool(meta.get("share_alike", False)),
                         attribution_required=bool(
-                            lic_dict.get("attribution_required", True)),
-                        verified_by="provider",
+                            meta.get("attribution_required", True)),
+                        verified_by=str(meta.get("verified_by") or "provider"),
                     )
                     # P2.2 (code-reviewer fix): ingest_asset exige Settings
                     # (não Optional). Fallback `db._settings` foi REMOVIDO —
@@ -560,7 +570,7 @@ def acquire_for_deficits(
                 except Exception as exc:
                     log.warning(
                         "acquire: ingest_asset raised para %s: %s — skip",
-                        path.name, exc.__class__.__name__)
+                        path.name, exc.__class__.__name__, exc_info=True)
                     continue
             # query_history record
             if query_history_db is not None and hasattr(query_history_db,
