@@ -527,9 +527,18 @@ def acquire_for_deficits(
                                     "(não fatal): %s", item.canonical_entity,
                                     exc.__class__.__name__)
                         if hasattr(db, "cache_mark"):
+                            # BUG REAL (2026-08-13, mesma run que revelou o
+                            # bug do license dict): cache_mark() nunca
+                            # aceitou kwarg `status=` — marca sempre "hit"
+                            # internamente (db.py:258). Passar `status=`
+                            # rebentava com TypeError DEPOIS do ingest já
+                            # ter sido bem sucedido, impedindo o bloco de
+                            # indexação de matches novos (item U, abaixo)
+                            # de correr — nunca detectado antes pelo mesmo
+                            # motivo do bug anterior (resolver mockado a
+                            # devolver [] em todos os testes).
                             db.cache_mark(provider_name, source_url,
-                                           media_sha=result.media_sha,
-                                           status="DONE")
+                                           media_sha=result.media_sha)
                         # item U: media nova entra no workset com matches
                         # reais — nunca o anti-padrão cego.
                         if requirement_index is not None and re.fullmatch(
