@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 
-from studio.approvals.gates import GatePending, request_gate
+from studio.approvals.gates import GatePending, GateRejected, request_gate
 from studio.orchestrator.stage import RunContext, StageResult
 from studio.theme import ThemeSpec
 from studio.script.lint import lint, normalize_for_tts, scrub_safety_phrases
@@ -625,6 +625,13 @@ class S08Matching:
                  workset_result.is_workset_ready, len(plan.ranked_entities),
                  plan.ranked_entities[0].canonical_name if plan.ranked_entities else "—")
 
+        # item 1.5 (automation closure): QueryHistory canónico — UMA
+        # instância por run, partilhada por TODO o caminho de aquisição
+        # (não repete queries vazias/erradas entre waves).
+        from studio.library.requirement_index import QueryHistory, RequirementIndex
+        ri = RequirementIndex(db)
+        qh = QueryHistory(db)
+
         # item E/G (closure pass): biblioteca global EXISTENTE primeiro —
         # popula a RequirementIndex com o que a biblioteca já tem (sem
         # re-embed: vectores já armazenados) ANTES de qualquer decisão de
@@ -633,48 +640,25 @@ class S08Matching:
         # substring — quando a index já tem matches; caso contrário
         # measure_coverage_from_index devolve False e a medida do
         # scan CSV (já feita dentro de build_workset) fica como está.
-        from studio.library.requirement_index import RequirementIndex
         from studio.library.requirement_matching import (
             index_existing_shots_against_workset,
         )
-        from studio.matching.coverage_plan import measure_coverage_from_index
-        ri = RequirementIndex(db)
-        idx_stats = index_existing_shots_against_workset(workset_ctx, db, ri)
-        log.info("workset=%s: indexed existing library (scanned=%d, "
-                 "matches=%d)", workset_result.workset_id,
-                 idx_stats["shots_scanned"], idx_stats["matches_written"])
-        for ent in plan.ranked_entities:
-            if measure_coverage_from_index(ent, workset_ctx, ri, db):
-                ent.deficit_seconds = round(
-                    max(0.0, ent.target_seconds - ent.available_seconds), 3)
-
-        # Fase D — top-up inteligente baseado em deficit do CoveragePlan.
-        # Executa ENTRE o plano e o assign_shots: para cada entity com
-        # deficit > 0, faz rondas de Pexels-search → ingest → re-measure.
-        # Idempotente (media_exists_denied em ingest.py) e budget-aware.
-        from studio.library.queue_topup import topup_for_plan_concurrent
-        from studio.library.topup import write_topup_log
-        # FIX-S: topup MUDA entity.deficit_seconds in-place (re-medida
-        # após cada round). assign_shots partilha o mesmo `plan` object
-        # — vê valores pós-top-up. Intencional: alignment validator
-        # (Fase G) também lê plano partilhado.
-        #
-        # Pass 5: topup_for_plan_concurrent substitui topup_for_plan() em
-        # modo real (não-mock) — N download workers + queue bounded + 1
-        # ingest worker. mock_mode BYPASSA a queue automaticamente
-        # (queue_topup.delega ao legacy sequencial).
-        topup = topup_for_plan_concurrent(
-            plan, db, ctx.settings, embedder, run_id=ctx.video_id,
+        from studio.matching.coverage_plan import (
+            is_workset_ready,
+            measure_coverage_from_index,
         )
-        write_topup_log(topup, d / "topup_log.json")
 
-        # item U: media adquirida pelo topup acima entra no workset com
-        # matches REAIS — re-corre a indexação (idempotente via
-        # upsert_match) para cobrir o que acabou de ser ingerido.
-        idx_stats_post = index_existing_shots_against_workset(workset_ctx, db, ri)
-        log.info("workset=%s: re-indexed pós-topup (scanned=%d, matches=%d)",
-                 workset_result.workset_id, idx_stats_post["shots_scanned"],
-                 idx_stats_post["matches_written"])
+        def _index_existing() -> None:
+            stats = index_existing_shots_against_workset(workset_ctx, db, ri)
+            log.info("workset=%s: indexed existing library (scanned=%d, "
+                     "matches=%d)", workset_result.workset_id,
+                     stats["shots_scanned"], stats["matches_written"])
+            for ent in plan.ranked_entities:
+                if measure_coverage_from_index(ent, workset_ctx, ri, db):
+                    ent.deficit_seconds = round(
+                        max(0.0, ent.target_seconds - ent.available_seconds), 3)
+
+        _index_existing()
 
         # Pass 3: cache_prune_by_ttl cleanup periódico no fim de S08.
         # Rows mais antigas que Settings.negative_cache_ttl_days (default
@@ -693,12 +677,12 @@ class S08Matching:
 
         # Fase E — strict_only wiring: cenas com brief.strict_entity=True
         # DEVEM ter confirmação visual antes do assign (lazy confirm); cenas
-        # não-strict usam B-roll genérico do Phase C. Wire em S08Matching
-        # aqui (caller-side) para evitar voltar a Fase F só para isto.
-        # warm-up cache para entidades strict. Fase G (FIX): top_k subiu
-        # de 1 → settings.s08_warmup_top_k (default 4) para o repair loop
-        # ter `confirmed_ids` suficiente em rodadas 2..N. Custo: 1 Vision
-        # call batched por entity (não N calls), cache write-back por shot.
+        # não-strict usam B-roll genérico do Phase C. Confirmação Vision
+        # sobre a biblioteca ATUAL (sem rede) — item 14: doutrina trata
+        # "progressive local strict confirmation" como parte da preparação
+        # da biblioteca, não do matching; corre ANTES do gate (informa a
+        # cobertura REAL) e é re-invocada depois de cada wave de aquisição
+        # (helper reusável, ver `_run_strict_confirmation` abaixo).
         from studio.library.confirmation import require_entity_confirmation
         warmup_top_k = max(1, int(getattr(ctx.settings,
                                           "s08_warmup_top_k", 4) or 4))
@@ -706,90 +690,126 @@ class S08Matching:
         # — confirmed_entities nunca chegava a assign_shots (default None),
         # o gate estrito da Fase F ficava sempre dormant em produção.
         # Construído aqui e passado a TODAS as chamadas de assign_shots
-        # abaixo (v1 + todas as rondas de repair + post-topup).
+        # abaixo (v1 + todas as rondas de repair).
         confirmed_entities: dict[str, list[dict]] = {}
-        for ent in plan.ranked_entities:
-            if not ent.strict:
-                continue
-            try:
-                # item K/L: progressivo (para assim que target_seconds/
-                # min_distinct_shots forem atingidos — nunca todos os
-                # candidatos numa só chamada) + sync real com a
-                # RequirementIndex (já populada pelo E/G acima).
-                _spec = workset_ctx.req_by_canonical(ent.canonical_name)
-                confirmed = require_entity_confirmation(
-                    ent.canonical_name, ent.entity_type, db, ctx.settings,
-                    top_k=warmup_top_k, strict_only=True,
-                    target_seconds=ent.target_seconds,
-                    min_distinct_shots=ent.min_distinct_shots,
-                    requirement_id=(_spec.requirement_id if _spec else None),
-                    workset_id=workset_ctx.workset_id,
-                    requirement_index=ri,
-                )
-                if confirmed:
-                    confirmed_entities[ent.canonical_name.strip().lower()] = confirmed
-            except (TimeoutError, KeyError, ValueError) as exc:
-                # narrow: S08 não pode bloquear por Vision API fora do ar
-                # nem por schema inválido do meta_json cache pre-Fase E
-                log.warning("warm-up confirmação '%s' falhou: %s — "
-                            "strict_only wired (aviso, run prossegue)",
-                            ent.canonical_name,
-                            exc.__class__.__name__)
-        log.info("topup: %d entities touched, total_rounds=%d, cost=$%.4f, "
-                 "mock=%s budget_stop=%s",
-                 len(topup.per_entity), topup.total_rounds,
-                 topup.total_cost_usd, topup.skipped_due_to_mock,
-                 topup.skipped_due_to_budget)
 
-        # item V/W (closure pass): gate de aprovação da biblioteca. Depois
-        # do topup automático (Fase D) e da confirmação Vision (Fase E)
-        # acima, medimos a cobertura REAL (com o confirmed_index dos
-        # strict) e decidimos se vale a pena gastar mais trabalho de
-        # matching numa biblioteca ainda incompleta. `auto_acquire_library`
-        # já teve o topup automático acima como única tentativa (a
-        # unificação via AcquisitionService/micro-waves bounded é o item
-        # O, ainda pendente) — se mesmo assim não ficar pronta, falha
-        # fechado em vez de perder tempo em assign_shots/repair loop.
-        # W é consequência directa: qualquer StageResult que não seja
-        # "done" impede o PipelineRunner de avançar para S09.
-        from studio.matching.coverage_plan import is_workset_ready
-        confirmed_index_for_gate = {
-            canon: [row.get("shot_id") for row in rows if row.get("shot_id")]
-            for canon, rows in confirmed_entities.items()
-        }
-        ready_for_gate, per_status_gate, _strict_uncovered_gate = is_workset_ready(
-            plan, db, ctx.settings, confirmed_index=confirmed_index_for_gate,
-            remeasure=False,
-        )
-        if not ready_for_gate:
-            covered_n = sum(1 for v in per_status_gate.values() if v == "COVERED")
+        def _run_strict_confirmation() -> None:
+            for ent in plan.ranked_entities:
+                if not ent.strict:
+                    continue
+                try:
+                    # item K/L: progressivo (para assim que target_seconds/
+                    # min_distinct_shots forem atingidos — nunca todos os
+                    # candidatos numa só chamada) + sync real com a
+                    # RequirementIndex (já populada pelo E/G acima).
+                    _spec = workset_ctx.req_by_canonical(ent.canonical_name)
+                    confirmed = require_entity_confirmation(
+                        ent.canonical_name, ent.entity_type, db, ctx.settings,
+                        top_k=warmup_top_k, strict_only=True,
+                        target_seconds=ent.target_seconds,
+                        min_distinct_shots=ent.min_distinct_shots,
+                        requirement_id=(_spec.requirement_id if _spec else None),
+                        workset_id=workset_ctx.workset_id,
+                        requirement_index=ri,
+                    )
+                    if confirmed:
+                        confirmed_entities[ent.canonical_name.strip().lower()] = confirmed
+                except (TimeoutError, KeyError, ValueError) as exc:
+                    # narrow: S08 não pode bloquear por Vision API fora do ar
+                    # nem por schema inválido do meta_json cache pre-Fase E
+                    log.warning("warm-up confirmação '%s' falhou: %s — "
+                                "strict_only wired (aviso, run prossegue)",
+                                ent.canonical_name,
+                                exc.__class__.__name__)
+
+        _run_strict_confirmation()
+
+        def _measure_ready():
+            confirmed_index_for_gate = {
+                canon: [row.get("shot_id") for row in rows if row.get("shot_id")]
+                for canon, rows in confirmed_entities.items()
+            }
+            return is_workset_ready(
+                plan, db, ctx.settings, confirmed_index=confirmed_index_for_gate,
+                remeasure=False,
+            )
+
+        def _covered_deficits_msg(per_status: dict[str, str]) -> tuple[int, str]:
+            covered_n = sum(1 for v in per_status.values() if v == "COVERED")
             deficits_msg = ", ".join(
-                f"{name}={status}" for name, status in per_status_gate.items()
+                f"{name}={status}" for name, status in per_status.items()
                 if status != "COVERED"
             ) or "sem detalhe"
-            if ctx.params.get("auto_acquire_library"):
-                return StageResult(
-                    status="failed",
-                    outputs=[d / "coverage_plan.json"],
-                    notes=f"auto_acquire_library esgotado sem "
-                          f"WORKSET_READY ({covered_n}/{len(per_status_gate)} "
-                          f"cobertos, item V/W fail-closed): {deficits_msg}",
-                )
-            try:
-                request_gate(
-                    ctx.settings, ctx.state, "library",
-                    f"Biblioteca incompleta para '{ctx.state.topic}' "
-                    f"({covered_n}/{len(per_status_gate)} requirements "
-                    f"cobertos). Deficits: {deficits_msg}. Aprovar avançar "
-                    f"mesmo assim?",
-                )
-            except GatePending:
-                return StageResult(
-                    status="waiting_approval",
-                    outputs=[d / "coverage_plan.json"],
-                    notes=f"gate: library ({covered_n}/"
-                          f"{len(per_status_gate)} cobertos — {deficits_msg})",
-                )
+            return covered_n, deficits_msg
+
+        # item 1.3/1.6 (automation closure): gate ANTES de qualquer
+        # aquisição externa — antes, `topup_for_plan_concurrent` corria
+        # incondicionalmente aqui, sempre ANTES da decisão humana. Agora:
+        # medimos prontidão real primeiro; só chamamos o AcquisitionService
+        # (item O — único caminho de aquisição em produção) depois de
+        # `auto_acquire_library=True` OU aprovação humana explícita
+        # ("acquire", nunca "continuar incompleto" — item 1.6). W é
+        # consequência directa: qualquer StageResult que não seja "done"
+        # impede o PipelineRunner de avançar para S09.
+        ready_for_gate, per_status_gate, _ = _measure_ready()
+        if not ready_for_gate:
+            covered_n, deficits_msg = _covered_deficits_msg(per_status_gate)
+            do_acquire = bool(ctx.params.get("auto_acquire_library"))
+            if not do_acquire:
+                try:
+                    request_gate(
+                        ctx.settings, ctx.state, "library",
+                        f"Biblioteca insuficiente para '{ctx.state.topic}' "
+                        f"({covered_n}/{len(per_status_gate)} requirements "
+                        f"cobertos). Deficits: {deficits_msg}. Deseja "
+                        f"buscar os assets em falta?",
+                        options=["acquire", "cancel"],
+                    )
+                    do_acquire = True  # aprovado -> dispara aquisição abaixo
+                except GatePending:
+                    return StageResult(
+                        status="waiting_approval",
+                        outputs=[d / "coverage_plan.json"],
+                        notes=f"gate: library ({covered_n}/"
+                              f"{len(per_status_gate)} cobertos — {deficits_msg})",
+                    )
+                except GateRejected:
+                    return StageResult(
+                        status="failed",
+                        outputs=[d / "coverage_plan.json"],
+                        notes=f"operador cancelou aquisição de biblioteca "
+                              f"({covered_n}/{len(per_status_gate)} "
+                              f"cobertos — {deficits_msg})",
+                    )
+
+            if do_acquire:
+                from studio.library.acquisition import run_acquisition_for_workset
+                max_waves = max(1, int(getattr(
+                    ctx.settings, "acquisition_max_waves", 3) or 3))
+                for wave in range(max_waves):
+                    acq_rep = run_acquisition_for_workset(
+                        plan, workset_ctx, db, embedder, ctx.settings,
+                        requirement_index=ri, query_history=qh,
+                    )
+                    # item U: media nova entra no workset com matches
+                    # REAIS (idempotente via upsert_match).
+                    _index_existing()
+                    _run_strict_confirmation()
+                    ready_for_gate, per_status_gate, _ = _measure_ready()
+                    log.info("acquisition wave %d/%d: coverage_ready=%s "
+                             "downloads=%d", wave + 1, max_waves,
+                             acq_rep.coverage_ready, acq_rep.downloads_succeeded)
+                    if ready_for_gate:
+                        break
+                if not ready_for_gate:
+                    covered_n, deficits_msg = _covered_deficits_msg(per_status_gate)
+                    return StageResult(
+                        status="failed",
+                        outputs=[d / "coverage_plan.json"],
+                        notes=f"aquisição esgotada sem WORKSET_READY "
+                              f"({covered_n}/{len(per_status_gate)} "
+                              f"cobertos, {max_waves} waves): {deficits_msg}",
+                    )
 
         # Fase G — Entity Alignment Validator + Repair Loop (ARCHITECTURE §1.8)
         # 1ª passagem: assign_shots como antes. Se utilizador pediu keep_v1,

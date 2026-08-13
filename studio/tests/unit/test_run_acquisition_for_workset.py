@@ -75,13 +75,13 @@ def test_ordena_por_tier_strict_antes_de_filler(tmp_path):
         queries_order.append(query)
         return []
 
+    settings = MagicMock(library_root=tmp_path, query_levels=4,
+                         mock_mode=False, pexels_api_key="test-key")
     with patch("studio.library.acquisition.make_provider_resolver",
               return_value=fake_resolver):
         run_acquisition_for_workset(
             plan, ctx, MagicMock(library_root=tmp_path), MagicMock(),
-            MagicMock(library_root=tmp_path, query_levels=4),
-            requirement_index=MagicMock(),
-            max_iterations=1,
+            settings, requirement_index=MagicMock(), max_iterations=1,
         )
     assert queries_order, "resolver devia ter sido chamado pelo menos 1x"
     assert "Livraria Lello" in queries_order[0], (

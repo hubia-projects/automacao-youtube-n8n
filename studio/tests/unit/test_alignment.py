@@ -659,6 +659,13 @@ def test_s08_matching_run_integration_clean(tmp_path: Path, monkeypatch) -> None
     import studio.library.confirmation as conf_mod
     monkeypatch.setattr(conf_mod, "require_entity_confirmation",
                         lambda *a, **kw: [])
+    # item 1.3/1.6 (automation closure): S08 agora tem um gate de
+    # biblioteca ANTES de Fase G (assign_shots) que bloqueia com
+    # FakeDB vazia + confirmação sempre vazia. Este teste testa o
+    # validador de alinhamento/repair loop PÓS-gate — bypassa o gate
+    # (não é o assunto deste teste) via is_workset_ready sempre pronto.
+    monkeypatch.setattr("studio.matching.coverage_plan.is_workset_ready",
+                        lambda *a, **kw: (True, {}, []))
 
     # Stub embedder (não usado em mock_mode). O S08Matching.run() faz
     # `from studio.library.embed import SiglipEmbedder` lazy; patchamos
@@ -740,6 +747,13 @@ def test_s08_matching_run_integration_fail_closed(tmp_path: Path, monkeypatch) -
     import studio.library.confirmation as conf_mod
     monkeypatch.setattr(conf_mod, "require_entity_confirmation",
                         lambda *a, **kw: [])
+    # item 1.3/1.6 (automation closure): S08 agora tem um gate de
+    # biblioteca ANTES de Fase G (assign_shots) que bloqueia com
+    # FakeDB vazia + confirmação sempre vazia. Este teste testa o
+    # validador de alinhamento/repair loop PÓS-gate — bypassa o gate
+    # (não é o assunto deste teste) via is_workset_ready sempre pronto.
+    monkeypatch.setattr("studio.matching.coverage_plan.is_workset_ready",
+                        lambda *a, **kw: (True, {}, []))
 
     # assign_shots devolve um segmento com `food_csv="bacalhau"` numa cena
     # strict Francesinha → validator PERSISTE em reportar strict_violation;
@@ -827,6 +841,13 @@ def test_repair_loop_recovers_via_targeted_topup(tmp_path: Path, monkeypatch) ->
     import studio.library.confirmation as conf_mod
     monkeypatch.setattr(conf_mod, "require_entity_confirmation",
                         lambda *a, **kw: [])
+    # item 1.3/1.6 (automation closure): S08 agora tem um gate de
+    # biblioteca ANTES de Fase G (assign_shots) que bloqueia com
+    # FakeDB vazia + confirmação sempre vazia. Este teste testa o
+    # validador de alinhamento/repair loop PÓS-gate — bypassa o gate
+    # (não é o assunto deste teste) via is_workset_ready sempre pronto.
+    monkeypatch.setattr("studio.matching.coverage_plan.is_workset_ready",
+                        lambda *a, **kw: (True, {}, []))
 
     # 1ª call: assign_shots levanta SceneStrictCoverageGap("Francesinha")
     # 2ª call: assign_shots devolve result OK (após _targeted_topup correu).
@@ -986,6 +1007,13 @@ def test_repair_loop_fail_closed_when_targeted_topup_no_op(tmp_path: Path,
     import studio.library.confirmation as conf_mod
     monkeypatch.setattr(conf_mod, "require_entity_confirmation",
                         lambda *a, **kw: [])
+    # item 1.3/1.6 (automation closure): S08 agora tem um gate de
+    # biblioteca ANTES de Fase G (assign_shots) que bloqueia com
+    # FakeDB vazia + confirmação sempre vazia. Este teste testa o
+    # validador de alinhamento/repair loop PÓS-gate — bypassa o gate
+    # (não é o assunto deste teste) via is_workset_ready sempre pronto.
+    monkeypatch.setattr("studio.matching.coverage_plan.is_workset_ready",
+                        lambda *a, **kw: (True, {}, []))
 
     # assign_shots: V1 levanta SCG, depois também levanta SCG (não recupera)
     def fake_assign_shots(*a, **kw):

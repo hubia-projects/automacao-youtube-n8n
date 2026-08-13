@@ -123,12 +123,21 @@ def seeded_library(settings, fake_embedder, _seeded_media_file):
     # Diversidade cíclica (4 categorias) — cobre must_have=food/landmark
     # e entity_terms LIKE genéricos ("Lisboa"/"Porto") que os stages de
     # matching/briefs exigem, sem depender de tagging manual por teste.
+    # BUG REAL CORRIGIDO (item 1.7-bis, automation closure): coverage_plan.py
+    # ::_entity_match_clause documenta explicitamente "places_csv/
+    # landmarks_csv/food_csv são lowercase já" — o WHERE LIKE gerado usa
+    # `canonical.lower()` contra a coluna, e o dialecto DataFusion/LanceDB
+    # é case-SENSITIVE. Esta fixture guardava "Lisboa, Porto" (capital L) —
+    # measure_coverage("Lisboa", "place") NUNCA encontrava os 15 shots
+    # marcados, ficando available_seconds=0 (NOT_FOUND) mesmo com cobertura
+    # física de sobra. Corrigido para lowercase, como o resto do pipeline
+    # real (Gemini metadata) sempre escreve.
     _CATEGORIES = [
         {"has_food": True, "food_csv": "comida tipica portuguesa",
          "places_csv": "", "landmarks_csv": ""},
         {"has_landmark": True, "landmarks_csv": "monumento historico",
          "places_csv": "", "food_csv": ""},
-        {"places_csv": "Lisboa, Porto", "food_csv": "", "landmarks_csv": ""},
+        {"places_csv": "lisboa, porto", "food_csv": "", "landmarks_csv": ""},
         {"places_csv": "", "food_csv": "", "landmarks_csv": ""},
     ]
     # BUG REAL CORRIGIDO (item 36): só 22 shots ÷ 4 categorias dava ~6 shots
@@ -143,7 +152,19 @@ def seeded_library(settings, fake_embedder, _seeded_media_file):
         t_in = float(i % 23)
         rows.append({
             "shot_id": f"seed_{i:03d}",
-            "media_sha": "seedsha_shared",
+            # BUG REAL CORRIGIDO (item 1.7-bis, automation closure): um
+            # media_sha PARTILHADO por todos os 60 shots fazia
+            # `_union_seconds` (coverage_plan.py) colapsar a "duração
+            # disponível" de QUALQUER entity/filler ao tecto do vídeo
+            # fonte partilhado (30s) — independentemente de quantos shots
+            # distintos existissem, porque _union_seconds mede segundos
+            # REAIS de footage por ficheiro físico, não soma ingénua. Um
+            # filler a pedir 60s nunca conseguia mais de ~29s disponíveis.
+            # media_sha ÚNICO por shot (footage logicamente distinta,
+            # embora fisicamente cortada do mesmo ficheiro de teste) remove
+            # este tecto artificial — corresponde ao modelo real onde cada
+            # shot vem de um ficheiro fisicamente diferente.
+            "media_sha": f"seedsha_{i:03d}",
             "t_in": t_in,
             "t_out": t_in + 7.0,
             "vec": vec.tolist(),

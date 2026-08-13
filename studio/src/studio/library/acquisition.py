@@ -681,8 +681,15 @@ def run_acquisition_for_workset(
     def _remeasure() -> bool:
         return all(d.deficit_seconds <= 0 for d in deficit_items)
 
-    dest = settings.library_root / "downloads" / (workset_ctx.workflow_id or "shared")
-    resolver = make_provider_resolver(settings, dest, providers=("pexels",), db=db)
+    # fail-closed: mock_mode ou sem credencial -> resolver stub (nunca
+    # contacta providers reais). Mesmo guard que reconcile.py's P11 já
+    # usava — sem isto, testes com mock_mode=True mas settings carregadas
+    # de .env (chave real) fariam chamadas de rede reais por engano.
+    if settings.mock_mode or not getattr(settings, "pexels_api_key", ""):
+        resolver = lambda q, lvl: []  # noqa: E731
+    else:
+        dest = settings.library_root / "downloads" / (workset_ctx.workflow_id or "shared")
+        resolver = make_provider_resolver(settings, dest, providers=("pexels",), db=db)
 
     return acquire_for_deficits(
         workset_ctx=workset_ctx, db=db, embedder=embedder, settings=settings,

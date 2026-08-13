@@ -624,6 +624,13 @@ def test_porto_e2e_fail_closed_when_persistent(porto_library,
     # directamente — esse módulo tem `__all__` sequencial mas não expõe
     # `assign_shots` como attribute a este nível.
     monkeypatch.setattr(assigner_mod, "assign_shots", fake_assign_persistent)
+    # item 1.3/1.6 (automation closure): S08 agora tem um gate de biblioteca
+    # ANTES de Fase G — este teste testa o fail-closed de Fase G/repair loop
+    # (assign_shots persiste SceneStrictCoverageGap), não o gate em si;
+    # bypassa-o (não é o assunto deste teste) via is_workset_ready sempre
+    # pronto, tal como test_alignment.py faz para os equivalentes.
+    monkeypatch.setattr("studio.matching.coverage_plan.is_workset_ready",
+                        lambda *a, **kw: (True, {}, []))
 
     ctx = RunContext(
         video_id=video_id, run_dir=run_dir, settings=settings,

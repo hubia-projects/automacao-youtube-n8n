@@ -62,10 +62,24 @@ def test_s08_matching_integration_cria_workset_no_disco(tmp_path, monkeypatch):
     (run_dir / "07_briefs" / "briefs.json").write_text(
         json.dumps([brief.model_dump()], ensure_ascii=False), "utf-8")
 
+    # item 1.3/1.6 (automation closure): o gate agora recusa avançar para
+    # matching enquanto a biblioteca não estiver READY (nunca mais
+    # "aprovar avançar mesmo assim") — para este teste continuar a exercer
+    # o caminho FELIZ até ao fim (selected_shots.json real), a FakeDB
+    # precisa de ter cobertura suficiente para "Francesinha" e a
+    # confirmação Vision (mockada) tem de devolver o shot como confirmado.
+    _matching_row = {
+        "shot_id": "shot_fr_1", "media_sha": "sha_fr_1", "t_in": 0.0,
+        "t_out": 10.0, "quality": 5, "revoked": False,
+        "food_csv": "francesinha", "landmarks_csv": "", "places_csv": "",
+    }
+
     class FakeDB:
         def __init__(self, root): self.root = root
-        def get_shot(self, sid): return None
-        def iter_rows(self, where, *, limit=20000, include_restricted=False): return []
+        def get_shot(self, sid):
+            return _matching_row if sid == "shot_fr_1" else None
+        def iter_rows(self, where, *, limit=20000, include_restricted=False):
+            return [_matching_row]
         def search_vec(self, *a, **kw): return []
         def entity_vocab(self): return {}
         def cache_prune_by_ttl(self, days): return 0
@@ -78,8 +92,12 @@ def test_s08_matching_integration_cria_workset_no_disco(tmp_path, monkeypatch):
     monkeypatch.setattr(assigner_mod, "assign_shots",
                         lambda *a, **kw: AssignmentResult(segments=[]))
     import studio.library.confirmation as conf_mod
-    monkeypatch.setattr(conf_mod, "require_entity_confirmation",
-                        lambda *a, **kw: [])
+
+    def _fake_confirm(canonical, entity_type, db, settings, **kwargs):
+        if canonical.strip().lower() == "francesinha":
+            return [_matching_row]
+        return []
+    monkeypatch.setattr(conf_mod, "require_entity_confirmation", _fake_confirm)
 
     class DummyEmbedder:
         model_id = "fake-model"

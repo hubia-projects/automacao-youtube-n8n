@@ -679,8 +679,19 @@ def build_coverage_plan(
         # item H (closure pass): location REAL do ThemeSpec (ex.: "Porto")
         # em vez do genérico "Portugal" — sem isto, o filler não tinha
         # nenhum viés geográfico e podia devolver b-roll de outra cidade.
-        filler_location = location or next(
-            (e.location for e in ranked if e.location), "")
+        #
+        # BUG REAL CORRIGIDO (item 1.7-bis, automation closure): a versão
+        # anterior tinha um fallback "usa a location de QUALQUER entity
+        # core" quando `location` (ThemeSpec) vinha vazio. Isso criava um
+        # ciclo vicioso quando a única entity core partilhava a MESMA
+        # location inferida: o filler ficava geo-filtrado exactamente aos
+        # MESMOS shots já reclamados por essa entity (`exclude_ids`),
+        # zerando `available_seconds` do filler mesmo com biblioteca
+        # abundante (45 shots livres, todos excluídos por engano). Filler
+        # só deve usar a location do OPERADOR (ThemeSpec.location); sem
+        # ela, fica sem filtro geográfico (comportamento explícito, não um
+        # palpite por entity).
+        filler_location = location
         filler_ent = build_filler_requirement(
             ranked, total_script_seconds, settings, topic=topic,
             location=filler_location)
