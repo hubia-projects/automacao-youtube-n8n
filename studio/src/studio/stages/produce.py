@@ -757,13 +757,19 @@ class S08Matching:
             do_acquire = bool(ctx.params.get("auto_acquire_library"))
             if not do_acquire:
                 try:
+                    # options= omitido: default ["approve","reject"] —
+                    # mesmo vocabulário CLI dos outros 3 gates (topic/
+                    # script/final; `studio approve <id> <gate>
+                    # approve|reject`, argparse `choices=` fixo). O que
+                    # muda é a SEMÂNTICA (pergunta + comportamento), não o
+                    # nome dos botões: "approve" aqui significa "autorizar
+                    # aquisição", nunca "continuar incompleto" (item 1.6).
                     request_gate(
                         ctx.settings, ctx.state, "library",
                         f"Biblioteca insuficiente para '{ctx.state.topic}' "
                         f"({covered_n}/{len(per_status_gate)} requirements "
                         f"cobertos). Deficits: {deficits_msg}. Deseja "
                         f"buscar os assets em falta?",
-                        options=["acquire", "cancel"],
                     )
                     do_acquire = True  # aprovado -> dispara aquisição abaixo
                 except GatePending:
