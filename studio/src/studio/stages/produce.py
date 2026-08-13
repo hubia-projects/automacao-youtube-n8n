@@ -751,10 +751,34 @@ class S08Matching:
                 canon: [row.get("shot_id") for row in rows if row.get("shot_id")]
                 for canon, rows in confirmed_entities.items()
             }
-            return is_workset_ready(
+            ready, per_status, strict_uncovered = is_workset_ready(
                 plan, db, ctx.settings, confirmed_index=confirmed_index_for_gate,
                 remeasure=False,
             )
+            if not ready:
+                return ready, per_status, strict_uncovered
+            # item 18/19 (automation closure): cobertura por-requirement não
+            # basta — o mesmo shot pode estar a satisfazer duas requirements
+            # em simultâneo em is_workset_ready (que mede disponibilidade,
+            # não alocação). Confirma que o allocator greedy (sem reuso de
+            # shot_id entre requirements, item I/J) também fecha ANTES de
+            # avançar para Fase G — S09 nunca deve receber um workset cuja
+            # selecção real seja inatingível.
+            try:
+                from studio.library.selection import allocate_shots
+                alloc = allocate_shots(plan, workset_ctx, ri)
+                if not alloc.selection_feasible:
+                    per_status = dict(per_status)
+                    per_status["_selection_feasible"] = "PARTIAL"
+                    return False, per_status, strict_uncovered
+            except Exception as exc:
+                log.debug("_measure_ready: allocate_shots falhou (não "
+                         "fatal, trata como não feasible): %s",
+                         exc.__class__.__name__)
+                per_status = dict(per_status)
+                per_status["_selection_feasible"] = "ERROR"
+                return False, per_status, strict_uncovered
+            return True, per_status, strict_uncovered
 
         def _covered_deficits_msg(per_status: dict[str, str]) -> tuple[int, str]:
             covered_n = sum(1 for v in per_status.values() if v == "COVERED")

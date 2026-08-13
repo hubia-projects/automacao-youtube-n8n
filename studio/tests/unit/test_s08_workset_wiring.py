@@ -98,6 +98,15 @@ def test_s08_matching_integration_cria_workset_no_disco(tmp_path, monkeypatch):
             return [_matching_row]
         return []
     monkeypatch.setattr(conf_mod, "require_entity_confirmation", _fake_confirm)
+    # item 18/19: _measure_ready() também chama allocate_shots contra a
+    # RequirementIndex real — a FakeDB não implementa os internals do
+    # LanceDB que RequirementIndex precisa, então bypassa com um
+    # resultado feasible (o assunto deste teste é o wiring do workset,
+    # não o allocator, já testado em test_selection.py).
+    from unittest.mock import MagicMock as _MM
+    monkeypatch.setattr(
+        "studio.library.selection.allocate_shots",
+        lambda *a, **kw: _MM(selection_feasible=True, by_requirement={}))
 
     class DummyEmbedder:
         model_id = "fake-model"

@@ -31,8 +31,11 @@ class AllocationResult:
 
     @property
     def selection_feasible(self) -> bool:
-        return bool(self.feasible_by_requirement) and all(
-            self.feasible_by_requirement.values())
+        # feasible_by_requirement só contém entidades core (strict/
+        # non-strict) — filler nunca entra (ver allocate_shots). Um
+        # workset sem entidades core (ex.: só filler) é vacuosamente
+        # feasible: all([]) is True.
+        return all(self.feasible_by_requirement.values())
 
 
 def allocate_shots(
@@ -54,7 +57,8 @@ def allocate_shots(
     by_requirement: dict[str, list[str]] = {}
     feasible_by_requirement: dict[str, bool] = {}
 
-    def _allocate_one(ent, req_id: str, statuses: set[str]) -> None:
+    def _allocate_one(ent, req_id: str, statuses: set[str], *,
+                      track_feasibility: bool) -> None:
         matches = ri.list_for_requirement(workset_id, req_id)
         eligible = [m for m in matches if m.confirmation_status in statuses]
         eligible.sort(key=lambda m: -m.similarity)
@@ -75,8 +79,29 @@ def allocate_shots(
                     and len(picked) >= ent.min_distinct_shots):
                 break
         by_requirement[req_id] = picked
-        feasible_by_requirement[req_id] = (
-            secs >= ent.target_seconds and len(picked) >= ent.min_distinct_shots)
+        # item 8/FILLER_ENTITY_TYPE: filler é supplementary por definição —
+        # a mesma razão pela qual is_workset_ready() nunca bloqueia em
+        # deficit de filler. selection_feasible só pode reflectir strict/
+        # core; um filler sem shots suficientes nunca torna o workset
+        # inteiro "não alocável".
+        if track_feasibility:
+            if not matches:
+                # Mesma semântica de cold-fallback que
+                # measure_coverage_from_index() já usa: a RequirementIndex
+                # sem NENHUM match para esta requirement (workset frio, ou
+                # o floor de similaridade semântica nunca foi cruzado —
+                # cenário real em mock/testes, onde o embedder é
+                # determinístico mas não semântico) não é um "conflito"
+                # detectado, é AUSÊNCIA de dados no índice. is_workset_ready
+                # (já True neste ponto, via fallback CSV measure_coverage())
+                # continua a ser a fonte de verdade — não bloquear aqui,
+                # senão o gate re-introduz falsos negativos que a doutrina
+                # de fallback já resolveu do lado da medição de cobertura.
+                feasible_by_requirement[req_id] = True
+            else:
+                feasible_by_requirement[req_id] = (
+                    secs >= ent.target_seconds
+                    and len(picked) >= ent.min_distinct_shots)
 
     core = [e for e in plan.ranked_entities if e.entity_type != FILLER_ENTITY_TYPE]
     filler = [e for e in plan.ranked_entities if e.entity_type == FILLER_ENTITY_TYPE]
@@ -90,15 +115,17 @@ def allocate_shots(
     for ent in strict_core:
         req_id = _req_id(ent)
         if req_id:
-            _allocate_one(ent, req_id, {CS_CONFIRMED})
+            _allocate_one(ent, req_id, {CS_CONFIRMED}, track_feasibility=True)
     for ent in nonstrict_core:
         req_id = _req_id(ent)
         if req_id:
-            _allocate_one(ent, req_id, {CS_CONFIRMED, CS_NOT_REQUIRED})
+            _allocate_one(ent, req_id, {CS_CONFIRMED, CS_NOT_REQUIRED},
+                          track_feasibility=True)
     for ent in filler:
         req_id = _req_id(ent)
         if req_id:
-            _allocate_one(ent, req_id, {CS_CONFIRMED, CS_NOT_REQUIRED})
+            _allocate_one(ent, req_id, {CS_CONFIRMED, CS_NOT_REQUIRED},
+                          track_feasibility=False)
 
     return AllocationResult(by_requirement=by_requirement,
                             feasible_by_requirement=feasible_by_requirement)

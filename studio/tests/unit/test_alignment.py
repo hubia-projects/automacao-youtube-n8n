@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Iterable
+from unittest.mock import MagicMock
 
 import pytest  # FIX-reviewer-Q2: top-level import em vez de __import__ inline.
 
@@ -666,6 +667,11 @@ def test_s08_matching_run_integration_clean(tmp_path: Path, monkeypatch) -> None
     # (não é o assunto deste teste) via is_workset_ready sempre pronto.
     monkeypatch.setattr("studio.matching.coverage_plan.is_workset_ready",
                         lambda *a, **kw: (True, {}, []))
+    # item 18/19: _measure_ready() também chama allocate_shots — bypassa
+    # com um resultado feasible (não é o assunto deste teste também).
+    monkeypatch.setattr(
+        "studio.library.selection.allocate_shots",
+        lambda *a, **kw: MagicMock(selection_feasible=True, by_requirement={}))
 
     # Stub embedder (não usado em mock_mode). O S08Matching.run() faz
     # `from studio.library.embed import SiglipEmbedder` lazy; patchamos
@@ -754,6 +760,11 @@ def test_s08_matching_run_integration_fail_closed(tmp_path: Path, monkeypatch) -
     # (não é o assunto deste teste) via is_workset_ready sempre pronto.
     monkeypatch.setattr("studio.matching.coverage_plan.is_workset_ready",
                         lambda *a, **kw: (True, {}, []))
+    # item 18/19: _measure_ready() também chama allocate_shots — bypassa
+    # com um resultado feasible (não é o assunto deste teste também).
+    monkeypatch.setattr(
+        "studio.library.selection.allocate_shots",
+        lambda *a, **kw: MagicMock(selection_feasible=True, by_requirement={}))
 
     # assign_shots devolve um segmento com `food_csv="bacalhau"` numa cena
     # strict Francesinha → validator PERSISTE em reportar strict_violation;
@@ -848,6 +859,11 @@ def test_repair_loop_recovers_via_targeted_topup(tmp_path: Path, monkeypatch) ->
     # (não é o assunto deste teste) via is_workset_ready sempre pronto.
     monkeypatch.setattr("studio.matching.coverage_plan.is_workset_ready",
                         lambda *a, **kw: (True, {}, []))
+    # item 18/19: _measure_ready() também chama allocate_shots — bypassa
+    # com um resultado feasible (não é o assunto deste teste também).
+    monkeypatch.setattr(
+        "studio.library.selection.allocate_shots",
+        lambda *a, **kw: MagicMock(selection_feasible=True, by_requirement={}))
 
     # 1ª call: assign_shots levanta SceneStrictCoverageGap("Francesinha")
     # 2ª call: assign_shots devolve result OK (após _targeted_topup correu).
@@ -1014,6 +1030,11 @@ def test_repair_loop_fail_closed_when_targeted_topup_no_op(tmp_path: Path,
     # (não é o assunto deste teste) via is_workset_ready sempre pronto.
     monkeypatch.setattr("studio.matching.coverage_plan.is_workset_ready",
                         lambda *a, **kw: (True, {}, []))
+    # item 18/19: _measure_ready() também chama allocate_shots — bypassa
+    # com um resultado feasible (não é o assunto deste teste também).
+    monkeypatch.setattr(
+        "studio.library.selection.allocate_shots",
+        lambda *a, **kw: MagicMock(selection_feasible=True, by_requirement={}))
 
     # assign_shots: V1 levanta SCG, depois também levanta SCG (não recupera)
     def fake_assign_shots(*a, **kw):

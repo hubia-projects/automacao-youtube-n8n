@@ -103,6 +103,12 @@ def test_workset_ready_gate_nunca_e_chamado_assign_corre(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "studio.matching.coverage_plan.is_workset_ready",
         lambda *a, **kw: (True, {"Francesinha": "COVERED"}, []))
+    # item 18/19: is_workset_ready=True dispara allocate_shots dentro de
+    # _measure_ready() — bypassa com resultado feasible (não é o assunto
+    # deste teste, já cobertos em test_selection.py).
+    monkeypatch.setattr(
+        "studio.library.selection.allocate_shots",
+        lambda *a, **kw: MagicMock(selection_feasible=True, by_requirement={}))
     assign_mock = MagicMock(return_value=AssignmentResult(segments=[]))
     import studio.matching.assigner as assigner_mod
     monkeypatch.setattr(assigner_mod, "assign_shots", assign_mock)
