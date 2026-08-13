@@ -134,6 +134,42 @@
     .status-pill.ok { background: #1f6f3d; color: #d2f4dc; }
     .status-pill.skip { background: #9e6a03; color: #fde2a4; }
     .status-pill.fail { background: #8a1f2e; color: #ffd0d8; }
+    /* ----- Item 2.4 (automation closure): action-required, library card, eventos, start ----- */
+    .action-required {
+      background: rgba(138,31,46,0.28); border: 2px solid #f85149;
+      border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;
+      display: none;
+    }
+    .action-required .ar-title {
+      color: #ffd0d8; font-weight: 700; font-size: 13px;
+      text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px;
+    }
+    .action-required .ar-msg { color: #fff0f2; font-size: 13px; }
+    .gate-approval {
+      background: rgba(158,106,3,0.18); border-left: 4px solid #d29922;
+      border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; display: none;
+    }
+    .gate-approval .ga-msg { color: #fde2a4; font-size: 13px; margin-bottom: 10px; }
+    .gate-approval .ga-btns { display: flex; gap: 8px; }
+    .event-log {
+      background: #06090d; border: 1px solid #30363d; border-radius: 6px;
+      padding: 8px 10px; font-family: ui-monospace,"SF Mono",Menlo,monospace;
+      font-size: 11px; max-height: 260px; overflow-y: auto; white-space: pre-wrap;
+    }
+    .event-log .ev { padding: 1px 0; }
+    .event-log .ev .lvl-ERROR { color: #ffd0d8; }
+    .event-log .ev .lvl-WARNING { color: #fde2a4; }
+    .event-log .ev .lvl-INFO { color: #8b949e; }
+    .event-filters { display: flex; gap: 8px; margin-bottom: 6px; align-items: center; }
+    .event-filters select, .event-filters label { font-size: 11px; color: #8b949e; }
+    .start-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-width: 700px; }
+    .start-form label { font-size: 12px; color: #8b949e; display: block; margin-bottom: 3px; }
+    .start-form input {
+      width: 100%; background: #0d1117; border: 1px solid #30363d;
+      color: #e6edf3; padding: 6px 10px; border-radius: 4px; font-size: 13px;
+    }
+    .start-form .full { grid-column: 1 / -1; }
+    .start-form .chk { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #e6edf3; }
   </style>
 </head>
 <body>
@@ -147,6 +183,20 @@
     <div class="tabs">
       <button class="tab-btn active" data-tab="runs">📦 Runs</button>
       <button class="tab-btn" data-tab="library">📚 Library</button>
+      <button class="tab-btn" data-tab="start">▶ Start</button>
+    </div>
+
+    <div id="action-required" class="action-required">
+      <div class="ar-title">⛔ Action required</div>
+      <div class="ar-msg" id="ar-msg"></div>
+    </div>
+
+    <div id="gate-approval" class="gate-approval">
+      <div class="ga-msg" id="ga-msg"></div>
+      <div class="ga-btns">
+        <button class="action-btn" id="ga-approve">✓ Alimentar biblioteca</button>
+        <button class="action-btn danger" id="ga-reject">✗ Cancelar execução</button>
+      </div>
     </div>
 
     <div class="meta">
@@ -160,6 +210,36 @@
     <div id="err" class="err" style="display:none;"></div>
     <div id="bigstatus" class="bigstatus idle">A iniciar…</div>
     <div id="stages"></div>
+
+    <div class="lib-grid" id="workset-cards" style="display:none;">
+      <div class="lib-card">
+        <h3>Biblioteca (workset)</h3>
+        <div class="lib-big" id="ws-coverage">—</div>
+        <div class="lib-meta" id="ws-coverage-meta">—</div>
+      </div>
+      <div class="lib-card">
+        <h3>Prontidão</h3>
+        <div class="lib-big" id="ws-ready">—</div>
+        <div class="lib-meta" id="ws-ready-meta">selection_feasible: —</div>
+      </div>
+    </div>
+
+    <div class="log-section">
+      <h2>Eventos (stream em tempo real)</h2>
+      <div class="event-filters">
+        <label>Nível:
+          <select id="ev-level-filter">
+            <option value="">todos</option>
+            <option value="ERROR">ERROR</option>
+            <option value="WARNING">WARNING</option>
+            <option value="INFO">INFO</option>
+          </select>
+        </label>
+        <label><input type="checkbox" id="ev-autoscroll" checked> autoscroll</label>
+        <button class="action-btn" id="ev-clear" style="margin-left:auto; padding:4px 10px;">limpar vista</button>
+      </div>
+      <div class="event-log" id="event-log"><div class="ev">a ligar ao stream…</div></div>
+    </div>
 
     <div class="log-section">
       <h2>Log live (tail)</h2>
@@ -242,6 +322,37 @@
       <div class="search-row">
         <button class="action-btn" id="lib-reconcile-now">⏵ Reconcile Now (Task 2)</button>
         <span style="color:#6e7681; font-size:11px;" id="lib-reconcile-meta">—</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-start" style="display:none; max-width:700px; margin: 0 auto; padding: 8px 16px 64px;">
+    <h2 style="font-size:14px; color:#79c0ff; margin:0 0 14px;">
+      Iniciar novo vídeo
+    </h2>
+    <p style="color:#8b949e; font-size:12px; margin-bottom:16px;">
+      Item 32 (automation closure): este formulário chama exactamente o
+      mesmo <code>studio run …</code> que o operador usaria no terminal —
+      zero orquestração duplicada em JavaScript. Upload nunca é activado
+      por este formulário (item 20: UPLOAD=OFF por defeito).
+    </p>
+    <div class="start-form">
+      <div><label>video_id</label><input id="sf-video-id" placeholder="porto-24h-001"></div>
+      <div><label>Duração (minutos)</label><input id="sf-duration" placeholder="3" type="number" step="0.5"></div>
+      <div class="full"><label>Tema/tópico</label><input id="sf-topic" placeholder="O que fazer em 24 horas no Porto"></div>
+      <div><label>Localização</label><input id="sf-location" placeholder="Porto"></div>
+      <div><label>Idioma</label><input id="sf-language" placeholder="pt-PT"></div>
+      <div class="full"><label>Tópicos obrigatórios (separados por vírgula)</label>
+        <input id="sf-required-topics" placeholder="Sé do Porto, Ponte Dom Luís I, Francesinha"></div>
+      <div class="full"><label>Tópicos opcionais (separados por vírgula)</label>
+        <input id="sf-optional-topics" placeholder=""></div>
+      <div class="full chk">
+        <input type="checkbox" id="sf-auto-acquire">
+        <label for="sf-auto-acquire" style="margin:0;">--auto-acquire-library (sem pausa humana se a biblioteca estiver incompleta)</label>
+      </div>
+      <div class="full">
+        <button class="action-btn" id="sf-submit">▶ START</button>
+        <span id="sf-result" style="margin-left:10px; font-size:12px; color:#8b949e;"></span>
       </div>
     </div>
   </div>
@@ -429,6 +540,136 @@
 
     fetchStatus(); fetchLog();
     setInterval(function () { fetchStatus(); fetchLog(); }, REFRESH_MS);
+
+    // ----------------- Item 2.4 (automation closure): workset card -----
+    async function fetchWorkset() {
+      if (!currentVid) return;
+      try {
+        const r = await fetch("/api/runs/" + currentVid + "/workset");
+        if (!r.ok) return;
+        const d = await r.json();
+        const cards = document.getElementById("workset-cards");
+        if (!d.exists) { cards.style.display = "none"; return; }
+        cards.style.display = "";
+        const cov = d.coverage || {};
+        const perReq = cov.per_requirement_status || {};
+        const total = Object.keys(perReq).length;
+        const covered = Object.values(perReq).filter(v => v === "COVERED").length;
+        document.getElementById("ws-coverage").textContent =
+          total ? covered + "/" + total : "—";
+        document.getElementById("ws-coverage-meta").textContent =
+          total ? Math.round(100 * covered / total) + "% dos requirements" : "sem dados";
+        const ready = !!cov.is_workset_ready;
+        const feasible = !!cov.selection_feasible;
+        document.getElementById("ws-ready").textContent =
+          ready ? "✓ WORKSET_READY" : "… incompleta";
+        document.getElementById("ws-ready-meta").textContent =
+          "selection_feasible: " + (feasible ? "sim" : "não");
+      } catch (e) { /* silent */ }
+    }
+    setInterval(fetchWorkset, REFRESH_MS);
+    fetchWorkset();
+
+    // ----------------- Item 2.4: banner ACTION REQUIRED + gate library ---
+    let pendingLibraryGate = false;
+    function renderActionRequired(events) {
+      const cred = events.find(e => e.event_type === "credentials_invalid");
+      const banner = document.getElementById("action-required");
+      if (cred) {
+        banner.style.display = "";
+        document.getElementById("ar-msg").textContent = cred.message || "";
+      } else {
+        banner.style.display = "none";
+      }
+      const waiting = events.filter(e => e.event_type === "waiting_approval")
+        .pop();
+      const gateBox = document.getElementById("gate-approval");
+      if (waiting) {
+        pendingLibraryGate = true;
+        gateBox.style.display = "";
+        document.getElementById("ga-msg").textContent = waiting.message || "";
+      }
+    }
+    document.getElementById("ga-approve").addEventListener("click", () =>
+      submitGateDecision("approve"));
+    document.getElementById("ga-reject").addEventListener("click", () =>
+      submitGateDecision("reject"));
+    async function submitGateDecision(decision) {
+      if (!currentVid) return;
+      try {
+        const r = await fetch("/api/runs/" + currentVid + "/approve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ gate: "library", decision: decision }),
+        });
+        const d = await r.json();
+        document.getElementById("ga-msg").textContent = d.ok ?
+          ("decisão registada (" + decision + ") — " +
+            (d.resume_spawned ? "run a retomar automaticamente…" : "")) :
+          ("⚠ " + (d.error || "erro"));
+        if (d.ok) {
+          pendingLibraryGate = false;
+          setTimeout(() => {
+            document.getElementById("gate-approval").style.display = "none";
+          }, 2000);
+        }
+      } catch (e) {
+        document.getElementById("ga-msg").textContent = "⚠ " + e;
+      }
+    }
+
+    // ----------------- Item 2.4: stream SSE de eventos (item 26/27) ------
+    let lastEventSeq = 0;
+    let allEvents = [];
+    function appendEventLine(ev) {
+      allEvents.push(ev);
+      const filterLevel = document.getElementById("ev-level-filter").value;
+      if (filterLevel && ev.level !== filterLevel) return;
+      const box = document.getElementById("event-log");
+      if (box.firstChild && box.firstChild.textContent === "a ligar ao stream…") {
+        box.innerHTML = "";
+      }
+      const line = document.createElement("div");
+      line.className = "ev";
+      const ts = ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : "";
+      line.innerHTML = escape(ts) + " <span class=\"lvl-" + escape(ev.level) +
+        "\">[" + escape(ev.level) + "]</span> " +
+        "<strong>" + escape(ev.stage) + "</strong> " +
+        escape(ev.event_type) + " — " + escape(ev.message || "");
+      box.appendChild(line);
+      if (document.getElementById("ev-autoscroll").checked) {
+        box.scrollTop = box.scrollHeight;
+      }
+    }
+    document.getElementById("ev-level-filter").addEventListener("change", () => {
+      const box = document.getElementById("event-log");
+      box.innerHTML = "";
+      allEvents.forEach(appendEventLine);
+    });
+    document.getElementById("ev-clear").addEventListener("click", () => {
+      // item 28: limpar vista NUNCA apaga o journal persistido — só o DOM.
+      document.getElementById("event-log").innerHTML = "";
+      allEvents = [];
+    });
+
+    function connectEventStream() {
+      if (!currentVid) { setTimeout(connectEventStream, 2000); return; }
+      const es = new EventSource(
+        "/api/runs/" + currentVid + "/events/stream?after_seq=" + lastEventSeq);
+      es.onmessage = function (msg) {
+        try {
+          const ev = JSON.parse(msg.data);
+          lastEventSeq = ev.seq;
+          appendEventLine(ev);
+          renderActionRequired([ev]);
+        } catch (e) { /* silent */ }
+      };
+      es.onerror = function () {
+        es.close();
+        setTimeout(connectEventStream, 3000);  // item 26: reconnect automático
+      };
+    }
+    connectEventStream();
   })();
 
   // ----------------- Library Tab (Task 1) -----------------
@@ -447,6 +688,8 @@
       if (container) container.style.display = (name === "runs") ? "" : "none";
       const libPanel = el("tab-library");
       if (libPanel) libPanel.style.display = (name === "library") ? "" : "none";
+      const startPanel = el("tab-start");
+      if (startPanel) startPanel.style.display = (name === "start") ? "" : "none";
       document.querySelectorAll(".tab-btn").forEach(b => {
         b.classList.toggle("active", b.dataset.tab === name);
       });
@@ -627,6 +870,51 @@
     } catch (e) {}
     refreshAll();
     setInterval(refreshAll, LIB_REFRESH_MS);
+  })();
+
+  // ----------------- Item 2.4/32 (automation closure): Start tab --------
+  (function () {
+    function v(id) { return document.getElementById(id).value.trim(); }
+    function splitCsv(s) {
+      return s.split(",").map(x => x.trim()).filter(Boolean);
+    }
+    document.getElementById("sf-submit").addEventListener("click", async () => {
+      const videoId = v("sf-video-id");
+      const topic = v("sf-topic");
+      const resultEl = document.getElementById("sf-result");
+      if (!videoId || !topic) {
+        resultEl.textContent = "⚠ video_id e tema são obrigatórios";
+        return;
+      }
+      const body = {
+        video_id: videoId, topic: topic,
+        duration: v("sf-duration") || undefined,
+        location: v("sf-location") || undefined,
+        language: v("sf-language") || undefined,
+        required_topics: splitCsv(v("sf-required-topics")),
+        optional_topics: splitCsv(v("sf-optional-topics")),
+        auto_acquire_library: document.getElementById("sf-auto-acquire").checked,
+      };
+      resultEl.textContent = "⏵ a iniciar…";
+      try {
+        const r = await fetch("/api/runs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const d = await r.json();
+        resultEl.textContent = d.ok ?
+          ("✓ iniciado — ver progresso em ?v=" + videoId) :
+          ("⚠ " + (d.error || "erro"));
+        if (d.ok) {
+          setTimeout(() => {
+            location.href = "/?v=" + encodeURIComponent(videoId);
+          }, 1500);
+        }
+      } catch (e) {
+        resultEl.textContent = "⚠ " + e;
+      }
+    });
   })();
   </script>
 </body>
