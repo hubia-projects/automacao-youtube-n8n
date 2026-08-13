@@ -71,7 +71,8 @@ def _vision_call(keyframes_b64: list[tuple[str, str]],
         from studio.llm.gemini import build_vision_request
     except ImportError:
         log.warning("Vision API helper não disponível; retorna rejeições")
-        return [DetectedEntity(rejected=True, rejection_reason="Vision helper missing")
+        return [DetectedEntity(rejected=True, infra_failure=True,
+                               rejection_reason="Vision helper missing")
                 for label, _ in keyframes_b64]
     # monta o prompt usando o template
     prompt_template = (settings.prompts_root / "library"
@@ -96,7 +97,7 @@ def _vision_call(keyframes_b64: list[tuple[str, str]],
         return _parse_multi_response(text, [l for l, _ in keyframes_b64], canonical, etype)
     except Exception as exc:
         log.warning("Vision call falhou: %s — retornando rejeitado", exc)
-        return [DetectedEntity(rejected=True,
+        return [DetectedEntity(rejected=True, infra_failure=True,
                                rejection_reason=f"Vision error: {exc.__class__.__name__}")
                 for _ in keyframes_b64]
 
@@ -162,7 +163,8 @@ def generate_multimodal(parts: list[dict], settings: Settings,
     limiter = get_gemini_limiter(settings)
     if not limiter.acquire(timeout=30.0):
         log.warning("Vision %s: circuit breaker open — fail-fast", tag)
-        return '{"rejected": true, "reason": "circuit_breaker_open"}', 0.0
+        return ('{"rejected": true, "infra_failure": true, '
+                '"rejection_reason": "circuit_breaker_open"}', 0.0)
     try:
         with httpx.Client(timeout=60) as c:
             r = c.post(url,
@@ -170,7 +172,8 @@ def generate_multimodal(parts: list[dict], settings: Settings,
                        json=payload)
         if r.status_code in (429, 500, 502, 503, 504):
             log.warning("Vision %s: HTTP %d retryable", tag, r.status_code)
-            return '{"rejected": true, "reason": "transient"}', 0.0
+            return ('{"rejected": true, "infra_failure": true, '
+                    '"rejection_reason": "transient"}', 0.0)
         r.raise_for_status()
         data = r.json()
         text = (data.get("candidates", [{}])[0]
@@ -179,7 +182,8 @@ def generate_multimodal(parts: list[dict], settings: Settings,
         return text, 0.0
     except Exception as exc:
         log.warning("Vision %s falhou: %s", tag, exc.__class__.__name__)
-        return '{"rejected": true}', 0.0
+        return ('{"rejected": true, "infra_failure": true, '
+                '"rejection_reason": "vision_call_exception"}', 0.0)
 
 
 def _parse_multi_response(text: str, labels: list[str],
@@ -209,7 +213,7 @@ def _parse_multi_response(text: str, labels: list[str],
     except (json.JSONDecodeError, ValidationError):
         pass
     # Fallback: rejeição uniforme
-    return [DetectedEntity(rejected=True,
+    return [DetectedEntity(rejected=True, infra_failure=True,
                            rejection_reason="Vision parser falhou",
                            confirmed_by="gemini-flash")
             for _ in labels]
@@ -313,7 +317,7 @@ def _batch_vision_call(
             out[sid] = det
         return out
     if not settings.gemini_api_key:
-        return {shot["shot_id"]: DetectedEntity(rejected=True,
+        return {shot["shot_id"]: DetectedEntity(rejected=True, infra_failure=True,
                                                 rejection_reason="no API key")
                 for shot in shots}
     # monta payload com N × (text+inline_data por shot)
@@ -354,12 +358,12 @@ def _batch_vision_call(
                         for it in items if it.get("shot_id") == sid),
                         None)
             if det is None:
-                det = DetectedEntity(rejected=True,
+                det = DetectedEntity(rejected=True, infra_failure=True,
                                        rejection_reason="batch parse miss")
             out[sid] = det
         return out
     except Exception as exc:
-        return {shot["shot_id"]: DetectedEntity(rejected=True,
+        return {shot["shot_id"]: DetectedEntity(rejected=True, infra_failure=True,
                                                 rejection_reason=
                                                 f"batch Vision error: {exc.__class__.__name__}")
                 for shot in shots}
@@ -525,10 +529,24 @@ def require_entity_confirmation(
             if ri_active:
                 try:
                     from studio.library.requirement_index import (
-                        CS_CONFIRMED, CS_REJECTED, RequirementMatch,
+                        CS_CONFIRMED, CS_FAILED_RETRYABLE, CS_REJECTED,
+                        RequirementMatch,
                     )
                     dur = max(0.0, float(cand.get("t_out", 0.0))
                              - float(cand.get("t_in", 0.0)))
+                    # item 15 (automation closure): infra_failure distingue
+                    # "Vision genuinely disse não" (CS_REJECTED, nunca mais
+                    # re-tentado) de "não conseguimos nem perguntar" (rede,
+                    # parse, circuit breaker, sem API key) — esse caso vai
+                    # para CS_FAILED_RETRYABLE, elegível para retry em runs
+                    # futuras (known_status acima só exclui CONFIRMED/
+                    # REJECTED, nunca FAILED_RETRYABLE).
+                    if confirmed:
+                        status = CS_CONFIRMED
+                    elif det.infra_failure:
+                        status = CS_FAILED_RETRYABLE
+                    else:
+                        status = CS_REJECTED
                     # similarity=0.0: esta match vem de Vision (ground
                     # truth), não de SigLIP — o sinal real está em
                     # confirmation_status/confidence/evidence, não aqui.
@@ -538,8 +556,7 @@ def require_entity_confirmation(
                         workset_id=workset_id, requirement_id=requirement_id,
                         shot_id=sid, media_sha=cand.get("media_sha", ""),
                         similarity=0.0, duration=dur,
-                        confirmation_status=(CS_CONFIRMED if confirmed
-                                            else CS_REJECTED),
+                        confirmation_status=status,
                         confirmation_confidence=float(det.confidence),
                         strict_eligible=True,
                         evidence=tuple(det.evidence or ()),

@@ -332,6 +332,70 @@ def test_403_permanent_credential_error_no_split_single_request(tmp_path: Path):
     )
 
 
+# ---------- item 16 (automation closure): 5xx retry SAME batch, no split ---------
+def test_5xx_retry_same_batch_no_split(tmp_path: Path):
+    """5xx (erro do servidor) tem de retry a MESMA batch (como 429), nunca
+    cair no split progressivo de parse/timeout errors."""
+    reset_singleton()
+    settings = _mock_settings(mock_mode=False)
+    kfs = _fake_keyframes(tmp_path, 3)
+    shots = [("shot_x", [kfs[0]]), ("shot_y", [kfs[1]]), ("shot_z", [kfs[2]])]
+    payload = _gemini_array_response([
+        ("shot_x", {"summary": "x-ok", "places": ["r"]}),
+        ("shot_y", {"summary": "y-ok", "places": ["s"]}),
+        ("shot_z", {"summary": "z-ok", "places": ["t"]}),
+    ])
+    post_calls = []
+
+    def fake_post(url, **kwargs):
+        post_calls.append(url)
+        if len(post_calls) == 1:
+            return SimpleNamespace(status_code=503, headers={}, json=lambda: {})
+        return SimpleNamespace(
+            status_code=200, headers={}, raise_for_status=lambda: None,
+            json=lambda: payload,
+        )
+
+    with patch("studio.library.metadata.httpx.post", side_effect=fake_post):
+        with patch("studio.library.metadata.time.sleep", lambda s: None):
+            with patch("studio.library.rate_limit.GeminiRateLimiter.acquire",
+                       return_value=True):
+                out = analyze_shots_batch(shots, settings)
+    assert len(post_calls) == 2, (
+        f"Esperado 2 HTTP calls (503 + retry OK, SAME batch, sem split), "
+        f"got {len(post_calls)}"
+    )
+    assert out["shot_x"][0] is not None and out["shot_x"][0].summary == "x-ok"
+    assert out["shot_y"][0] is not None and out["shot_y"][0].summary == "y-ok"
+    assert out["shot_z"][0] is not None and out["shot_z"][0].summary == "z-ok"
+
+
+def test_5xx_exhausted_budget_no_split_metadata_incomplete(tmp_path: Path):
+    """5xx persistente esgota o budget de retry -> METADATA_INCOMPLETE para
+    todos os shots do batch, NUNCA split (não melhora um erro do servidor)."""
+    reset_singleton()
+    settings = _mock_settings(mock_mode=False)
+    settings.library_gemini_max_retries = 0
+    kfs = _fake_keyframes(tmp_path, 2)
+    shots = [("shot_a", [kfs[0]]), ("shot_b", [kfs[1]])]
+    post_calls = []
+
+    def fake_post(url, **kwargs):
+        post_calls.append(url)
+        return SimpleNamespace(status_code=502, headers={}, json=lambda: {})
+
+    with patch("studio.library.metadata.httpx.post", side_effect=fake_post):
+        with patch("studio.library.metadata.time.sleep", lambda s: None):
+            with patch("studio.library.rate_limit.GeminiRateLimiter.acquire",
+                       return_value=True):
+                out = analyze_shots_batch(shots, settings)
+    assert len(post_calls) == 1, (
+        f"budget=0 -> 1 única chamada, sem split; got {len(post_calls)}"
+    )
+    assert out["shot_a"] == (None, 0.0)
+    assert out["shot_b"] == (None, 0.0)
+
+
 def test_mock_mode_deterministic():
     """Em mock_mode (sem gemini_api_key ou settings.mock_mode), per-shot
     fallback usa _mock_metadata (determinístico por nome do ficheiro).

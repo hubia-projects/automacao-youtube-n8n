@@ -11,13 +11,16 @@ sync real com RequirementIndex.
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from studio.config import Settings
 from studio.library.confirmation import _local_cache, require_entity_confirmation
-from studio.library.requirement_index import CS_CONFIRMED, CS_REJECTED
+from studio.library.metadata import DetectedEntity
+from studio.library.requirement_index import (
+    CS_CONFIRMED, CS_FAILED_RETRYABLE, CS_REJECTED,
+)
 
 
 def _shot(id_, t_in=0.0, t_out=1.0, media_sha="sha"):
@@ -128,3 +131,72 @@ def test_safety_cap_max_batches_nunca_vision_ilimitado():
     assert out == []
     # 3 batches x top_k(4) = no máx 12 candidatos processados, nunca 100.
     db.iter_rows.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Item 15 (automation closure) — infra_failure distingue CS_REJECTED
+# (Vision viu e disse não, nunca re-tentado) de CS_FAILED_RETRYABLE (rede/
+# parse/circuit-breaker — sem API key, elegível para retry num run futuro).
+# ---------------------------------------------------------------------------
+def test_infra_failure_vira_failed_retryable_nao_rejected():
+    candidates = [_shot("shot_infra"), _shot("shot_generico")]
+    db = _db_with(candidates)
+    ri = MagicMock()
+    ri.list_for_requirement.return_value = []
+
+    def fake_confirm_batch(batch, canonical, entity_type, settings):
+        return {
+            "shot_infra": DetectedEntity(rejected=True, infra_failure=True,
+                                         rejection_reason="no API key"),
+            "shot_generico": DetectedEntity(rejected=True, infra_failure=False,
+                                            rejection_reason="Vision: não presente"),
+        }
+
+    with patch("studio.library.confirmation._confirm_batch",
+              side_effect=fake_confirm_batch):
+        require_entity_confirmation(
+            "Francesinha", "food", db, _settings(), top_k=4,
+            target_seconds=100.0, min_distinct_shots=100,
+            requirement_id="R01", workset_id="w1", requirement_index=ri,
+        )
+    statuses = {m.args[0].shot_id: m.args[0].confirmation_status
+               for m in ri.upsert_match.call_args_list}
+    assert statuses["shot_infra"] == CS_FAILED_RETRYABLE, (
+        "falha de infra (sem API key) não devia ficar CS_REJECTED "
+        "permanente — tem de poder ser re-tentada"
+    )
+    assert statuses["shot_generico"] == CS_REJECTED, (
+        "verdict genuíno de Vision continua CS_REJECTED (nunca re-tentado)"
+    )
+
+
+def test_failed_retryable_nao_e_excluido_do_proximo_batch():
+    candidates = [_shot("shot_infra")]
+    db = _db_with(candidates)
+    ri = MagicMock()
+    from studio.library.requirement_index import RequirementMatch
+    ri.list_for_requirement.return_value = [
+        RequirementMatch(workset_id="w1", requirement_id="R01",
+                         shot_id="shot_infra", media_sha="sha",
+                         similarity=0.0, duration=1.0,
+                         confirmation_status=CS_FAILED_RETRYABLE,
+                         confirmation_confidence=0.0, strict_eligible=True),
+    ]
+    calls = []
+
+    def fake_confirm_batch(batch, canonical, entity_type, settings):
+        calls.append([c["shot_id"] for c in batch])
+        return {"shot_infra": DetectedEntity(rejected=True, infra_failure=True,
+                                             rejection_reason="transient")}
+
+    with patch("studio.library.confirmation._confirm_batch",
+              side_effect=fake_confirm_batch):
+        require_entity_confirmation(
+            "Francesinha", "food", db, _settings(), top_k=4,
+            target_seconds=100.0, min_distinct_shots=100,
+            requirement_id="R01", workset_id="w1", requirement_index=ri,
+        )
+    assert calls == [["shot_infra"]], (
+        "shot CS_FAILED_RETRYABLE devia continuar elegível para retry "
+        "(nunca excluído como CONFIRMED/REJECTED estariam)"
+    )

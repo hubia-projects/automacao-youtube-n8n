@@ -386,6 +386,31 @@ def _gemini_batched_with_retry(
             out[sid] = (None, 0.0)
         return out
 
+    # item 16 (automation closure): 5xx é erro do SERVIDOR, não do payload —
+    # dividir o batch não melhora nada (o mesmo problema persiste em
+    # metade); antes disto caía no mesmo `_split_on_failure` de parse/
+    # timeout. Retry BOUNDED da MESMA batch (espelha o branch 429 acima);
+    # ao esgotar, METADATA_INCOMPLETE — nunca split por causa de 5xx.
+    if resp.status_code >= 500:
+        if attempt < max(0, settings.library_gemini_max_retries):
+            t_rl = time.perf_counter()
+            sleep_for = min(2.0 * (attempt + 1), 30.0)
+            time.sleep(sleep_for)
+            Profiler.record("gemini_5xx_retry_wait",
+                            time.perf_counter() - t_rl, items=1)
+            log.warning("_gemini_batched_with_retry: HTTP %d (5xx) retry "
+                       "SAME batch attempt=%d/%d after %.1fs",
+                       resp.status_code, attempt + 1,
+                       settings.library_gemini_max_retries, sleep_for)
+            return _gemini_batched_with_retry(
+                shots, settings, source_hint, attempt=attempt + 1)
+        log.error("_gemini_batched_with_retry: 5xx exhausted retry budget "
+                  "(%d) — %d shots METADATA_INCOMPLETE (sem split)",
+                  settings.library_gemini_max_retries, len(shots))
+        for sid, _ks in shots:
+            out[sid] = (None, 0.0)
+        return out
+
     try:
         resp.raise_for_status()
     except httpx.HTTPStatusError as exc:
@@ -585,6 +610,15 @@ class DetectedEntity(BaseModel):
     evidence: lista de strings ("OCR: 'Lello'", "visual: iconic staircase",
                "metadata: Exif date 2025"). Mínimo 3 evidências para high conf.
     rejected: True ⇒ confirm_shot_entity() rejeitou (motivo em rejection_reason).
+    infra_failure: item 15 (automation closure) — True ⇒ este `rejected=True`
+        veio de uma falha de INFRA (rede, timeout, parse, circuit breaker,
+        helper ausente), NÃO de Vision ter visto o shot e decidido que a
+        entity não está presente. Distinção crítica: um `rejected` genuíno
+        nunca deve ser re-tentado (RequirementIndex.CS_REJECTED); uma falha
+        de infra deve poder ser re-tentada em runs futuras
+        (RequirementIndex.CS_FAILED_RETRYABLE). Antes desta distinção, TODOS
+        os caminhos de falha marcavam `rejected=True` indistintamente —
+        um erro de rede permanecia "rejeitado para sempre" no cache/index.
     """
     name: str = ""
     entity_type: str = ""
@@ -592,6 +626,7 @@ class DetectedEntity(BaseModel):
     evidence: list[str] = Field(default_factory=list)
     rejected: bool = False
     rejection_reason: str = ""
+    infra_failure: bool = False
     confirmed_by: str = ""  # "gemini-flash" / "metadata-only" / "cache"
     at: str = ""  # ISO timestamp
 
