@@ -79,6 +79,19 @@ def load_state(run_dir: Path) -> RunState:
     return RunState.model_validate(json.loads(raw))
 
 
+def set_gate_decision(run_dir: Path, gate: str, decision: str) -> RunState:
+    """Item 2.3/32 (automation closure): lógica partilhada CLI+frontend
+    para registar uma decisão de gate. `cli.py::cmd_approve` e o endpoint
+    HTTP `POST /api/runs/<id>/approve` (monitor_server.py) chamam esta
+    MESMA função — zero lógica de negócio duplicada entre os dois
+    (item 22/41: frontend nunca decide nada, só invoca o mesmo caminho).
+    """
+    state = load_state(run_dir)
+    state.gates[gate] = decision
+    save_state(state, run_dir)
+    return state
+
+
 def touch_stage_start(state: RunState, name: str) -> None:
     rec = state.stage(name)
     rec.status = "running"

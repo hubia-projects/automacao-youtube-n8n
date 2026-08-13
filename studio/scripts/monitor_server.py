@@ -686,6 +686,59 @@ def _library_orphans(self) -> dict:
 # ----------------- end Library Tab helpers -----------------
 
 
+# ----------------- Item 2.3 (automation closure): eventos + gate/start ----
+# Canal partilhado terminal+frontend (item 24/25): estes endpoints leem o
+# MESMO journal (studio.events.EventJournal) que o pipeline escreve — o
+# monitor nunca inventa o seu próprio estado, só o expõe.
+
+def _workset_dir_for(video_id: str) -> Path:
+    # item B (sessões anteriores): workset_id == video_id na produção viva.
+    return _library_root() / "worksets" / video_id
+
+
+def _workset_snapshot(video_id: str) -> dict:
+    """Item 27 (snapshot inicial) — coverage/selected_shots/workset_ready
+    do workset activo, para os cards LIBRARY/SELECTION_FEASIBLE do
+    frontend sem depender de eventos já emitidos (útil em reload)."""
+    wdir = _workset_dir_for(video_id)
+    out: dict = {"video_id": video_id, "workset_dir": str(wdir),
+                 "exists": wdir.exists()}
+    if not wdir.exists():
+        return out
+    for name in ("coverage.json", "selected_shots.json",
+                 "visual_requirements.json"):
+        p = wdir / name
+        key = name[:-5]  # sem ".json"
+        if p.exists():
+            try:
+                out[key] = json.loads(p.read_text("utf-8"))
+            except (OSError, json.JSONDecodeError):
+                out[key] = {"error": "unreadable"}
+        else:
+            out[key] = None
+    return out
+
+
+def _spawn_cli(video_id: str, args: list[str], log_name: str) -> tuple[bool, str]:
+    """Spawna `uv run studio <args>` como subprocesso detached — mesmo
+    padrão já usado para `/api/library/reconcile`. Item 22/32: CLI e
+    frontend correm literalmente o mesmo código, zero lógica duplicada."""
+    import subprocess as _sp
+    run_dir = DATA_ROOT / "runs" / video_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    log_path = run_dir / log_name
+    try:
+        log_f = open(log_path, "a")
+        p = _sp.Popen(
+            ["uv", "run", "--quiet", "--directory", str(SCRIPTS_DIR.parent),
+             "studio", *args],
+            stdout=log_f, stderr=_sp.STDOUT, start_new_session=True,
+        )
+        return True, str(log_path)
+    except Exception as exc:
+        return False, f"{exc.__class__.__name__}: {exc}"
+
+
 # Mapa reverso de label → estado humano (pt-PT)
 PT_STATUS = {
     "done": "CONCLUÍDO",
@@ -724,6 +777,41 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_sse_stream(self, video_id: str, after_seq: int) -> None:
+        """Item 26 (automation closure): stream SSE — snapshot dos eventos
+        já existentes a partir de `after_seq`, depois faz tail do
+        `events.jsonl` (poll interno curto, aceitável porque
+        `ThreadingHTTPServer` já dá 1 thread por ligação). Suporta
+        `Last-Event-ID` como alternativa a `?after_seq=` (item 27:
+        reconnect só recebe o que falta, nunca duplica)."""
+        import time as _time
+        sys.path.insert(0, str(STUDIO_ROOT / "src"))
+        from studio.events import get_journal
+
+        run_dir = DATA_ROOT / "runs" / video_id
+        journal = get_journal(run_dir, video_id)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+        except (BrokenPipeError, ConnectionResetError):
+            return
+        last_seq = after_seq
+        try:
+            while True:
+                for ev in journal.read_from(after_seq=last_seq):
+                    chunk = (f"id: {ev.seq}\nevent: {ev.event_type}\n"
+                            f"data: {ev.model_dump_json()}\n\n")
+                    self.wfile.write(chunk.encode("utf-8"))
+                    last_seq = ev.seq
+                self.wfile.flush()
+                _time.sleep(0.5)
+        except (BrokenPipeError, ConnectionResetError):
+            return  # cliente desligou — normal, não é erro
+
     def _stage_view(self, run: dict) -> list[dict]:
         stages_meta = run.get("stages", {})
         out = []
@@ -748,6 +836,31 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/" or path == "/index" or path == "/index.html":
             return self._send_file(STUDIO_ROOT / "scripts" / "static" / "index.html")
+
+        # item 2.3: rotas com sufixo específico têm de ser checadas ANTES
+        # do handler genérico `/api/runs/<video_id>` abaixo (senão
+        # `.../events/stream` seria lido como um video_id inválido com
+        # "/" — nunca chegaria aqui).
+        if path.startswith("/api/runs/") and path.endswith("/events/stream"):
+            vid = path[len("/api/runs/"):-len("/events/stream")].strip("/")
+            if not vid or "/" in vid:
+                return self._send_json({"error": "bad video_id format"}, 400)
+            after_seq = 0
+            last_event_id = self.headers.get("Last-Event-ID")
+            try:
+                if last_event_id:
+                    after_seq = int(last_event_id)
+                else:
+                    after_seq = int(self._qparam("after_seq", "0") or "0")
+            except ValueError:
+                after_seq = 0
+            return self._send_sse_stream(vid, after_seq)
+
+        if path.startswith("/api/runs/") and path.endswith("/workset"):
+            vid = path[len("/api/runs/"):-len("/workset")].strip("/")
+            if not vid or "/" in vid:
+                return self._send_json({"error": "bad video_id format"}, 400)
+            return self._send_json(_workset_snapshot(vid))
 
         if path.startswith("/api/runs/"):
             vid = path[len("/api/runs/"):].strip("/")
@@ -892,11 +1005,90 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404, "Not found")
 
     def do_POST(self) -> None:  # noqa: N802
-        """POST endpoints para Library Tab (Task 1)."""
+        """POST endpoints — Library Tab (Task 1) + item 2.3/31/32
+        (automation closure): aprovação de gate + start-from-frontend."""
         path = self.path.split("?", 1)[0]
         if path == "/api/library/reconcile":
             return self._library_reconcile_trigger()
+        if path.startswith("/api/runs/") and path.endswith("/approve"):
+            vid = path[len("/api/runs/"):-len("/approve")].strip("/")
+            if not vid or "/" in vid:
+                return self._send_json({"error": "bad video_id format"}, 400)
+            return self._approve_gate(vid)
+        if path == "/api/runs":
+            return self._start_run()
         self.send_error(404, "POST endpoint not found")
+
+    def _read_json_body(self) -> dict:
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            return json.loads(raw.decode("utf-8") or "{}")
+        except json.JSONDecodeError:
+            return {}
+
+    def _approve_gate(self, video_id: str) -> None:
+        """Item 31: `[Alimentar biblioteca]`/`[Cancelar execução]` no
+        frontend chamam ISTO, que usa a MESMA `set_gate_decision` do CLI
+        (`studio approve <id> <gate> approve|reject`) e depois resume o
+        run automaticamente — o operador nunca precisa de um 2º passo
+        manual só porque decidiu no browser em vez do terminal."""
+        body = self._read_json_body()
+        gate = str(body.get("gate", "")).strip()
+        decision = str(body.get("decision", "")).strip()
+        if not gate or decision not in ("approve", "reject"):
+            return self._send_json(
+                {"error": "body precisa de {gate, decision: approve|reject}"}, 400)
+        run_dir = DATA_ROOT / "runs" / video_id
+        if not (run_dir / "run.json").exists():
+            return self._send_json({"error": "run not found",
+                                    "video_id": video_id}, 404)
+        sys.path.insert(0, str(STUDIO_ROOT / "src"))
+        from studio.orchestrator.state import set_gate_decision
+        try:
+            set_gate_decision(run_dir, gate, decision)
+        except Exception as exc:
+            return self._send_json({"error": f"{exc.__class__.__name__}: {exc}"}, 500)
+        resumed, resume_log = False, ""
+        if decision == "approve":
+            resumed, resume_log = _spawn_cli(video_id, ["resume", video_id],
+                                             "resume_runner.log")
+        return self._send_json({
+            "ok": True, "video_id": video_id, "gate": gate,
+            "decision": decision, "resume_spawned": resumed,
+            "resume_log": resume_log,
+        })
+
+    def _start_run(self) -> None:
+        """Item 32: form de START no frontend chama isto — spawna
+        `uv run studio run ...` EXACTAMENTE como o operador faria no
+        terminal (item 22: zero orquestração duplicada em JS)."""
+        body = self._read_json_body()
+        video_id = str(body.get("video_id", "")).strip()
+        topic = str(body.get("topic", "")).strip()
+        if not video_id or "/" in video_id or not topic:
+            return self._send_json(
+                {"error": "video_id e topic são obrigatórios"}, 400)
+        args = ["run", "--video-id", video_id, "--topic", topic]
+        if body.get("duration"):
+            args += ["--duration", str(body["duration"])]
+        if body.get("location"):
+            args += ["--location", str(body["location"])]
+        if body.get("language"):
+            args += ["--language", str(body["language"])]
+        for t in (body.get("required_topics") or []):
+            args += ["--required-topic", str(t)]
+        for t in (body.get("optional_topics") or []):
+            args += ["--optional-topic", str(t)]
+        if body.get("auto_acquire_library"):
+            args.append("--auto-acquire-library")
+        # item 20 (final principle): UPLOAD=OFF por defeito — nunca aceite
+        # um flag de upload vindo do frontend nesta chamada de conveniência.
+        started, log_path = _spawn_cli(video_id, args, "start_runner.log")
+        return self._send_json({
+            "ok": started, "video_id": video_id, "args": args,
+            "log_path": log_path,
+        })
 
     def _qparam(self, key: str, default: str = "") -> str:
         qstr = self.path.split("?", 1)[1] if "?" in self.path else ""

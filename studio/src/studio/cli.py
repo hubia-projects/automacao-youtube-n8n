@@ -14,7 +14,13 @@ from studio.logging_setup import configure_logging
 from studio.orchestrator.runner import PipelineRunner, StageFailed, WaitingApproval, resume
 from studio.theme import ThemeSpec
 from studio.orchestrator.stage import RunContext
-from studio.orchestrator.state import load_state, new_state, save_state, state_path
+from studio.orchestrator.state import (
+    load_state,
+    new_state,
+    save_state,
+    set_gate_decision,
+    state_path,
+)
 
 
 def _build_stages(pipeline: str) -> list:
@@ -115,12 +121,16 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_approve(args: argparse.Namespace) -> int:
-    """Decisão manual local (fallback quando o Telegram não está configurado)."""
+    """Decisão manual local (fallback quando o Telegram não está configurado).
+
+    item 2.3/32 (automation closure): a lógica real vive em
+    `orchestrator.state.set_gate_decision` — partilhada com o endpoint
+    HTTP do monitor (`POST /api/runs/<id>/approve`), para que CLI e
+    frontend nunca dupliquem esta decisão de negócio.
+    """
     settings = get_settings()
     run_dir = settings.runs_root / args.video_id
-    state = load_state(run_dir)
-    state.gates[args.gate] = args.decision
-    save_state(state, run_dir)
+    set_gate_decision(run_dir, args.gate, args.decision)
     print(f"gate {args.gate!r} = {args.decision!r} — corre `studio resume {args.video_id}`")
     return 0
 
