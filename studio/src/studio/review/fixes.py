@@ -57,6 +57,29 @@ def _metadata_score(segments, brief: VisualBrief, scene: Scene, db: LibraryDB,
     return score
 
 
+def _violates_brief_constraints(segments, brief: VisualBrief) -> bool:
+    """item 36 (automation closure) — BUG REAL: `_metadata_score` só media
+    compatibilidade de entidade/geografia, nunca `brief.must_have`/
+    `must_not` (food/landmark). Uma "correcção" podia trocar um shot
+    sabotado por outro que ainda violava a cena (ex.: perdia `has_food`)
+    e `apply_fixes` aceitava-a de qualquer forma — a sabotagem desaparecia
+    mas a violação `food` continuava lá, sempre re-detectada na ronda
+    seguinte. Só verifica `food`/`landmark` (os únicos com coluna booleana
+    própria em SegmentAssignment — `has_food`/`has_landmark`); outros
+    valores de must_have/must_not (ex.: "indoor", "people") não têm sinal
+    equivalente disponível aqui e não são verificáveis nesta camada."""
+    for seg in segments:
+        if "food" in brief.must_have and not seg.has_food:
+            return True
+        if "landmark" in brief.must_have and not seg.has_landmark:
+            return True
+        if "food" in brief.must_not and seg.has_food:
+            return True
+        if "landmark" in brief.must_not and seg.has_landmark:
+            return True
+    return False
+
+
 def apply_fixes(fixes: list[Fix], run_dir: Path, settings: Settings,
                 embedder, video_id: str, topic: str = "") -> tuple[list[str], list[str]]:
     """Devolve (cenas corrigidas, fixes não suportados)."""
@@ -84,8 +107,21 @@ def apply_fixes(fixes: list[Fix], run_dir: Path, settings: Settings,
             brief = brief.model_copy(update={
                 k: v for k, v in fix.brief_override.items()
                 if k in VisualBrief.model_fields})
-        # excluir os shots atuais da cena no re-match (senão volta a escolhê-los)
-        bad_shots = {s.shot_id for s in result.segments if s.scene_id == fix.scene_id}
+        # BUG REAL CORRIGIDO (item 36, automation closure): excluir os shots
+        # atuais da cena no re-match evita voltar a escolhê-los — mas
+        # excluir TODOS eles (incluindo os que já satisfaziam o brief)
+        # esgotava pools pequenos (ex.: só ~6 shots food numa categoria) e
+        # forçava assign_shots a cair em "drop_must_have", devolvendo
+        # segmentos SEM food — a sabotagem desaparecia mas a violação real
+        # (food) continuava, e _metadata_score nunca detectava isto (só
+        # media entidade/geografia). Agora só exclui os segmentos que já
+        # violam o brief (o(s) sabotado(s)) — os restantes ficam
+        # disponíveis como candidatos válidos do re-match.
+        scene_segments = [s for s in result.segments if s.scene_id == fix.scene_id]
+        bad_shots = {s.shot_id for s in scene_segments
+                    if _violates_brief_constraints([s], brief)}
+        if not bad_shots:
+            bad_shots = {s.shot_id for s in scene_segments}
         # item 13: esta era a única das 5 chamadas a assign_shots que nunca
         # tinha caminho para confirmed_entities — se o brief é strict, o
         # gate estrito de assign_shots ficava sempre dormant também aqui
@@ -114,6 +150,13 @@ def apply_fixes(fixes: list[Fix], run_dir: Path, settings: Settings,
         new_segments = sub.segments
         if not new_segments:
             unsupported.append(f"{fix.scene_id}:sem alternativa no pool")
+            continue
+        if _violates_brief_constraints(new_segments, brief):
+            unsupported.append(
+                f"{fix.scene_id}:alternativa viola must_have/must_not do brief")
+            log.info("fix %s recusado: novo conjunto viola brief.must_have/"
+                     "must_not (%s/%s)", fix.scene_id, brief.must_have,
+                     brief.must_not)
             continue
         # guarda anti-regressão: só troca se os metadados do novo conjunto
         # forem pelo menos tão compatíveis com o brief quanto os do atual

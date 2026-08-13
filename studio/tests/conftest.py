@@ -98,9 +98,22 @@ def _seeded_media_file(tmp_path_factory):
 
 @pytest.fixture()
 def seeded_library(settings, fake_embedder, _seeded_media_file):
-    """22 shots sintéticos quality=7 (1s cada, cortados do mesmo vídeo real
-    partilhado) — biblioteca 'com cobertura' para testes de discovery/
-    coverage/render sem custo de I/O de 22 ficheiros reais.
+    """60 shots sintéticos quality=7 (7s cada, janelas OVERLAPPING cortadas
+    do mesmo vídeo real partilhado de 30s) — biblioteca 'com cobertura' para
+    testes de discovery/coverage/render sem custo de I/O de 60 ficheiros
+    reais.
+
+    BUG REAL CORRIGIDO (item 36, automation closure), 2 causas:
+    1. shots eram de exactamente 1.0s, muito abaixo de qualquer
+       `BEAT_BANDS` do assigner (1.8-7.0s, ver matching/assigner.py) — cada
+       segmento ficava sempre clamped a 1.0s (seg_len = min(remaining,
+       shot_len, clamp(ideal, band_min, band_max))), forçando ~15 segmentos
+       por cena de 15s em vez dos ~3 pretendidos pela banda. Fix: 7.0s cobre
+       o topo de todas as bandas (payoff: até 7.0s) — um único shot satisfaz
+       qualquer segmento pretendido.
+    2. só 22 shots ÷ 4 categorias dava ~6 shots por categoria — insuficiente
+       para um vídeo food-heavy (todas as cenas a pedir "food") precisando
+       de ~12-15 segmentos distintos. Fix: 60 shots (15/categoria).
     """
     from studio.library.db import LibraryDB
 
@@ -118,14 +131,21 @@ def seeded_library(settings, fake_embedder, _seeded_media_file):
         {"places_csv": "Lisboa, Porto", "food_csv": "", "landmarks_csv": ""},
         {"places_csv": "", "food_csv": "", "landmarks_csv": ""},
     ]
-    for i in range(22):
+    # BUG REAL CORRIGIDO (item 36): só 22 shots ÷ 4 categorias dava ~6 shots
+    # por categoria — insuficiente para um vídeo food-heavy (todas as cenas
+    # a pedir "food") que precisa de ~12-15 segmentos distintos. Subir para
+    # 60 shots (15/categoria) resolve sem tocar em código de produção; `%23`
+    # em t_in mantém todas as janelas dentro do vídeo de 30s partilhado
+    # (t_in máx 22, t_out=t_in+7 ≤ 29).
+    for i in range(60):
         vec = fake_embedder.embed_text(f"seeded fixture shot {i}")
         cat = _CATEGORIES[i % len(_CATEGORIES)]
+        t_in = float(i % 23)
         rows.append({
             "shot_id": f"seed_{i:03d}",
             "media_sha": "seedsha_shared",
-            "t_in": float(i),
-            "t_out": float(i) + 1.0,
+            "t_in": t_in,
+            "t_out": t_in + 7.0,
             "vec": vec.tolist(),
             "summary": "seeded fixture shot",
             "places_csv": cat["places_csv"],
