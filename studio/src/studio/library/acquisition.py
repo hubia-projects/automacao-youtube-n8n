@@ -37,6 +37,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
+from studio.library.query_translation import translate_query_en
+
 log = logging.getLogger("studio.acquisition")
 
 def _load_provider_module(provider: str):
@@ -366,9 +368,18 @@ def acquire_for_deficits(
                         item.canonical_entity)
             break
 
-        # query hierarchy
+        # query hierarchy — a QUERY EXTERNA (stock provider) usa uma frase
+        # EN traduzida/genérica, nunca o canonical_entity em PT tal como
+        # está (bug real descoberto na 1ª run de produção: Pexels/Pixabay
+        # indexam em inglês, nomes próprios locais quase nunca batem).
+        # canonical_entity em si NUNCA muda — script/matching/Vision
+        # continuam a usar o nome original.
+        effective_settings = settings or getattr(db, "_settings", None)
+        query_canonical = translate_query_en(
+            spec.canonical_entity, getattr(spec, "entity_type", "") or "",
+            spec.location, effective_settings)
         levels = query_hierarchy(
-            spec.canonical_entity,
+            query_canonical,
             spec.aliases,
             spec.location,
             n_levels=n_levels,
