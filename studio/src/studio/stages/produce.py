@@ -10,6 +10,7 @@ import json
 import logging
 
 from studio.approvals.gates import GatePending, GateRejected, request_gate
+from studio.events import emit as emit_event
 from studio.orchestrator.stage import RunContext, StageResult
 from studio.theme import ThemeSpec
 from studio.script.lint import lint, normalize_for_tts, scrub_safety_phrases
@@ -407,6 +408,14 @@ class S03Script:
 
         script_md = d / "script.md"
         script_md.write_text(final, "utf-8")
+        emit_event(ctx.run_dir, ctx.video_id, self.name, "script_generated",
+                  f"{report.stats.get('words', 0)} palavras",
+                  payload={"words": report.stats.get("words", 0),
+                          "cost_usd": total})
+        emit_event(ctx.run_dir, ctx.video_id, self.name, "topics_validated",
+                  f"{len(theme_spec.mandatory_topics)} mandatory_topics "
+                  f"cobertos", payload={"mandatory_topics":
+                                       theme_spec.mandatory_topics})
 
         # Code-reviewer final: mega_metrics.json listado em outputs (não só
         # side-file) para o orchestrator propagar para state.json do run
@@ -542,6 +551,8 @@ class S08Matching:
         from studio.library.gemini_preflight import preflight_gemini_credentials
         cred_ok, cred_reason = preflight_gemini_credentials(ctx.settings)
         if not cred_ok:
+            emit_event(ctx.run_dir, ctx.video_id, self.name,
+                      "credentials_invalid", cred_reason, level="ERROR")
             return StageResult(
                 status="failed",
                 notes=f"S08 abortou antes de iniciar (fail-fast, item N): "
@@ -624,6 +635,13 @@ class S08Matching:
                  workset_result.workset_id, workset_result.reused,
                  workset_result.is_workset_ready, len(plan.ranked_entities),
                  plan.ranked_entities[0].canonical_name if plan.ranked_entities else "—")
+        emit_event(ctx.run_dir, ctx.video_id, self.name, "workset_created",
+                  f"workset={workset_result.workset_id} (reused="
+                  f"{workset_result.reused}) — {len(plan.ranked_entities)} "
+                  f"requirements",
+                  payload={"workset_id": workset_result.workset_id,
+                           "reused": workset_result.reused,
+                           "n_requirements": len(plan.ranked_entities)})
 
         # item 1.5 (automation closure): QueryHistory canónico — UMA
         # instância por run, partilhada por TODO o caminho de aquisição
@@ -723,6 +741,10 @@ class S08Matching:
                                 exc.__class__.__name__)
 
         _run_strict_confirmation()
+        emit_event(ctx.run_dir, ctx.video_id, self.name,
+                  "strict_confirmation_batch",
+                  f"{len(confirmed_entities)} entities strict com candidatos "
+                  f"confirmados", payload={"n_confirmed": len(confirmed_entities)})
 
         def _measure_ready():
             confirmed_index_for_gate = {
@@ -752,6 +774,12 @@ class S08Matching:
         # consequência directa: qualquer StageResult que não seja "done"
         # impede o PipelineRunner de avançar para S09.
         ready_for_gate, per_status_gate, _ = _measure_ready()
+        _cov_n, _cov_msg = _covered_deficits_msg(per_status_gate)
+        emit_event(ctx.run_dir, ctx.video_id, self.name, "library_coverage",
+                  f"{_cov_n}/{len(per_status_gate)} requirements cobertos",
+                  progress=(_cov_n / len(per_status_gate)) if per_status_gate else None,
+                  payload={"covered": _cov_n, "total": len(per_status_gate),
+                          "ready": ready_for_gate, "deficits": _cov_msg})
         if not ready_for_gate:
             covered_n, deficits_msg = _covered_deficits_msg(per_status_gate)
             do_acquire = bool(ctx.params.get("auto_acquire_library"))
@@ -793,6 +821,10 @@ class S08Matching:
                 max_waves = max(1, int(getattr(
                     ctx.settings, "acquisition_max_waves", 3) or 3))
                 for wave in range(max_waves):
+                    emit_event(ctx.run_dir, ctx.video_id, self.name,
+                              "provider_download_started",
+                              f"acquisition wave {wave + 1}/{max_waves}",
+                              payload={"wave": wave + 1, "max_waves": max_waves})
                     acq_rep = run_acquisition_for_workset(
                         plan, workset_ctx, db, embedder, ctx.settings,
                         requirement_index=ri, query_history=qh,
@@ -805,7 +837,16 @@ class S08Matching:
                     log.info("acquisition wave %d/%d: coverage_ready=%s "
                              "downloads=%d", wave + 1, max_waves,
                              acq_rep.coverage_ready, acq_rep.downloads_succeeded)
+                    emit_event(ctx.run_dir, ctx.video_id, self.name,
+                              "provider_download_completed",
+                              f"wave {wave + 1}: {acq_rep.downloads_succeeded} "
+                              f"downloads, coverage_ready={ready_for_gate}",
+                              payload={"wave": wave + 1,
+                                      "downloads_succeeded": acq_rep.downloads_succeeded,
+                                      "coverage_ready": ready_for_gate})
                     if ready_for_gate:
+                        emit_event(ctx.run_dir, ctx.video_id, self.name,
+                                  "workset_ready", "biblioteca completa")
                         break
                 if not ready_for_gate:
                     covered_n, deficits_msg = _covered_deficits_msg(per_status_gate)
@@ -816,6 +857,9 @@ class S08Matching:
                               f"({covered_n}/{len(per_status_gate)} "
                               f"cobertos, {max_waves} waves): {deficits_msg}",
                     )
+        else:
+            emit_event(ctx.run_dir, ctx.video_id, self.name, "workset_ready",
+                      "biblioteca já completa (sem aquisição necessária)")
 
         # Fase G — Entity Alignment Validator + Repair Loop (ARCHITECTURE §1.8)
         # 1ª passagem: assign_shots como antes. Se utilizador pediu keep_v1,
@@ -1348,6 +1392,10 @@ class S11Review:
                 round_file.write_text(report.model_dump_json(indent=2, by_alias=True), "utf-8")
             total_cost += cost
             score = report.overall
+            emit_event(ctx.run_dir, ctx.video_id, self.name, "review_score",
+                      f"ronda {rnd}: score={score}",
+                      progress=min(1.0, score / 100.0) if score else None,
+                      payload={"round": rnd, "score": score})
             if score < prev_score:  # monotonicidade: piorou → parar e ir a humano
                 (d / "monotonicity_stop.txt").write_text(
                     f"score desceu {prev_score}→{score} na ronda {rnd}\n")
@@ -1402,6 +1450,8 @@ class S12RenderFinal:
             (ctx.run_dir / "09_timeline" / "timeline.json").read_text("utf-8"))
         d = ctx.stage_dir(self.name)
         ass = (ctx.run_dir / "10_render_proxy" / "captions.ass")
+        emit_event(ctx.run_dir, ctx.video_id, self.name, "render_started",
+                  f"{len(timeline.entries)} entries")
         out = render_video(timeline, d / "final.mp4", ctx.settings,
                            proxy=False,
                            ass_path=ass if ctx.settings.burn_captions else None)

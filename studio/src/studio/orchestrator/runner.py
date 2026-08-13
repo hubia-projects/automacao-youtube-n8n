@@ -30,6 +30,7 @@ from pathlib import Path
 from studio._net import apply_ipv4_only
 apply_ipv4_only()
 
+from studio.events import emit as emit_event
 from studio.llm.budget import BudgetExceeded, check_budget
 from studio.orchestrator.stage import RunContext, Stage
 from studio.orchestrator.state import (
@@ -95,6 +96,11 @@ class PipelineRunner:
             touch_stage_start(state, stage.name)
             save_state(state, ctx.run_dir)
         log.info("run  %s (tentativa %d)", stage.name, rec.attempts)
+        # item 2.2 (automation closure): stage_started — canal partilhado
+        # terminal+frontend (item 24/25). Ponto único: cobre TODAS as
+        # stages sem espalhar chamadas emit() por cada classe de stage.
+        emit_event(ctx.run_dir, ctx.video_id, stage.name, "stage_started",
+                  f"a correr {stage.name} (tentativa {rec.attempts})")
 
         try:
             result = stage.run(ctx)
@@ -102,11 +108,15 @@ class PipelineRunner:
             with self.state_lock:
                 touch_stage_end(state, stage.name, "failed", error="budget_exceeded")
                 save_state(state, ctx.run_dir)
+            emit_event(ctx.run_dir, ctx.video_id, stage.name, "stage_failed",
+                      "budget_exceeded", level="ERROR")
             raise
         except Exception as exc:
             with self.state_lock:
                 touch_stage_end(state, stage.name, "failed", error=repr(exc))
                 save_state(state, ctx.run_dir)
+            emit_event(ctx.run_dir, ctx.video_id, stage.name, "stage_failed",
+                      repr(exc), level="ERROR")
             raise StageFailed(stage.name, repr(exc)) from exc
 
         outputs = [str(p) for p in result.outputs]
@@ -127,10 +137,16 @@ class PipelineRunner:
                 save_state(state, ctx.run_dir)
 
         if result.status == "waiting_approval":
+            emit_event(ctx.run_dir, ctx.video_id, stage.name, "waiting_approval",
+                      result.notes or "gate", level="WARNING")
             raise WaitingApproval(stage.name, result.notes or "gate")
         if result.status == "failed" or not _outputs_ok(outputs):
             error = result.notes or "outputs em falta ou inválidos"
+            emit_event(ctx.run_dir, ctx.video_id, stage.name, "stage_failed",
+                      error, level="ERROR")
             raise StageFailed(stage.name, error)
+        emit_event(ctx.run_dir, ctx.video_id, stage.name, "stage_completed",
+                  result.notes or "done")
 
     def run(self, ctx: RunContext, state: RunState) -> RunState:
         # run_dir absoluto: cron pode acordar num CWD arbitrário, e o _outputs_ok
@@ -165,6 +181,8 @@ class PipelineRunner:
             enabled = True
         if enabled:
             Profiler.write(ctx.run_dir)
+        emit_event(ctx.run_dir, ctx.video_id, "run", "run_completed",
+                  "todas as waves concluídas")
         return state
 
 
