@@ -180,3 +180,119 @@ def test_preflight_skipped_when_no_pexels_key(tmp_path: Path):
     assert "s001" in result.relaxations or "s001" in result.unfilled_scenes
     # Pelo menos 1 cena fica unfilled (sem cobertura) OU preenche com relaxamento
     assert "s001" in result.relaxations or "s001" in result.unfilled_scenes
+
+
+# ---------------------------------------------------------------------------
+# Item O/X (closure pass): allow_network_topup=False desliga TODO o
+# preflight/JIT topup dentro de assign_shots — matching sempre offline em
+# produção (a aquisição já devia ter corrido ANTES via acquire_for_deficits,
+# item V). Mesmo cenário de test_preflight_dedupes_queries (que COM
+# allow_network_topup=True default dispara 1 sweep) — com False, ZERO.
+# ---------------------------------------------------------------------------
+def test_allow_network_topup_false_nunca_chama_sweep_ou_ingest(tmp_path: Path):
+    scenes = [_scene(1, "Vamos falar da Livraria Lello", "detail"),
+              _scene(2, "A Livraria Lello é histórica", "context"),
+              _scene(3, "Dentro da Livraria Lello", "reveal")]
+    briefs = [_brief(s.scene_id, "Porto bookstore interior",
+                     ["indoor"], required_entity="Livraria Lello")
+              for s in scenes]
+    db = MagicMock()
+    embedder = MagicMock()
+    empty_vocab: dict[str, str] = {}
+    db.entity_vocab = MagicMock(return_value=empty_vocab)
+    db.search_shots = MagicMock(return_value=[])
+    db.register_usage = MagicMock()
+
+    sweep_calls: list[tuple] = []
+    ingest_calls: list[Path] = []
+
+    def fake_sweep(query, count, settings, dest):
+        sweep_calls.append((query, count))
+        return [(Path("/fake/clip.mp4"), {"source": "pexels", "verified_by": "api"})]
+
+    def fake_ingest_asset(path, lic, db_, settings_, embedder_, **kwargs):
+        ingest_calls.append(path)
+        r = MagicMock()
+        r.shots_added = 1
+        r.status = "ingested"
+        r.media_sha = "sha1"
+        return r, MagicMock()
+
+    with patch("studio.library.sources.pexels.sweep", side_effect=fake_sweep), \
+         patch("studio.library.ingest_asset.ingest_asset",
+               side_effect=fake_ingest_asset), \
+         patch("studio.matching.assigner.search_shots", db.search_shots), \
+         patch("studio.library.inventory.entity_vocab",
+               side_effect=db.entity_vocab), \
+         patch("studio.library.inventory.resolve_entity",
+               side_effect=lambda e, vocab: []):
+        result = assign_shots(
+            scenes, briefs, db, embedder, _settings_with_pexels(tmp_path),
+            run_id="test-offline", topic="Porto",
+            allow_network_topup=False,
+        )
+
+    assert sweep_calls == [], (
+        "allow_network_topup=False deveria impedir QUALQUER chamada a "
+        "sweep() — matching tem de ficar offline (item X)"
+    )
+    assert ingest_calls == []
+    # fail-closed normal continua a existir: sem entity + sem topup ->
+    # relaxamento ou unfilled, nunca uma excepção não tratada.
+    assert result.unfilled_scenes or result.relaxations or result.segments
+
+
+def test_allow_network_topup_true_default_preserva_comportamento_antigo(
+    tmp_path: Path,
+):
+    """Default (sem passar o kwarg) continua idêntico ao pré-existente —
+    regressão zero para callers antigos (produce.py já passa False
+    explicitamente nas suas 4 chamadas; callers de teste sem o kwarg
+    continuam com sweep/ingest activos)."""
+    scenes = [_scene(1, "Vamos falar da Livraria Lello", "detail")]
+    briefs = [_brief("s001", "Porto bookstore interior", ["indoor"],
+                     required_entity="Livraria Lello")]
+    db = MagicMock()
+    embedder = MagicMock()
+    empty_vocab: dict[str, str] = {}
+    filled_vocab: dict[str, str] = _vocab_with("Livraria Lello")
+    db.entity_vocab = MagicMock(side_effect=[empty_vocab, filled_vocab])
+    db.search_shots = MagicMock(return_value=[
+        {"shot_id": "sh1", "media_path": "/m1.mp4", "media_sha": "sha1",
+         "t_in": 0.0, "t_out": 3.0, "similarity": 0.9, "quality": 4,
+         "places_csv": "Porto", "landmarks_csv": "Livraria Lello",
+         "shot_type": "interior", "summary": "bookstore",
+         "has_food": False, "has_landmark": True, "attribution_required": False,
+         "attribution_text": "", "usage_count": 0},
+    ])
+    db.register_usage = MagicMock()
+    sweep_calls: list[tuple] = []
+
+    def fake_sweep(query, count, settings, dest):
+        sweep_calls.append((query, count))
+        return [(Path("/fake/clip.mp4"), {"source": "pexels", "verified_by": "api"})]
+
+    def fake_ingest_asset(path, lic, db_, settings_, embedder_, **kwargs):
+        r = MagicMock()
+        r.shots_added = 1
+        r.status = "ingested"
+        r.media_sha = "sha1"
+        return r, MagicMock()
+
+    with patch("studio.library.sources.pexels.sweep", side_effect=fake_sweep), \
+         patch("studio.library.ingest_asset.ingest_asset",
+               side_effect=fake_ingest_asset), \
+         patch("studio.matching.assigner.search_shots", db.search_shots), \
+         patch("studio.library.inventory.entity_vocab",
+               side_effect=db.entity_vocab), \
+         patch("studio.library.inventory.resolve_entity",
+               side_effect=lambda e, vocab: vocab.get(e, "").split()
+               if vocab.get(e) else []), \
+         patch("studio.matching.assigner._PREFLIGHT_MAX_WORKERS", 2):
+        assign_shots(scenes, briefs, db, embedder,
+                     _settings_with_pexels(tmp_path),
+                     run_id="test-legacy", topic="Porto")
+    assert len(sweep_calls) == 1, (
+        "sem allow_network_topup explícito, o default True devia manter "
+        "o comportamento anterior (sweep chamado)"
+    )

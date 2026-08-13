@@ -109,7 +109,8 @@ def apply_fixes(fixes: list[Fix], run_dir: Path, settings: Settings,
                 brief.required_entity.strip().lower(): confirmed}
         sub = assign_shots([scene], [brief], db, embedder, settings,
                            run_id=f"{video_id}-fix", excluded_shot_ids=bad_shots,
-                           topic=topic, confirmed_entities=confirmed_entities)
+                           topic=topic, confirmed_entities=confirmed_entities,
+                           allow_network_topup=False)
         new_segments = sub.segments
         if not new_segments:
             unsupported.append(f"{fix.scene_id}:sem alternativa no pool")

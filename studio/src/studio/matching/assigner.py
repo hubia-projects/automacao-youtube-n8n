@@ -335,8 +335,19 @@ def assign_shots(scenes: list[Scene], briefs: list[VisualBrief], db: LibraryDB,
                  topic: str = "",
                  coverage_plan=None,
                  confirmed_entities: dict[str, list[dict]] | None = None,
+                 allow_network_topup: bool = True,
                  ) -> AssignmentResult:
-    """Fase F: `confirmed_entities` = {canonical_lower: [shot rows com
+    """Item O/X (closure pass): `allow_network_topup=False` desliga
+    `_preflight_topups`/`_jit_topup` (Pexels search+download) por dentro
+    de assign_shots — pool vazio degrada para `unfilled`/
+    `SceneStrictCoverageGap` normalmente (fail-closed já existia; a
+    diferença é que a aquisição deixa de acontecer NO MEIO do matching,
+    escondida de qualquer camada de orquestração). Produção (S08Matching,
+    `review/fixes.py::apply_fixes`) passa `False` — a aquisição já devia
+    ter corrido ANTES via `acquire_for_deficits`/topup (item V). Default
+    `True` preserva o comportamento anterior para callers/testes antigos.
+
+    Fase F: `confirmed_entities` = {canonical_lower: [shot rows com
     `__confirmation` DetectedEntity]} gerado em S08Matching via
     require_entity_confirmation(strict_only=True). Quando fornecido (não
     None), cenas strict (brief.strict_entity + required_entity) são
@@ -381,7 +392,7 @@ def assign_shots(scenes: list[Scene], briefs: list[VisualBrief], db: LibraryDB,
         b = brief_by_scene.get(scene.scene_id)
         if b and b.required_entity and not resolve_entity(b.required_entity, vocab):
             missing_q.add(b.required_entity)
-    if missing_q:
+    if missing_q and allow_network_topup:
         topups += _preflight_topups(missing_q, db, embedder, settings)
         vocab = entity_vocab(db)  # refresh 1× — todas as cenas partem deste vocab
     # =========================================================================
@@ -438,7 +449,8 @@ def assign_shots(scenes: list[Scene], briefs: list[VisualBrief], db: LibraryDB,
         entity_terms: list[str] = []
         if brief.required_entity and not is_strict:
             entity_terms = resolve_entity(brief.required_entity, vocab)
-            if not entity_terms and not settings.mock_mode:
+            if (not entity_terms and not settings.mock_mode
+                    and allow_network_topup):
                 topups += 1
                 if _jit_topup(brief, db, embedder, settings,
                               query=brief.required_entity) > 0:
@@ -525,7 +537,7 @@ def assign_shots(scenes: list[Scene], briefs: list[VisualBrief], db: LibraryDB,
             pool, level, active_reuse, active_entities = [], "base", False, entity_terms
             for level, must_have, min_q, allow_reuse, lvl_entities in ladder:
                 pool = _pool(must_have, min_q, allow_reuse, lvl_entities)
-                if not pool and level == "base":
+                if not pool and level == "base" and allow_network_topup:
                     topups += 1
                     if _jit_topup(brief, db, embedder, settings) > 0:
                         pool = _pool(must_have, min_q, allow_reuse, lvl_entities)

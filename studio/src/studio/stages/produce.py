@@ -825,6 +825,7 @@ class S08Matching:
                 coverage_plan=plan,
                 excluded_shot_ids=excluded_shots or None,
                 confirmed_entities=confirmed_entities,
+                allow_network_topup=False,  # item O/X: aquisicao ja correu antes (V)
             )
             _attach_segment_metadata(result.segments, db)
             if keep_v1 and not v1_exists_already:
@@ -900,6 +901,7 @@ class S08Matching:
                                     coverage_plan=plan,
                                     excluded_shot_ids=excluded_shots,
                                     confirmed_entities=confirmed_entities,
+                                    allow_network_topup=False,  # item O/X: aquisicao ja correu antes (V)
                                 )
                                 _attach_segment_metadata(result.segments, db)
                                 repair_log.append({
@@ -959,6 +961,7 @@ class S08Matching:
                     coverage_plan=plan,
                     excluded_shot_ids=excluded_shots,
                     confirmed_entities=confirmed_entities,
+                    allow_network_topup=False,  # item O/X: aquisicao ja correu antes (V)
                 )
                 _attach_segment_metadata(result.segments, db)
                 repair_log.append({
@@ -1007,6 +1010,7 @@ class S08Matching:
                                     coverage_plan=plan,
                                     excluded_shot_ids=excluded_shots,
                                     confirmed_entities=confirmed_entities,
+                                    allow_network_topup=False,  # item O/X: aquisicao ja correu antes (V)
                                 )
                                 _attach_segment_metadata(result.segments, db)
                                 repair_log.append({
