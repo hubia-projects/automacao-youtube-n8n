@@ -719,7 +719,18 @@ def run_acquisition_for_workset(
         resolver = lambda q, lvl: []  # noqa: E731
     else:
         dest = settings.library_root / "downloads" / (workset_ctx.workflow_id or "shared")
-        resolver = make_provider_resolver(settings, dest, providers=("pexels",), db=db)
+        # item (post-closure, decisão operador 2026-08-14): default subiu
+        # de 2 para 8 — footage genérico de stock raramente bate um
+        # landmark específico o suficiente para passar o triage SigLIP;
+        # mais candidatos por query aumenta a chance de achar 1 que bata,
+        # ainda dentro do espírito de micro-wave (nunca sweep(50)).
+        # Configurável via settings.acquisition_candidates_per_query
+        # (mesmo padrão soft-override de acquisition_max_waves).
+        count_per_query = max(1, int(
+            getattr(settings, "acquisition_candidates_per_query", 8) or 8))
+        resolver = make_provider_resolver(
+            settings, dest, providers=("pexels",), db=db,
+            count_per_query=count_per_query)
 
     return acquire_for_deficits(
         workset_ctx=workset_ctx, db=db, embedder=embedder, settings=settings,
