@@ -489,6 +489,14 @@ def acquire_for_deficits(
                         source_id=source_url,
                         video_id=workset_ctx.workflow_id,
                         requirement_prompts=workset_ctx.requirement_prompts,
+                        # item 11 (automation closure): embeddings JÁ
+                        # computadas 1× por load_workset_context() — evita
+                        # ingest_file recomputar embed_text() por canonical
+                        # a CADA ficheiro adquirido (redundante, mesmo texto
+                        # mesmo modelo). Depois desta consolidação este é o
+                        # ÚNICO caminho de ingest em produção.
+                        requirement_embeddings=workset_ctx.requirement_embeddings,
+                        visual_prompt_embeddings=workset_ctx.visual_prompt_embeddings,
                     )
                     if result.status == "ingested":
                         rep.downloads_succeeded += 1
@@ -589,6 +597,102 @@ def acquire_for_deficits(
     return rep
 
 
+def run_acquisition_for_workset(
+    plan,
+    workset_ctx,
+    db,
+    embedder,
+    settings,
+    *,
+    requirement_index,
+    query_history=None,
+    max_downloads: int = 200,
+    max_iterations: int = 8,
+) -> AcquisitionReport:
+    """Item 1.4/O (automation closure) — ÚNICO ponto de entrada de aquisição
+    em produção. Substitui `topup_for_plan_concurrent` (queue_topup.py),
+    `_targeted_topup_for_entity`/`_maybe_targeted_topup` (produce.py) e o
+    JIT interno de `assigner.py` (já desligado em produção via
+    `allow_network_topup=False`) — todos chamavam `pexels.sweep`+
+    `ingest_asset` directamente, nenhum passava por `acquire_for_deficits`.
+
+    Constrói `DeficitItem`s a partir de `plan.ranked_entities` (só os com
+    `deficit_seconds > 0`), ordenados por tier — item 7 (automation
+    closure): strict/core primeiro, non-strict/core depois, filler por
+    último; dentro de cada tier, maior deficit primeiro. Nunca gasta
+    downloads em filler enquanto um requirement nomeado estrito ainda
+    falta.
+
+    `refresh_deficit` usa `measure_coverage_from_index` (RequirementIndex
+    já populada pelo scan inicial — item E/G) com fallback para
+    `measure_coverage` (scan CSV) se a index ainda não tiver matches para
+    essa requirement — nunca regride para pior que o comportamento
+    anterior. `remeasure_coverage` usa o mesmo fallback documentado em
+    `acquire_for_deficits` (None): considera pronto quando todos os
+    deficits ficam <=0 — o gate REAL de "pronto para matching" (que exige
+    confirmação estrita) continua a ser `is_workset_ready` no caller
+    (`S08Matching`), chamado DEPOIS desta função retornar.
+    """
+    from studio.matching.coverage_plan import (
+        FILLER_ENTITY_TYPE,
+        measure_coverage,
+        measure_coverage_from_index,
+    )
+
+    ent_by_canon = {e.canonical_name: e for e in plan.ranked_entities}
+    deficit_items: list[DeficitItem] = []
+    for ent in plan.ranked_entities:
+        if ent.deficit_seconds <= 0:
+            continue
+        spec = workset_ctx.req_by_canonical(ent.canonical_name)
+        if spec is None:
+            continue
+        deficit_items.append(DeficitItem(
+            canonical_entity=ent.canonical_name,
+            requirement_id=spec.requirement_id,
+            target_seconds=ent.target_seconds,
+            deficit_seconds=ent.deficit_seconds,
+            min_distinct_shots=ent.min_distinct_shots,
+            priority_score=ent.priority_score,
+        ))
+    # item 7: strict/core > non-strict/core > filler; maior deficit
+    # primeiro dentro de cada tier.
+    deficit_items.sort(key=lambda d: (
+        not ent_by_canon[d.canonical_entity].strict,
+        ent_by_canon[d.canonical_entity].entity_type == FILLER_ENTITY_TYPE,
+        -d.deficit_seconds,
+    ))
+    if not deficit_items:
+        return AcquisitionReport(coverage_status={}, iterations=0,
+                                 coverage_ready=True)
+
+    def _refresh(item: DeficitItem) -> float:
+        ent = ent_by_canon.get(item.canonical_entity)
+        if ent is None:
+            return item.deficit_seconds
+        applied = measure_coverage_from_index(ent, workset_ctx,
+                                              requirement_index, db)
+        if not applied:
+            measure_coverage(ent, db)
+        ent.deficit_seconds = round(
+            max(0.0, ent.target_seconds - ent.available_seconds), 3)
+        return ent.deficit_seconds
+
+    def _remeasure() -> bool:
+        return all(d.deficit_seconds <= 0 for d in deficit_items)
+
+    dest = settings.library_root / "downloads" / (workset_ctx.workflow_id or "shared")
+    resolver = make_provider_resolver(settings, dest, providers=("pexels",), db=db)
+
+    return acquire_for_deficits(
+        workset_ctx=workset_ctx, db=db, embedder=embedder, settings=settings,
+        deficit_items=deficit_items, provider_resolver=resolver,
+        query_history_db=query_history, requirement_index=requirement_index,
+        refresh_deficit=_refresh, remeasure_coverage=_remeasure,
+        max_downloads=max_downloads, max_iterations=max_iterations,
+    )
+
+
 __all__ = [
     "AcquisitionReport",
     "DeficitItem",
@@ -596,4 +700,5 @@ __all__ = [
     "preflight_media",
     "is_provider_already_taken",
     "acquire_for_deficits",
+    "run_acquisition_for_workset",
 ]
