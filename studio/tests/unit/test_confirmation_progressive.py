@@ -216,3 +216,43 @@ def test_failed_retryable_nao_e_excluido_do_proximo_batch():
         "shot CS_FAILED_RETRYABLE devia continuar elegível para retry "
         "(nunca excluído como CONFIRMED/REJECTED estariam)"
     )
+
+
+def test_batch_vision_dict_unico_sem_shot_id_aplica_se_a_todos_os_shots(
+    tmp_path,
+):
+    """BUG REAL (microvalidação real, 2026-08-14): quando Gemini julga os
+    shots do batch visualmente consistentes o suficiente para dar 1
+    veredicto único, devolve 1 dict SEM "shot_id" — nunca um array por
+    shot. Confirmado ao vivo: 2 fotos reais da Livraria Lello (Wikimedia)
+    deram 1 resposta única com confidence=1.0 e evidência real (texto OCR
+    "LELLO & IRMÃO", vitral "DECUS IN LABORE") — mas o parser antigo
+    exigia match por shot_id que um dict único nunca tem, descartando
+    TODO o batch como "batch parse miss" apesar da confirmação clara."""
+    from studio.library.confirmation import _batch_vision_call
+
+    kf1 = tmp_path / "kf1.jpg"
+    kf2 = tmp_path / "kf2.jpg"
+    kf1.write_bytes(b"fake jpeg 1")
+    kf2.write_bytes(b"fake jpeg 2")
+    shots = [
+        {"shot_id": "img_ext", "keyframes_csv": str(kf1)},
+        {"shot_id": "img_int", "keyframes_csv": str(kf2)},
+    ]
+    settings = MagicMock(mock_mode=False, gemini_api_key="fake-key")
+
+    single_dict_response = json.dumps({
+        "name": "Livraria Lello", "entity_type": "landmark",
+        "confidence": 1.0, "rejected": False, "rejection_reason": "",
+        "evidence": ["texto OCR 'LELLO & IRMÃO'",
+                    "vitral 'DECUS IN LABORE'"],
+    })
+    with patch("studio.library.confirmation.generate_multimodal",
+              return_value=(single_dict_response, 0.001)):
+        out = _batch_vision_call(shots, "Livraria Lello", "landmark", settings)
+
+    assert set(out.keys()) == {"img_ext", "img_int"}
+    for sid, det in out.items():
+        assert det.rejected is False, f"{sid} devia estar confirmado"
+        assert det.infra_failure is False
+        assert det.confidence == 1.0

@@ -351,9 +351,32 @@ def _batch_vision_call(
         except (json.JSONDecodeError, ValueError):
             items = []
             # fall-back: cada shot fica rejected via parser fail message
+
+        # BUG REAL (microvalidação real, 2026-08-14): quando Gemini julga
+        # os shots do batch visualmente consistentes o suficiente para
+        # dar 1 veredicto único (ex.: 2 fotos claramente da MESMA
+        # entidade), devolve 1 dict SEM "shot_id" — nunca um array por
+        # shot. Sem isto, o `it.get("shot_id") == sid` abaixo nunca batia
+        # e o batch INTEIRO ficava "batch parse miss" mesmo com
+        # confirmação clara e confidence=1.0 real (confirmado ao vivo:
+        # Livraria Lello, evidence real — texto OCR "LELLO & IRMÃO",
+        # vitral "DECUS IN LABORE" — descartado por este bug de parsing,
+        # não por Vision ter dito não). Mesma semântica de
+        # `_parse_multi_response()` (linha ~207-212): 1 dict sem shot_id
+        # aplica-se a TODOS os shots do batch.
+        single_verdict: DetectedEntity | None = None
+        if len(items) == 1 and "shot_id" not in items[0]:
+            try:
+                single_verdict = DetectedEntity.model_validate(items[0])
+            except ValidationError:
+                single_verdict = None
+
         out: dict[str, DetectedEntity] = {}
         for shot in shots:
             sid = shot["shot_id"]
+            if single_verdict is not None:
+                out[sid] = single_verdict.model_copy()
+                continue
             det = next((DetectedEntity.model_validate(it)
                         for it in items if it.get("shot_id") == sid),
                         None)
