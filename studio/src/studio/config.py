@@ -339,14 +339,22 @@ class Settings(BaseSettings):
     # analyze_shots_batch handler). Backoff exponencial 2s, 4s, 8s, 16s, 32s.
     library_gemini_max_retries: int = Field(
         default=5, alias="STUDIO_LIBRARY_GEMINI_MAX_RETRIES")
-    # 0.30 = cosine similarity threshold para classificar shot como
-    # HIGH_RELEVANCE (candidato Gemini batch). 0.18 = POSSIBLE_RELEVANCE
-    # (candidato Gemini batch com prioridade baixa). <0.18 -> GLOBAL_ONLY
+    # RECALIBRADO 2026-08-14 (1ª run de produção real, porto-24h-001):
+    # 0.30/0.18 foram herdados de convenção CLIP e NUNCA validados contra
+    # a escala real do google/siglip-base-patch16-384 em uso — resultado:
+    # 100% dos shots caíam em GLOBAL_ONLY mesmo com footage plausível
+    # (ex.: "melted cheese sandwich" vs "Francesinha" ficava em cosine
+    # ~0.02, muito abaixo de 0.18). Medição empírica directa nesta
+    # library (36 pares match / 33 mismatch, food+landmark): MATCH
+    # mean=+0.008 min=-0.037; MISMATCH mean=-0.098 max=-0.052 — gap limpo
+    # entre -0.05 e -0.04. 0.05 = HIGH_RELEVANCE (candidato Gemini batch).
+    # 0.0 = POSSIBLE_RELEVANCE (candidato Gemini batch prioridade baixa,
+    # cosine não-negativo = mesma direcção semântica). <0.0 -> GLOBAL_ONLY
     # (não chama Gemini; metadata cheap + needs_enrichment=True).
     library_triage_high_threshold: float = Field(
-        default=0.30, alias="STUDIO_LIBRARY_TRIAGE_HIGH_THRESHOLD")
+        default=0.05, alias="STUDIO_LIBRARY_TRIAGE_HIGH_THRESHOLD")
     library_triage_possible_threshold: float = Field(
-        default=0.18, alias="STUDIO_LIBRARY_TRIAGE_POSSIBLE_THRESHOLD")
+        default=0.0, alias="STUDIO_LIBRARY_TRIAGE_POSSIBLE_THRESHOLD")
     # item 20 — retrieval relativo: um shot no Top-K de candidatos de uma
     # requirement específica com margem (`library_triage_margin`) sobre a
     # mediana desse grupo conta HIGH mesmo sem bater o threshold absoluto

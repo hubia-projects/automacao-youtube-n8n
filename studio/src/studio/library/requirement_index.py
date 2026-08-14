@@ -170,10 +170,29 @@ class RequirementIndex:
             if root_path is not None else None
         )
 
+    def _lance(self):
+        """Conexão LanceDB real (LibraryDB._db) — NÃO `_lance` (typo real
+        descoberto 2026-08-14: LibraryDB nunca teve esse atributo, então
+        `_table()` sempre lançava AttributeError, capturado pelo except
+        genérico, caindo SEMPRE no fallback JSONL — a tabela LanceDB
+        `requirement_matches` nunca existiu de facto e `upsert_match`
+        nunca deduplicou nada, em nenhuma sessão anterior. Só ficou
+        invisível porque o floor de similaridade 0.18 quase nunca gerava
+        matches suficientes para a duplicação ser notada.
+        `QueryHistory._table()` (mais abaixo nesta mesma classe/ficheiro)
+        já usava o padrão correcto (`self._db._db`) — espelhado aqui.
+        `getattr(..., default)` não apanha excepções levantadas PELO
+        property getter (só AttributeError de atributo inexistente) —
+        por isso o try/except explícito, não só o default posicional."""
+        try:
+            return getattr(self._db, "lance", None) or getattr(self._db, "_db", None)
+        except Exception:
+            return None
+
     def _table(self):
         # LanceDB table handle com fallback gracioso.
         try:
-            return self._db._lance.open_table(self.TABLE)
+            return self._lance().open_table(self.TABLE)
         except Exception as exc:
             log.debug("RequirementIndex: LanceDB table %s indisponível: %s — "
                       "fallback JSONL em %s",
@@ -183,9 +202,16 @@ class RequirementIndex:
     def upsert_match(self, match: RequirementMatch) -> bool:
         """Upsert (workset_id, requirement_id, shot_id) → row única."""
         row = match.to_row()
-        tab = self._table()
-        if tab is not None:
+        lance = self._lance()
+        if lance is not None:
             try:
+                tab = self._table()
+                if tab is None:
+                    # 1º upsert desta run: tabela ainda não existe —
+                    # cria-a já com este row (schema inferido, mesmo
+                    # padrão de LibraryDB.__init__ para SHOTS_TABLE).
+                    lance.create_table(self.TABLE, data=[row])
+                    return True
                 # LanceDB merge_insert; sem unique compound key explícito
                 # usamos update+insert via query-pattern (delete+add).
                 self._delete_match(tab, match.workset_id, match.requirement_id,

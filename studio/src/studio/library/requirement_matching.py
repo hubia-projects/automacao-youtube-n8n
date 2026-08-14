@@ -25,7 +25,12 @@ from studio.library.requirement_index import (
     RequirementMatch,
 )
 
-DEFAULT_MIN_SIMILARITY = 0.18  # mesmo floor do SigLIP triage (POSSIBLE tier)
+# RECALIBRADO 2026-08-14 (mesma evidência empírica de config.py::
+# library_triage_possible_threshold — 0.18 nunca validado contra a escala
+# real do SigLIP-base em uso; pares match/mismatch reais medidos nesta
+# library separam limpo em cosine 0.0, não 0.18). Mesmo floor do triage
+# POSSIBLE tier.
+DEFAULT_MIN_SIMILARITY = 0.0
 
 
 def _cosine(a: np.ndarray, b: np.ndarray) -> float:

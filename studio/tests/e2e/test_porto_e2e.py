@@ -631,6 +631,14 @@ def test_porto_e2e_fail_closed_when_persistent(porto_library,
     # pronto, tal como test_alignment.py faz para os equivalentes.
     monkeypatch.setattr("studio.matching.coverage_plan.is_workset_ready",
                         lambda *a, **kw: (True, {}, []))
+    # item 18/19: _measure_ready() também chama allocate_shots contra a
+    # RequirementIndex real (mesmo motivo/mesmo bypass de
+    # test_alignment.py/test_library_gate.py) — não é o assunto deste
+    # teste (fail-closed de Fase G), bypassa com resultado feasible.
+    from unittest.mock import MagicMock as _MM
+    monkeypatch.setattr(
+        "studio.library.selection.allocate_shots",
+        lambda *a, **kw: _MM(selection_feasible=True, by_requirement={}))
 
     ctx = RunContext(
         video_id=video_id, run_dir=run_dir, settings=settings,
