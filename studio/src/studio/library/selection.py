@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from studio.library.requirement_index import CS_CONFIRMED, CS_NOT_REQUIRED
+from studio.library.requirement_index import CS_NOT_REQUIRED, STRICT_STATUSES
 from studio.matching.coverage_plan import FILLER_ENTITY_TYPE
 
 
@@ -151,16 +151,16 @@ def allocate_shots(
     for ent in strict_core:
         req_id = _req_id(ent)
         if req_id:
-            _allocate_one(ent, req_id, {CS_CONFIRMED}, track_feasibility=True)
+            _allocate_one(ent, req_id, STRICT_STATUSES, track_feasibility=True)
     for ent in nonstrict_core:
         req_id = _req_id(ent)
         if req_id:
-            _allocate_one(ent, req_id, {CS_CONFIRMED, CS_NOT_REQUIRED},
+            _allocate_one(ent, req_id, STRICT_STATUSES | {CS_NOT_REQUIRED},
                           track_feasibility=True)
     for ent in filler:
         req_id = _req_id(ent)
         if req_id:
-            _allocate_one(ent, req_id, {CS_CONFIRMED, CS_NOT_REQUIRED},
+            _allocate_one(ent, req_id, STRICT_STATUSES | {CS_NOT_REQUIRED},
                           track_feasibility=False)
 
     return AllocationResult(

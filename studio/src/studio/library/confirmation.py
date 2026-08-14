@@ -20,9 +20,11 @@ import asyncio
 import base64
 import json
 import logging
+import re
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 import httpx
 from pydantic import ValidationError
@@ -435,6 +437,71 @@ def _confirm_batch(
     return _batch_vision_call(shots_batched, canonical, entity_type, settings)
 
 
+# item PORTO (search+confirmation calibration): zona de corroboração —
+# Vision entre 0.70 e o threshold global (min_conf, tipicamente 0.85) NÃO
+# confirma nem rejeita de imediato; só confirma como
+# CS_CONFIRMED_CORROBORATED se houver >=2 famílias de evidência
+# INDEPENDENTES (fontes/campos diferentes) coerentes com a entidade. O piso
+# 0.70 é fixo (doutrina explícita do pedido), independente de min_conf.
+_CORROBORATION_FLOOR = 0.70
+
+# palavras genéricas de tipo-de-edifício/localização — filtradas do match
+# de palavras distintivas para evitar falso positivo por coincidência de
+# palavra comum (ex: "Torre" sozinho não corrobora "Torre dos Clérigos"
+# contra qualquer outra torre; "Porto" sozinho não corrobora nenhuma
+# entity específica do Porto). Lista genérica de linguagem, não
+# específica de nenhuma entidade (nada de "Lello" aqui).
+_GENERIC_NAME_WORDS = frozenset({
+    "rua", "avenida", "praca", "praça", "ponte", "torre", "capela",
+    "catedral", "se", "sé", "igreja", "estacao", "estação", "miradouro",
+    "galeria", "galerias", "livraria", "casa", "palacio", "palácio",
+    "mercado", "jardim", "praia", "forte", "castelo", "museu", "teatro",
+    "mosteiro", "convento", "porto", "lisboa", "portugal", "dom", "dona",
+    "santo", "santa", "sao", "são", "view", "exterior", "interior",
+})
+
+
+def _distinctive_words(text: str) -> set[str]:
+    words = re.findall(r"[a-zà-öø-ÿ]+", (text or "").lower())
+    return {w for w in words if len(w) >= 4 and w not in _GENERIC_NAME_WORDS}
+
+
+def _source_title(source_url: str) -> str:
+    """Extrai título legível do `source_url` já existente na tabela shots
+    (ex: URL de página Wikimedia contém o nome do ficheiro) — zero schema
+    novo, só parsing do que já lá está."""
+    if not source_url:
+        return ""
+    stem = urlparse(source_url).path.rsplit("/", 1)[-1]
+    stem = stem.rsplit(".", 1)[0] if "." in stem else stem
+    return unquote(stem).replace("_", " ").replace("-", " ")
+
+
+def _corroboration_families(
+    det: DetectedEntity, shot: dict, canonical: str,
+    aliases: tuple[str, ...],
+) -> set[str]:
+    """Famílias de evidência INDEPENDENTES (não-Vision) corroborando
+    `canonical`/`aliases` — usadas só na zona borderline (ver
+    `_CORROBORATION_FLOOR`). Cada família vem de um campo/fonte distinto:
+    `OCR_EXACT` (texto lido na imagem pelo próprio Vision call, campo
+    estruturado `ocr_text_found`) e `SOURCE_TITLE_MATCH` (metadata do
+    provider já persistida em `source_url`, nunca gerada pelo Vision) —
+    nunca contar duas vezes o mesmo campo/origem como duas famílias."""
+    name_words: set[str] = set()
+    for n in (canonical, *aliases):
+        name_words |= _distinctive_words(n)
+    if not name_words:
+        return set()
+
+    families: set[str] = set()
+    if any(_distinctive_words(t) & name_words for t in (det.ocr_text_found or ())):
+        families.add("OCR_EXACT")
+    if _distinctive_words(_source_title(shot.get("source_url", ""))) & name_words:
+        families.add("SOURCE_TITLE_MATCH")
+    return families
+
+
 def require_entity_confirmation(
     canonical: str, entity_type: str, db: "LibraryDB",
     settings: Settings, *, top_k: int | None = None,
@@ -446,6 +513,7 @@ def require_entity_confirmation(
     workset_id: str | None = None,
     requirement_index: object | None = None,
     max_batches: int = 5,
+    aliases: tuple[str, ...] = (),
 ) -> list[dict]:
     """Devolve shots candidatos confirmados (confidence >= min_confidence).
 
@@ -476,6 +544,11 @@ def require_entity_confirmation(
             (confirmado OU rejeitado) é sincronizado de volta via
             `ri.upsert_match` com o `confirmation_status` REAL — não só o
             cache local/`meta_json` (que só guarda os confirmados).
+        aliases: nomes alternativos da mesma entidade (de
+            `EntityCoverage.aliases`) — usados só na zona de corroboração
+            (confidence entre `_CORROBORATION_FLOOR` e min_conf) para
+            `_corroboration_families`; nunca afecta zona A (>=min_conf) nem
+            zona C (<0.70).
     Returns:
         Lista de shots com meta '__confirmation: DetectedEntity' anexada.
     """
@@ -507,11 +580,12 @@ def require_entity_confirmation(
     if ri_active:
         try:
             from studio.library.requirement_index import (
-                CS_CONFIRMED, CS_REJECTED,
+                CS_CONFIRMED, CS_CONFIRMED_CORROBORATED, CS_REJECTED,
             )
+            _known = (CS_CONFIRMED, CS_CONFIRMED_CORROBORATED, CS_REJECTED)
             for m in requirement_index.list_for_requirement(
                     workset_id, requirement_id):
-                if m.confirmation_status in (CS_CONFIRMED, CS_REJECTED):
+                if m.confirmation_status in _known:
                     known_status.add(m.shot_id)
         except Exception as exc:
             log.debug("require_entity_confirmation: RequirementIndex "
@@ -547,13 +621,28 @@ def require_entity_confirmation(
             det = batched.get(sid)
             if det is None:
                 continue  # batch parser miss
-            confirmed = det.is_confirmed(min_conf)
+
+            # item PORTO (search+confirmation calibration): decisão em
+            # camadas — zona A (>=min_conf) confirma puro, threshold
+            # global INTOCADO; zona B (0.70..min_conf) só confirma como
+            # CORROBORATED com >=2 famílias de evidência independentes
+            # (nunca por rigidez artificial nem por facilitismo); zona C
+            # (<0.70) rejeita sempre, sem excepção.
+            zone_a = (not det.rejected and bool(det.name)
+                     and det.confidence >= min_conf)
+            corroborated = False
+            families: set[str] = set()
+            if (not zone_a and not det.rejected and bool(det.name)
+                    and _CORROBORATION_FLOOR <= det.confidence < min_conf):
+                families = _corroboration_families(det, cand, canonical, aliases)
+                corroborated = len(families) >= 2
+            confirmed = zone_a or corroborated
 
             if ri_active:
                 try:
                     from studio.library.requirement_index import (
-                        CS_CONFIRMED, CS_FAILED_RETRYABLE, CS_REJECTED,
-                        RequirementMatch,
+                        CS_CONFIRMED, CS_CONFIRMED_CORROBORATED,
+                        CS_FAILED_RETRYABLE, CS_REJECTED, RequirementMatch,
                     )
                     dur = max(0.0, float(cand.get("t_out", 0.0))
                              - float(cand.get("t_in", 0.0)))
@@ -563,9 +652,11 @@ def require_entity_confirmation(
                     # parse, circuit breaker, sem API key) — esse caso vai
                     # para CS_FAILED_RETRYABLE, elegível para retry em runs
                     # futuras (known_status acima só exclui CONFIRMED/
-                    # REJECTED, nunca FAILED_RETRYABLE).
-                    if confirmed:
+                    # CORROBORATED/REJECTED, nunca FAILED_RETRYABLE).
+                    if zone_a:
                         status = CS_CONFIRMED
+                    elif corroborated:
+                        status = CS_CONFIRMED_CORROBORATED
                     elif det.infra_failure:
                         status = CS_FAILED_RETRYABLE
                     else:
@@ -575,6 +666,10 @@ def require_entity_confirmation(
                     # confirmation_status/confidence/evidence, não aqui.
                     # Diferente do anti-padrão corrigido no bug 2 (que
                     # usava similarity=0 SEM nenhuma evidência real).
+                    extra_evidence = (
+                        tuple(f"corroboration:{f}" for f in sorted(families))
+                        if corroborated else ()
+                    )
                     requirement_index.upsert_match(RequirementMatch(
                         workset_id=workset_id, requirement_id=requirement_id,
                         shot_id=sid, media_sha=cand.get("media_sha", ""),
@@ -582,7 +677,7 @@ def require_entity_confirmation(
                         confirmation_status=status,
                         confirmation_confidence=float(det.confidence),
                         strict_eligible=True,
-                        evidence=tuple(det.evidence or ()),
+                        evidence=tuple(det.evidence or ()) + extra_evidence,
                     ))
                 except Exception as exc:
                     log.debug("require_entity_confirmation: upsert_match "

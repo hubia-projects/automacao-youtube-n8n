@@ -629,6 +629,14 @@ class DetectedEntity(BaseModel):
     infra_failure: bool = False
     confirmed_by: str = ""  # "gemini-flash" / "metadata-only" / "cache"
     at: str = ""  # ISO timestamp
+    # item PORTO (search+confirmation calibration): texto exacto lido via
+    # OCR na imagem, campo ESTRUTURADO e separado do `evidence` livre —
+    # usado por confirmation.py para corroboração independente na zona
+    # borderline (0.70-0.849). Diferente de `evidence` (texto livre, pode
+    # parafrasear) porque OCR é um sinal falsificável/verificável por
+    # substring exacto contra canonical/aliases, não uma reformulação da
+    # própria confiança visual.
+    ocr_text_found: list[str] = Field(default_factory=list)
 
     def is_confirmed(self, threshold: float) -> bool:
         return (not self.rejected

@@ -56,10 +56,22 @@ log = logging.getLogger("studio.requirement_index")
 CS_NOT_REQUIRED = "NOT_REQUIRED"
 CS_PENDING = "PENDING"
 CS_CONFIRMED = "CONFIRMED"
+# item PORTO (search+confirmation calibration): zona borderline
+# (0.70-0.849) com >=2 famílias de evidência independentes (OCR exacto +
+# título/URL do provider) corroborando a mesma entidade — NUNCA baixa o
+# threshold global de 0.85 (esse continua CS_CONFIRMED puro); conta como
+# strict-covered em TODOS os sítios que hoje só olham para CS_CONFIRMED
+# (ver STRICT_STATUSES abaixo).
+CS_CONFIRMED_CORROBORATED = "CONFIRMED_CORROBORATED"
 CS_REJECTED = "REJECTED"
 CS_FAILED_RETRYABLE = "FAILED_RETRYABLE"
 
-ALL_CS = {CS_NOT_REQUIRED, CS_PENDING, CS_CONFIRMED, CS_REJECTED, CS_FAILED_RETRYABLE}
+ALL_CS = {CS_NOT_REQUIRED, CS_PENDING, CS_CONFIRMED, CS_CONFIRMED_CORROBORATED,
+          CS_REJECTED, CS_FAILED_RETRYABLE}
+# conjunto único partilhado por todos os call sites que decidem
+# "strict-covered?" — evita duplicar {CS_CONFIRMED, CS_CONFIRMED_CORROBORATED}
+# em 9 sítios diferentes (risco de esquecer um ao adicionar este status).
+STRICT_STATUSES = {CS_CONFIRMED, CS_CONFIRMED_CORROBORATED}
 
 
 def _now_iso() -> str:
@@ -341,7 +353,7 @@ class RequirementIndex:
         """
         matches = [
             m for m in self.list_for_requirement(workset_id, requirement_id)
-            if m.strict_eligible and m.confirmation_status == CS_CONFIRMED
+            if m.strict_eligible and m.confirmation_status in STRICT_STATUSES
         ]
         total_seconds = sum(m.duration for m in matches)
         distinct_shots = len({m.shot_id for m in matches})
@@ -372,7 +384,7 @@ def is_strict_covered_pure(
     """
     strict_confirmed = [
         m for m in matches
-        if m.strict_eligible and m.confirmation_status == CS_CONFIRMED
+        if m.strict_eligible and m.confirmation_status in STRICT_STATUSES
     ]
     total_seconds = sum(m.duration for m in strict_confirmed)
     distinct_shots = len({m.shot_id for m in strict_confirmed})
@@ -471,9 +483,10 @@ class QueryHistory:
 
 
 __all__ = [
-    "CS_NOT_REQUIRED", "CS_PENDING", "CS_CONFIRMED", "CS_REJECTED",
+    "CS_NOT_REQUIRED", "CS_PENDING", "CS_CONFIRMED", "CS_CONFIRMED_CORROBORATED",
+    "CS_REJECTED",
     "CS_FAILED_RETRYABLE",
-    "ALL_CS",
+    "ALL_CS", "STRICT_STATUSES",
     "RequirementMatch",
     "QueryHistoryEntry",
     "RequirementIndex",

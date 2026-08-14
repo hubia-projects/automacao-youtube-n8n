@@ -40,11 +40,19 @@ JSON strict (markdown ```json fences obrigatórios):
   "entity_type": "<echo entity_type>",
   "confidence": <float 0..1>,
   "evidence": ["<ev1>", "<ev2>", "<ev3>"],
+  "ocr_text_found": ["<texto EXACTO lido via OCR na imagem, ex: 'LELLO & IRMÃO'>"],
   "rejected": <bool>,
   "rejection_reason": "<string vazia se não rejeitado>",
   "at": "<ISO timestamp NOW>"
 }}
 ```
+
+`ocr_text_found`: lista de STRINGS EXACTAS que consegues ler fisicamente
+na imagem (placas, fachadas, menus, letreiros) — lista vazia `[]` se não
+houver texto legível nenhum. NUNCA parafraseies ou inventes texto que não
+está literalmente visível — este campo é usado como evidência
+independente e verificável, diferente de `evidence` (que pode ser
+descrição livre).
 
 `confidence` orientação:
 - 0.95–1.00: visual claro + texto OCR visível + metadata condizente

@@ -43,7 +43,7 @@ from pydantic import BaseModel, Field, PrivateAttr
 
 from studio.config import Settings
 from studio.library.db import LibraryDB
-from studio.library.requirement_index import CS_CONFIRMED, CS_NOT_REQUIRED
+from studio.library.requirement_index import CS_NOT_REQUIRED, STRICT_STATUSES
 from studio.perf import Profiler
 from studio.script.entities import EntitySpan
 
@@ -403,8 +403,8 @@ def measure_coverage_from_index(
     if not matches:
         return False
 
-    eligible_statuses = ({CS_CONFIRMED} if coverage.strict
-                         else {CS_CONFIRMED, CS_NOT_REQUIRED})
+    eligible_statuses = (STRICT_STATUSES if coverage.strict
+                         else STRICT_STATUSES | {CS_NOT_REQUIRED})
     eligible = [m for m in matches if m.confirmation_status in eligible_statuses]
     if not eligible:
         # há matches (PENDING/REJECTED) mas nenhum elegível ainda — 0

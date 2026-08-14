@@ -729,6 +729,7 @@ class S08Matching:
                         requirement_id=(_spec.requirement_id if _spec else None),
                         workset_id=workset_ctx.workset_id,
                         requirement_index=ri,
+                        aliases=ent.aliases,
                     )
                     if confirmed:
                         confirmed_entities[ent.canonical_name.strip().lower()] = confirmed
