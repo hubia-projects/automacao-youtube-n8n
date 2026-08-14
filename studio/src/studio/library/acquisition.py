@@ -67,6 +67,7 @@ def make_provider_resolver(
     providers: tuple[str, ...] = ("pexels",),
     count_per_query: int = 2,
     db=None,
+    event_sink: Optional[Callable[[str, str, dict], None]] = None,
 ) -> Callable[[str, int], list[tuple[Path, dict]]]:
     """Adapter REAL (item 9) — liga `acquire_for_deficits()` aos providers
     concretos, uniformizando para
@@ -86,8 +87,26 @@ def make_provider_resolver(
     vindo da rede — comportamento anterior, preservado para compat).
 
     `count_per_query` pequeno por defeito — micro-waves (doutrina: nunca
-    `sweep(50)` de uma vez), não um scrape em massa."""
+    `sweep(50)` de uma vez), não um scrape em massa.
+
+    `event_sink` (item 42/43 — fecho de cobertura multi-provider):
+    callable opcional `(event_type, message, payload) -> None`, chamado
+    nos pontos-chave da busca/dedup/download (provider_search_started/
+    completed, candidate_dedup_skipped, media_download_started/completed)
+    — SEM acoplar acquisition.py a `events.py`/`run_dir` (o caller,
+    `run_acquisition_for_workset`/produce.py, decide como e onde
+    encaminhar). Nunca deve lançar — envolto em try/except mudo (mesma
+    doutrina de robustez de logging: observabilidade nunca pode
+    interromper a aquisição real)."""
     dest.mkdir(parents=True, exist_ok=True)
+
+    def _emit(event_type: str, message: str, payload: dict) -> None:
+        if event_sink is None:
+            return
+        try:
+            event_sink(event_type, message, payload)
+        except Exception:
+            pass
 
     def _resolver(query: str, level: int) -> list[tuple[Path, dict]]:
         out: list[tuple[Path, dict]] = []
@@ -102,6 +121,8 @@ def make_provider_resolver(
 
             two_phase = db is not None and hasattr(mod, "search") and hasattr(mod, "download")
             if two_phase:
+                _emit("provider_search_started", f"{provider}: '{query}'",
+                     {"provider": provider, "query": query, "level": level})
                 try:
                     candidates = mod.search(query, count_per_query, settings)
                 except Exception as exc:
@@ -109,13 +130,26 @@ def make_provider_resolver(
                         "make_provider_resolver: %s.search(%r) falhou: %s",
                         provider, query, exc.__class__.__name__)
                     continue
+                _emit("provider_search_completed",
+                     f"{provider}: {len(candidates)} candidatos",
+                     {"provider": provider, "query": query,
+                      "count": len(candidates)})
                 for cand in candidates:
                     if is_provider_already_taken(cand.provider, cand.source_url, db):
                         log.debug(
                             "make_provider_resolver: %s/%s já conhecido "
                             "(hit/rejected) — 0 bytes de download "
                             "(pre-download dedup)", cand.provider, cand.source_url)
+                        _emit("candidate_dedup_skipped",
+                             f"{provider}/{cand.provider_id}",
+                             {"provider": provider,
+                              "provider_id": cand.provider_id})
                         continue
+                    media_kind = (cand.license or {}).get("media_kind", "video")
+                    _emit("media_download_started",
+                         f"{provider}: {cand.provider_id} ({media_kind})",
+                         {"provider": provider, "provider_id": cand.provider_id,
+                          "media_kind": media_kind})
                     try:
                         path = mod.download(cand, settings, dest)
                     except Exception as exc:
@@ -123,6 +157,10 @@ def make_provider_resolver(
                             "make_provider_resolver: %s.download(%r) falhou: %s",
                             provider, cand.source_url, exc.__class__.__name__)
                         continue
+                    _emit("media_download_completed",
+                         f"{provider}: {path.name}",
+                         {"provider": provider, "media_kind": media_kind,
+                          "file": path.name})
                     meta = dict(cand.license)
                     meta.setdefault("provider", provider)
                     meta.setdefault("source_url", cand.source_url)
@@ -693,6 +731,7 @@ def run_acquisition_for_workset(
     query_history=None,
     max_downloads: int = 200,
     max_iterations: int = 8,
+    event_sink: Optional[Callable[[str, str, dict], None]] = None,
 ) -> AcquisitionReport:
     """Item 1.4/O (automation closure) — ÚNICO ponto de entrada de aquisição
     em produção. Substitui `topup_for_plan_concurrent` (queue_topup.py),
@@ -825,12 +864,22 @@ def run_acquisition_for_workset(
                 break
             if all(i.deficit_seconds <= 0 for i in group_items):
                 break
+            if event_sink is not None:
+                try:
+                    event_sink(
+                        "provider_escalation",
+                        f"waterfall {waterfall} -> tentando '{provider_name}' "
+                        f"para {[i.canonical_entity for i in group_items]}",
+                        {"provider": provider_name, "waterfall": list(waterfall),
+                         "canonicals": [i.canonical_entity for i in group_items]})
+                except Exception:
+                    pass
             if settings.mock_mode:
                 resolver = lambda q, lvl: []  # noqa: E731
             else:
                 resolver = make_provider_resolver(
                     settings, dest, providers=(provider_name,), db=db,
-                    count_per_query=count_per_query)
+                    count_per_query=count_per_query, event_sink=event_sink)
             # bug real (mesma run, 2026-08-14): com o fix de "exhausted"
             # (acquire_for_deficits já não desiste do grupo inteiro por 1
             # entity sem candidatos), cada entity sem sorte consome 1
@@ -861,6 +910,17 @@ def run_acquisition_for_workset(
             combined.queries_run += rep.queries_run
             combined.iterations += rep.iterations
             combined.coverage_status.update(rep.coverage_status or {})
+        if event_sink is not None and not all(
+                i.deficit_seconds <= 0 for i in group_items):
+            try:
+                event_sink(
+                    "provider_pool_exhausted",
+                    f"waterfall {waterfall} esgotada para "
+                    f"{[i.canonical_entity for i in group_items]}",
+                    {"waterfall": list(waterfall),
+                     "canonicals": [i.canonical_entity for i in group_items]})
+            except Exception:
+                pass
     combined.coverage_ready = _remeasure()
     return combined
 

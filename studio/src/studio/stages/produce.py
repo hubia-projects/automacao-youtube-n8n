@@ -849,9 +849,17 @@ class S08Matching:
                               "provider_download_started",
                               f"acquisition wave {wave + 1}/{max_waves}",
                               payload={"wave": wave + 1, "max_waves": max_waves})
+                    # item 42/43 (fecho de cobertura multi-provider):
+                    # observabilidade fina (search/dedup/download/
+                    # escalation por provider) via callback simples —
+                    # acquisition.py não conhece events.py/run_dir, só
+                    # chama de volta com (event_type, message, payload).
                     acq_rep = run_acquisition_for_workset(
                         plan, workset_ctx, db, embedder, ctx.settings,
                         requirement_index=ri, query_history=qh,
+                        event_sink=lambda et, msg, payload: emit_event(
+                            ctx.run_dir, ctx.video_id, self.name, et, msg,
+                            payload=payload),
                     )
                     # item U: media nova entra no workset com matches
                     # REAIS (idempotente via upsert_match).

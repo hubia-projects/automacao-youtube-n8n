@@ -574,10 +574,17 @@
     let pendingLibraryGate = false;
     function renderActionRequired(events) {
       const cred = events.find(e => e.event_type === "credentials_invalid");
+      // item 35/43 (fecho de cobertura multi-provider): manual_asset_required
+      // é outro ACTION REQUIRED real (providers automáticos esgotados,
+      // incluindo Wikimedia) — mesmo banner, mesma mensagem que o CLI
+      // mostra (StageResult.notes), nunca 2 textos divergentes.
+      const manualAsset = events.filter(
+        e => e.event_type === "manual_asset_required").pop();
       const banner = document.getElementById("action-required");
-      if (cred) {
+      if (cred || manualAsset) {
         banner.style.display = "";
-        document.getElementById("ar-msg").textContent = cred.message || "";
+        document.getElementById("ar-msg").textContent =
+          (cred || manualAsset).message || "";
       } else {
         banner.style.display = "none";
       }
