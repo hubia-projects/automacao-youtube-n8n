@@ -84,11 +84,6 @@ def render_segment(entry: TimelineEntry, w: int, h: int, cache_dir: Path, *,
     if out.exists():
         return out
 
-    src_in = max(0.0, entry.source["in_s"] - head_ext)
-    window = (entry.source["out_s"] - entry.source["in_s"]) + (entry.source["in_s"] - src_in)
-    total = target_dur + (entry.source["in_s"] - src_in)
-    pad = max(0.0, total - window)
-
     vf = [f"scale={w}:{h}:force_original_aspect_ratio=increase",
           f"crop={w}:{h}", "setsar=1", f"fps={FPS}"]
     kb = _kenburns_filter(entry, w, h)
@@ -96,6 +91,26 @@ def render_segment(entry: TimelineEntry, w: int, h: int, cache_dir: Path, *,
         vf.append(kb)
     # color de casa: saturação/contraste subtis (LUTs entram quando existirem)
     vf.append("eq=saturation=1.06:contrast=1.02")
+
+    if entry.media_kind == "image":
+        # item 21 (fecho de cobertura multi-provider): MESMO cache-por-
+        # hash de vídeo (cache_dir), sem pré-render massivo separado. Uma
+        # imagem estática não tem "janela de origem" para recortar — sem
+        # trim/pad/tpad. `-loop 1` trata o ficheiro como stream contínuo;
+        # `-t` no output corta exactamente em target_dur. Ken Burns
+        # (`_kenburns_filter`, já genérico — não sabe se a origem é vídeo
+        # ou imagem) continua a dar o movimento subtil (item 19/20).
+        _run(["-loop", "1", "-i", entry.media_path,
+              "-t", f"{target_dur:.3f}", "-vf", ",".join(vf),
+              "-an", "-c:v", "libx264", "-preset", preset,
+              "-pix_fmt", "yuv420p", str(out)])
+        return out
+
+    src_in = max(0.0, entry.source["in_s"] - head_ext)
+    window = (entry.source["out_s"] - entry.source["in_s"]) + (entry.source["in_s"] - src_in)
+    total = target_dur + (entry.source["in_s"] - src_in)
+    pad = max(0.0, total - window)
+
     # Cap anti-"riscado": tpad clone acima de 0.4s parece freeze de frame.
     # O assigner divide agora as cenas em mais segmentos, mas se ainda restar
     # pad > 0.4s, fica limitado a 0.4s (indenável pela xfade seguinte a 0.4s)

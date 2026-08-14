@@ -6,6 +6,8 @@ vídeo são sempre patches à timeline, nunca edição direta de media.
 
 from __future__ import annotations
 
+import hashlib
+
 from pydantic import BaseModel, Field
 
 from studio.matching.assigner import SegmentAssignment
@@ -41,6 +43,10 @@ class TimelineEntry(BaseModel):
     kenburns: KenBurns = Field(default_factory=KenBurns)
     overlay: dict | None = None
     attribution_text: str = ""
+    # item MediaKind: "video" (default) ou "image" — decide em
+    # render_segment() se o ffmpeg usa -ss/-t (trim de vídeo) ou
+    # -loop 1 (still image + Ken Burns sobre a duração alvo).
+    media_kind: str = "video"
 
 
 class Timeline(BaseModel):
@@ -51,14 +57,30 @@ class Timeline(BaseModel):
 
 
 def _kenburns_for(seg: SegmentAssignment) -> KenBurns:
-    # push-in em close-ups estáticos; nada quando o shot já tem movimento
-    if seg.camera_motion not in ("", "static"):
+    is_image = getattr(seg, "media_kind", "video") == "image"
+    if not is_image:
+        # push-in em close-ups estáticos; nada quando o shot já tem movimento
+        if seg.camera_motion not in ("", "static"):
+            return KenBurns(mode="none")
+        if seg.shot_type in ("close-up", "macro"):
+            return KenBurns(mode="push_in", zoom_max=1.06)
+        if seg.shot_type in ("wide", "aerial"):
+            return KenBurns(mode="drift_lateral", zoom_max=1.04)
         return KenBurns(mode="none")
+    # item 19/20 (fecho de cobertura multi-provider): uma imagem estática
+    # NUNCA fica mode="none" — pareceria apresentação de slides/PowerPoint.
+    # Sempre algum movimento subtil; varia por shot_type quando disponível,
+    # com fallback determinístico (hash do shot_id, não aleatório — mesmo
+    # shot produz sempre o mesmo Ken Burns entre runs) para nunca repetir
+    # o MESMO movimento em imagens consecutivas sem classificação.
     if seg.shot_type in ("close-up", "macro"):
         return KenBurns(mode="push_in", zoom_max=1.06)
     if seg.shot_type in ("wide", "aerial"):
         return KenBurns(mode="drift_lateral", zoom_max=1.04)
-    return KenBurns(mode="none")
+    modes = ("push_in", "drift_lateral")
+    idx = int(hashlib.sha256(seg.shot_id.encode()).hexdigest(), 16) % len(modes)
+    zoom = 1.06 if modes[idx] == "push_in" else 1.04
+    return KenBurns(mode=modes[idx], zoom_max=zoom)
 
 
 def build_timeline(video_id: str, narration_path: str,
@@ -82,6 +104,7 @@ def build_timeline(video_id: str, narration_path: str,
             transition_in=transition,
             kenburns=_kenburns_for(seg),
             attribution_text=seg.attribution_text,
+            media_kind=getattr(seg, "media_kind", "video"),
         ))
         prev_scene = seg.scene_id
     return Timeline(video_id=video_id,

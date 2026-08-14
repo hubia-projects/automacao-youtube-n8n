@@ -49,6 +49,7 @@ def matches_for_shot(
     shot_vec,
     workset_ctx,
     min_similarity: float = DEFAULT_MIN_SIMILARITY,
+    media_kind: str = "video",
 ) -> list[RequirementMatch]:
     """1 shot -> lista de `RequirementMatch` semanticamente justificados.
 
@@ -90,6 +91,7 @@ def matches_for_shot(
             confirmation_confidence=0.0,
             strict_eligible=bool(spec.strict),
             evidence=("semantic_triage",),
+            media_kind=media_kind,
         ))
     return out
 
@@ -134,6 +136,7 @@ def index_existing_shots_against_workset(
             shot_vec=row.get("vec"),
             workset_ctx=workset_ctx,
             min_similarity=min_similarity,
+            media_kind=row.get("media_kind") or "video",
         )
         for m in matches:
             if ri.upsert_match(m):

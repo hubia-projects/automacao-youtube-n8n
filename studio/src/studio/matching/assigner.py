@@ -165,6 +165,12 @@ class SegmentAssignment(BaseModel):
     places_csv: str = ""
     landmarks_csv: str = ""
     food_csv: str = ""
+    # item MediaKind (fecho de cobertura multi-provider): "video" (default,
+    # retro-compat total) ou "image". source_in/source_out para imagem são
+    # sintéticos (0..shot_len) — não há janela real dentro de um ficheiro
+    # de vídeo a recortar; o renderer usa isto para decidir -ss/-t (vídeo)
+    # vs -loop 1 (imagem) — ver render/renderer.py::render_segment().
+    media_kind: str = "video"
 
     model_config = {"extra": "allow"}
 
@@ -645,6 +651,7 @@ def assign_shots(scenes: list[Scene], briefs: list[VisualBrief], db: LibraryDB,
                 has_landmark=cand.get("has_landmark", False),
                 attribution_text=cand.get("attribution_text", "") if
                     cand.get("attribution_required") else "",
+                media_kind=cand.get("media_kind") or "video",
             ))
             used_shots.add(cand["shot_id"])
             used_files[cand["media_sha"]] = used_files.get(cand["media_sha"], 0) + 1

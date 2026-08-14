@@ -35,12 +35,13 @@ def _plan(entities):
     return plan
 
 
-def _match(req_id, shot_id, media_sha, similarity, duration, status):
+def _match(req_id, shot_id, media_sha, similarity, duration, status,
+           media_kind="video"):
     return RequirementMatch(
         workset_id="wid-1", requirement_id=req_id, shot_id=shot_id,
         media_sha=media_sha, similarity=similarity, duration=duration,
         confirmation_status=status, confirmation_confidence=0.0,
-        strict_eligible=(status == CS_CONFIRMED),
+        strict_eligible=(status == CS_CONFIRMED), media_kind=media_kind,
     )
 
 
@@ -135,3 +136,68 @@ def test_filler_alocado_por_ultimo_non_strict_aceita_not_required():
     result = allocate_shots(_plan([filler]), ctx, ri)
     assert result.by_requirement["RF"] == ["f1"]
     assert result.selection_feasible is True
+
+
+def test_imagem_conta_para_cobertura_via_duration_sintetica():
+    """item MediaKind: RequirementMatch.duration de uma imagem já vem
+    preenchida com a virtual duration (por construção no ingest, Fase 1)
+    — allocate_shots não precisa de tratamento especial de duração."""
+    ent = EntityCoverage(canonical_name="Livraria Lello", entity_type="landmark",
+                         priority_score=1.0, mention_count=1,
+                         required_seconds=5.0, target_seconds=5.0,
+                         min_distinct_shots=1, strict=True)
+    ctx = _ctx([_Spec("Livraria Lello", "R01")])
+    ri = MagicMock()
+    ri.list_for_requirement.return_value = [
+        _match("R01", "img1", "sha_img1", 0.9, 5.0, CS_CONFIRMED,
+              media_kind="image"),
+    ]
+    result = allocate_shots(_plan([ent]), ctx, ri)
+    assert result.by_requirement["R01"] == ["img1"]
+    assert result.selection_feasible is True
+    assert result.image_seconds_allocated == 5.0
+    assert result.total_seconds_allocated == 5.0
+    assert result.image_share_overall == 1.0
+
+
+def test_max_images_per_requirement_limita_diversidade():
+    """item 27: mesmo com imagens de sobra, no máx.
+    max_images_per_requirement por requirement — nunca 1 requirement toda
+    coberta por N imagens sem variedade (ex.: 10 fotos do mesmo ângulo)."""
+    ent = EntityCoverage(canonical_name="Livraria Lello", entity_type="landmark",
+                         priority_score=1.0, mention_count=1,
+                         required_seconds=30.0, target_seconds=30.0,
+                         min_distinct_shots=1, strict=True)
+    ctx = _ctx([_Spec("Livraria Lello", "R01")])
+    ri = MagicMock()
+    ri.list_for_requirement.return_value = [
+        _match("R01", f"img{i}", f"sha_img{i}", 0.9 - i * 0.01, 5.0,
+              CS_CONFIRMED, media_kind="image")
+        for i in range(10)
+    ]
+    result = allocate_shots(_plan([ent]), ctx, ri, max_images_per_requirement=2)
+    assert len(result.by_requirement["R01"]) == 2
+    assert result.by_requirement["R01"] == ["img0", "img1"]
+    # não atingiu target_seconds (só 10s de 30s) -> infeasible, correcto:
+    # a diversidade cap é real, não finge cobertura que não existe.
+    assert result.selection_feasible is False
+
+
+def test_video_e_imagem_misturados_computam_share_correcto():
+    ent = EntityCoverage(canonical_name="A", entity_type="landmark",
+                         priority_score=1.0, mention_count=1,
+                         required_seconds=10.0, target_seconds=10.0,
+                         min_distinct_shots=2, strict=True)
+    ctx = _ctx([_Spec("A", "R01")])
+    ri = MagicMock()
+    ri.list_for_requirement.return_value = [
+        _match("R01", "vid1", "sha_v1", 0.9, 6.0, CS_CONFIRMED,
+              media_kind="video"),
+        _match("R01", "img1", "sha_i1", 0.8, 4.0, CS_CONFIRMED,
+              media_kind="image"),
+    ]
+    result = allocate_shots(_plan([ent]), ctx, ri)
+    assert set(result.by_requirement["R01"]) == {"vid1", "img1"}
+    assert result.total_seconds_allocated == 10.0
+    assert result.image_seconds_allocated == 4.0
+    assert result.image_share_overall == 0.4

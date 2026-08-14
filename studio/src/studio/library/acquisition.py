@@ -621,6 +621,7 @@ def acquire_for_deficits(
                                         t_out=float(row.get("t_out", 0.0)),
                                         shot_vec=row.get("vec"),
                                         workset_ctx=workset_ctx,
+                                        media_kind=row.get("media_kind") or "video",
                                     ):
                                         requirement_index.upsert_match(m)
                             except Exception as exc:

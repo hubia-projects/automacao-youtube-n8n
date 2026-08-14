@@ -79,6 +79,12 @@ class RequirementMatch:
     strict_eligible: bool
     evidence: tuple[str, ...] = ()
     updated_at: str = ""
+    # item MediaKind (fecho de cobertura multi-provider): "video" (default,
+    # retro-compat total) ou "image" — permite a allocate_shots() aplicar
+    # os caps de diversidade (max_image_share_overall/
+    # max_images_per_requirement, item 26/27) sem re-consultar a LibraryDB
+    # por shot.
+    media_kind: str = "video"
 
     def to_row(self) -> dict:
         return {
@@ -93,6 +99,7 @@ class RequirementMatch:
             "strict_eligible": bool(self.strict_eligible),
             "evidence_json": json.dumps(list(self.evidence), ensure_ascii=False),
             "updated_at": self.updated_at or _now_iso(),
+            "media_kind": self.media_kind,
         }
 
     @staticmethod
@@ -115,6 +122,7 @@ class RequirementMatch:
             strict_eligible=bool(row.get("strict_eligible", False)),
             evidence=evidence,
             updated_at=row.get("updated_at", _now_iso()),
+            media_kind=row.get("media_kind", "video") or "video",
         )
 
 
@@ -192,12 +200,25 @@ class RequirementIndex:
     def _table(self):
         # LanceDB table handle com fallback gracioso.
         try:
-            return self._lance().open_table(self.TABLE)
+            tab = self._lance().open_table(self.TABLE)
         except Exception as exc:
             log.debug("RequirementIndex: LanceDB table %s indisponível: %s — "
                       "fallback JSONL em %s",
                       self.TABLE, exc.__class__.__name__, self._fallback_path)
             return None
+        # item MediaKind: migração aditiva — tabela real já populada antes
+        # desta coluna existir (mesmo padrão de db.py::LibraryDB.__init__).
+        # Sem isto, upsert_match(row com "media_kind") rebentava contra o
+        # schema on-disk antigo, caindo silenciosamente no fallback JSONL
+        # (o MESMO bug de perda de persistência corrigido nesta sessão).
+        try:
+            if "media_kind" not in tab.schema.names:
+                tab.add_columns({"media_kind": "'video'"})
+        except Exception as exc:
+            log.debug("RequirementIndex: migração media_kind falhou (não "
+                      "fatal, tabela pode já estar migrada): %s",
+                      exc.__class__.__name__)
+        return tab
 
     def upsert_match(self, match: RequirementMatch) -> bool:
         """Upsert (workset_id, requirement_id, shot_id) → row única."""
