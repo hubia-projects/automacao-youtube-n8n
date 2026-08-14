@@ -333,6 +333,18 @@ def acquire_for_deficits(
     t_wall = time.perf_counter()
     rep.wall_s = t_wall
 
+    # BUG REAL (1ª run de produção real, porto-24h-001, 2026-08-14): quando
+    # o item de maior deficit esgotava o seu pool de candidatos (0 ganhos
+    # nesta iteração), o antigo `break` aqui abortava TODO o
+    # acquire_for_deficits — os outros 12 deficits do workset nunca
+    # chegavam a ser tentados, mesmo tendo cada um a sua própria query
+    # hierarchy nunca exercida. `exhausted` marca só o item ACTUAL como
+    # "sem mais candidatos nesta chamada" e deixa a próxima iteração
+    # escolher o PRÓXIMO maior deficit (item 6/7: rebuild deficits, maior
+    # deficit primeiro DENTRO do tier disponível, nunca desistir do
+    # workset inteiro por 1 entity sem footage).
+    exhausted: set[str] = set()
+
     # Iteração outer — cada iteração tenta satisfazer top deficit.
     for it in range(max_iterations):
         rep.iterations = it + 1
@@ -354,11 +366,21 @@ def acquire_for_deficits(
                      "iteração %d — STOP", it + 1)
             rep.coverage_ready = True
             break
-        remaining = [d for d in deficit_items
-                     if d.deficit_seconds > 0 and not d.is_covered]
+        all_uncovered = [d for d in deficit_items
+                         if d.deficit_seconds > 0 and not d.is_covered]
+        remaining = [d for d in all_uncovered
+                     if d.canonical_entity not in exhausted]
         if not remaining:
-            log.info("acquire_for_deficits: 0 deficits remaining — STOP")
-            rep.coverage_ready = True
+            if all_uncovered:
+                log.info(
+                    "acquire_for_deficits: %d deficits sem candidatos "
+                    "(pool esgotado em TODOS) — STOP honesto, "
+                    "coverage_ready=False: %s", len(all_uncovered),
+                    [d.canonical_entity for d in all_uncovered])
+                rep.coverage_ready = False
+            else:
+                log.info("acquire_for_deficits: 0 deficits remaining — STOP")
+                rep.coverage_ready = True
             break
         # pick highest deficit priority (= deficit_s × priority_score)
         item = max(remaining, key=lambda d: d.deficit_seconds * d.priority_score)
@@ -618,9 +640,17 @@ def acquire_for_deficits(
                 rep.coverage_ready = True
                 break
         if one_iteration_added == 0:
-            log.info("acquire_for_deficits: iteração %d sem ganhos — STOP "
-                     "(candidate pool exhausted)", it + 1)
-            break
+            # NÃO abortar o acquire_for_deficits inteiro — só este item
+            # esgotou o pool de candidatos (ver comentário no topo do
+            # loop). Os outros deficits, cada um com a sua própria query
+            # hierarchy nunca tentada, continuam elegíveis na próxima
+            # iteração via `remaining` (que já exclui `exhausted`).
+            log.info(
+                "acquire_for_deficits: '%s' sem ganhos nesta iteração — "
+                "marca exhausted, tenta próximo maior deficit",
+                item.canonical_entity)
+            exhausted.add(item.canonical_entity)
+            continue
         if rep.coverage_ready:
             break
     rep.wall_s = time.perf_counter() - t_wall
@@ -732,12 +762,20 @@ def run_acquisition_for_workset(
             settings, dest, providers=("pexels",), db=db,
             count_per_query=count_per_query)
 
+    # bug real (mesma run, 2026-08-14): com o fix de "exhausted" acima
+    # (acquire_for_deficits já não desiste do workset inteiro por 1
+    # entity sem candidatos), cada entity sem sorte consome 1 iteração
+    # antes de passar à seguinte. `exhausted` é local a esta CHAMADA —
+    # com menos iterações do que deficits, os últimos da lista (menor
+    # prioridade/deficit dentro do tier) nunca chegam a ser tentados
+    # nesta wave. Garante ≥1 tentativa por deficit por wave.
+    effective_max_iterations = max(max_iterations, len(deficit_items))
     return acquire_for_deficits(
         workset_ctx=workset_ctx, db=db, embedder=embedder, settings=settings,
         deficit_items=deficit_items, provider_resolver=resolver,
         query_history_db=query_history, requirement_index=requirement_index,
         refresh_deficit=_refresh, remeasure_coverage=_remeasure,
-        max_downloads=max_downloads, max_iterations=max_iterations,
+        max_downloads=max_downloads, max_iterations=effective_max_iterations,
     )
 
 
