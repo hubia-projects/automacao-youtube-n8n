@@ -132,3 +132,38 @@ def test_normalize_license_mapping():
     assert wikimedia._normalize_license("CC0 1.0") == "cc0"
     assert wikimedia._normalize_license("Public domain") == "pd"
     assert wikimedia._normalize_license("All rights reserved") == ""
+
+
+def test_download_extrai_extensao_correcta_com_querystring_tracking(
+    tmp_path, monkeypatch,
+):
+    """BUG REAL (microvalidação real, 2026-08-14): download_url do Commons
+    vem sempre com querystring de tracking
+    ("...jpg?utm_source=commons.wikimedia.org&utm_campaign=..."). Sem
+    urlparse, Path(url).suffix pegava o resto da querystring como
+    "extensão" — ficheiro final ficava
+    "wikimedia_121506761.org&utm_campaign=..." em vez de ".jpg"."""
+    cand = wikimedia.CandidateMetadata(
+        provider="wikimedia", provider_id="121506761",
+        source_url="https://commons.wikimedia.org/wiki/File:X.jpg",
+        download_url=("https://upload.wikimedia.org/wikipedia/commons/6/6e/"
+                      "Exterior_view_of_Livraria_Lello_01.jpg"
+                      "?utm_source=commons.wikimedia.org"
+                      "&utm_campaign=imageinfo&utm_content=original"),
+        media_kind="image",
+    )
+
+    class _FakeStream:
+        status_code = 200
+        request = httpx.Request("GET", cand.download_url)
+
+        def raise_for_status(self): pass
+        def iter_bytes(self, chunk_size): yield b"jpeg bytes"
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    monkeypatch.setattr(httpx.Client, "stream",
+                        lambda self, method, url, **kw: _FakeStream())
+    path = wikimedia.download(cand, _settings(), tmp_path)
+    assert path.name == "wikimedia_121506761.jpg"
+    assert path.suffix == ".jpg"

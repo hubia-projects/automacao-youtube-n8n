@@ -195,7 +195,16 @@ def download(candidate: CandidateMetadata, settings: Settings, dest: Path) -> Pa
     """Fase 2 (só DOWNLOAD): 1 candidato já filtrado por dedup (pre-
     download). Extensão preservada do download_url (jpg/png/webm/ogg)."""
     dest.mkdir(parents=True, exist_ok=True)
-    suffix = Path(candidate.download_url).suffix or (
+    # BUG REAL (microvalidação real 2026-08-14): download_url do Commons
+    # vem SEMPRE com querystring de tracking
+    # ("...jpg?utm_source=commons.wikimedia.org&utm_campaign=..."inconn) —
+    # Path(url).suffix sem urlparse pegava o resto da querystring como
+    # "extensão" (ficheiro final literalmente
+    # "wikimedia_121506761.org&utm_campaign=..."). urlparse().path isola
+    # só o path real antes do "?".
+    from urllib.parse import urlparse
+    url_path = urlparse(candidate.download_url).path
+    suffix = Path(url_path).suffix or (
         ".jpg" if candidate.media_kind == "image" else ".mp4")
     target = dest / f"wikimedia_{candidate.provider_id}{suffix}"
     if target.exists() and target.stat().st_size > 0:
