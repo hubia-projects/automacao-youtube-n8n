@@ -474,11 +474,23 @@ def acquire_for_deficits(
                     log.debug("acquire: provider_cache hit %s/%s — skip "
                               "download", provider_name, source_url)
                     continue
-                # preflight
-                ok, pf_reason = preflight_media(path)
-                if not ok:
-                    log.debug("acquire: preflight fail %s (%s)", path, pf_reason)
-                    continue
+                # preflight — imagem NUNCA passa por preflight_media
+                # (video-only, exige duration/codec de vídeo); usa
+                # preflight_image (resolução/formato) em vez disso.
+                if str(meta.get("media_kind") or "video") == "image":
+                    from studio.library.early_reject import preflight_image
+                    effective_settings_pf = settings or getattr(
+                        db, "_settings", None)
+                    reject = preflight_image(path, effective_settings_pf)
+                    if reject is not None:
+                        log.debug("acquire: preflight_image fail %s (%s)",
+                                 path, reject)
+                        continue
+                else:
+                    ok, pf_reason = preflight_media(path)
+                    if not ok:
+                        log.debug("acquire: preflight fail %s (%s)", path, pf_reason)
+                        continue
                 # ingest_asset (canonical)
                 try:
                     from studio.library.ingest_asset import ingest_asset
@@ -540,6 +552,11 @@ def acquire_for_deficits(
                         # ÚNICO caminho de ingest em produção.
                         requirement_embeddings=workset_ctx.requirement_embeddings,
                         visual_prompt_embeddings=workset_ctx.visual_prompt_embeddings,
+                        # item MediaKind: providers como wikimedia.py servem
+                        # vídeo E imagem — media_kind vem no meta plano
+                        # (dentro do dict "license" original do candidato,
+                        # copiado por make_provider_resolver).
+                        media_kind=str(meta.get("media_kind") or "video"),
                     )
                     if result.status == "ingested":
                         rep.downloads_succeeded += 1
