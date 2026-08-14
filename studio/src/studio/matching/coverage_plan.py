@@ -98,6 +98,15 @@ class EntityCoverage(BaseModel):
     NOTA: para strict entities, esta coluna é SEMÂNTICA (não inclui
     strict_available_seconds separados). Ver strict_available_seconds."""
     deficit_seconds: float = 0.0
+    """item PORTO/dedup (search+confirmation calibration): nomes
+    alternativos da MESMA entidade (união de `EntitySpan.aliases` de
+    todas as menções do bucket) — sem isto, `_ensure_mandatory_topics`
+    não conseguia detectar que "Galerias de Paris" e "Rua Galeria de
+    Paris" já eram a mesma entidade (o extractor já sabia, via
+    EntityMention.aliases, mas o campo nunca chegava aqui), criando um
+    requirement duplicado. Também alimenta a expansão de queries
+    (variantes de busca por entidade, sem hardcode)."""
+    aliases: tuple[str, ...] = ()
     """strict_visual ⇒ entity NÃO pode cair para genérico em cobertura
     insuficiente; top-up é obrigatório."""
     strict: bool = True
@@ -209,6 +218,17 @@ def rank_entity_importance(
             + W_SPECIFICITY * spec,
             4,
         )
+        # item PORTO/dedup: união de aliases de TODAS as menções deste
+        # bucket (dedup case-insensitive, preserva a 1ª grafia vista;
+        # nunca inclui o próprio canonical_name como alias de si mesmo).
+        seen_lower = {canon.strip().lower()}
+        aliases: list[str] = []
+        for sp in spans:
+            for a in sp.aliases:
+                a_norm = a.strip()
+                if a_norm and a_norm.lower() not in seen_lower:
+                    seen_lower.add(a_norm.lower())
+                    aliases.append(a_norm)
         out.append(EntityCoverage(
             canonical_name=canon,
             entity_type=etype,
@@ -218,6 +238,7 @@ def rank_entity_importance(
             target_seconds=0.0,    # preenchido depois com buffer
             min_distinct_shots=0,  # preenchido depois com shots_by_duration
             strict=strict,
+            aliases=tuple(aliases),
         ))
     out.sort(key=lambda e: e.priority_score, reverse=True)
     return out

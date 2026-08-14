@@ -68,3 +68,39 @@ def test_mandatory_topic_ja_coberto_por_entity_span_nao_duplica(settings, tmp_pa
     result = build_workset(theme_spec, "script", scenes, [span], db, settings)
     canons = [e.canonical_name for e in result.plan.ranked_entities]
     assert canons.count("Francesinha") == 1
+
+
+def test_mandatory_topic_ja_coberto_por_alias_nao_duplica(settings, tmp_path):
+    """BUG REAL confirmado em produção (Porto, porto-24h-001): o extractor
+    já reconhecia "Galerias de Paris" como alias de "Rua Galeria de
+    Paris" (EntityMention.aliases), mas `_ensure_mandatory_topics` só
+    comparava canonical_name exacto — cego a aliases — criando um 2º
+    requirement sintético duplicado (mesma janela temporal, mesma
+    entidade real). Deve ficar 1 SÓ requirement, com "Galerias de Paris"
+    fundido como alias."""
+    db = LibraryDB(tmp_path / "lib_alias_dup")
+    theme_spec = ThemeSpec(theme="Porto em 24h",
+                           mandatory_topics=["Galerias de Paris"])
+    scenes = [_scene("s01", 0.0, 5.9, "Uma rua icónica: Galerias de Paris.",
+                     primary_entity="Rua Galeria de Paris")]
+    span = EntitySpan(
+        entity_id="rua_galeria_de_paris:0001",
+        canonical_name="Rua Galeria de Paris",
+        aliases=["Galerias de Paris"],
+        entity_type="place", t_in=0.0, t_out=5.9,
+        text="Galerias de Paris", importance=0.8, strict_visual=True,
+    )
+
+    result = build_workset(theme_spec, "script", scenes, [span], db, settings)
+    canons = [e.canonical_name for e in result.plan.ranked_entities]
+    assert canons.count("Rua Galeria de Paris") == 1
+    assert "Galerias de Paris" not in canons, (
+        "não pode criar um 2º requirement sintético para um alias já "
+        "coberto pela entity real"
+    )
+    ent = next(e for e in result.plan.ranked_entities
+              if e.canonical_name == "Rua Galeria de Paris")
+    assert "Galerias de Paris" in ent.aliases
+    vr = (result.workset_dir / "visual_requirements.json").read_text("utf-8")
+    assert vr.count("Rua Galeria de Paris") == 1 or vr.count(
+        '"canonical_entity": "Rua Galeria de Paris"') == 1

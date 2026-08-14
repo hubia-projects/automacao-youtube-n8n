@@ -121,11 +121,34 @@ def _ensure_mandatory_topics(
     """
     if not mandatory_topics:
         return
-    existing = {ent.canonical_name.strip().lower() for ent in plan.ranked_entities}
+    # item PORTO/dedup (search+confirmation calibration): "já coberto?"
+    # tinha de checar só canonical_name exacto — cego a aliases. Bug real
+    # confirmado em produção: o extractor já reconhecia "Galerias de
+    # Paris" como alias de "Rua Galeria de Paris" (EntityMention.aliases),
+    # mas por este check ser cego a aliases, o mandatory_topic "Galerias
+    # de Paris" era tratado como "em falta" e criava um 2º requirement
+    # sintético duplicado (mesma janela temporal, mesma entidade real).
+    # `existing` agora mapeia canonical E cada alias -> a entity real, e
+    # o alias novo é fundido na entity existente (nunca perdido).
+    existing: dict[str, EntityCoverage] = {}
+    for ent in plan.ranked_entities:
+        existing[ent.canonical_name.strip().lower()] = ent
+        for a in ent.aliases:
+            existing[a.strip().lower()] = ent
     unresolved: list[str] = []
     for topic in mandatory_topics:
         key = topic.strip().lower()
-        if not key or key in existing:
+        if not key:
+            continue
+        matched_ent = existing.get(key)
+        if matched_ent is not None:
+            # tópico mandatório já coberto por uma entity real (canonical
+            # ou alias) — funde o texto exacto do tópico como alias, se
+            # ainda não estava (nunca perde a grafia exacta pedida pelo
+            # operador, útil para expansão de queries mais tarde).
+            if topic.strip().lower() != matched_ent.canonical_name.strip().lower() \
+                    and topic.strip() not in matched_ent.aliases:
+                matched_ent.aliases = (*matched_ent.aliases, topic.strip())
             continue
         matching_scenes = [sc for sc in scenes if is_topic_present(sc.text, topic)]
         if not matching_scenes:
@@ -157,7 +180,7 @@ def _ensure_mandatory_topics(
             "mandatory_topic sem EntitySpan — ancorado por texto de Scene "
             "(item D closure pass)")
         plan.ranked_entities.append(ent)
-        existing.add(key)
+        existing[key] = ent
     if unresolved:
         raise MandatoryTopicUnresolvedError(unresolved)
 
@@ -264,6 +287,13 @@ def build_workset(
                 "available_distinct_shots": ent.available_distinct_shots,
                 "deficit_seconds": ent.deficit_seconds,
                 "visual_prompts_en": ent.queries,
+                # item PORTO/dedup (search+confirmation calibration):
+                # aliases/location existiam no schema/loader
+                # (workset_context.py::RequirementSpec) mas nunca eram
+                # escritos aqui — ficavam sempre vazios a jusante,
+                # incluindo na expansão de queries (Fase C).
+                "aliases": list(ent.aliases),
+                "location": ent.location,
             }
             for tid, ent in zip(topic_ids, plan.ranked_entities)
         ],
