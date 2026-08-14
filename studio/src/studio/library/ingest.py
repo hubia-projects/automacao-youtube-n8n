@@ -200,6 +200,7 @@ def ingest_file(
     requirement_prompts: dict[str, str] | None = None,
     requirement_embeddings: dict[str, np.ndarray] | None = None,
     visual_prompt_embeddings: dict[str, list] | None = None,
+    media_kind: str = "video",
 ) -> IngestResult:
     """Ingerir 1 ficheiro na biblioteca. Instrumentada via Profiler.
 
@@ -220,6 +221,13 @@ def ingest_file(
             ficheiro ingerido. `visual_prompt_embeddings` (bank multi-prompt)
             tem prioridade sobre `requirement_embeddings` (single vector)
             por canonical.
+        media_kind: "video" (default) ou "image" (item MediaKind — closure
+            de cobertura multi-provider). Imagem salta detect_shots/
+            extract_keyframes (video-only, exigem duration>0/ffmpeg seek) —
+            produz exactamente 1 shot sintético (t_in=0,
+            t_out=image_virtual_duration_default_s) com a própria imagem
+            como keyframe único. Tudo a seguir (SigLIP embed, triage,
+            Gemini metadata, LanceDB row) é kind-agnostic, sem alteração.
 
     try/finally garante Profiler.record("ingest_file") em TODOS os caminhos
     (happy / rejected / skipped_duplicate).
@@ -265,21 +273,31 @@ def ingest_file(
                             items=path.stat().st_size)
 
         # 4. Shots → keyframes → embedding (Pass 4 two-phase)
-        t_scene = time.perf_counter()
-        shots = detect_shots(media_path)
-        Profiler.record("ingest_scenedetect", time.perf_counter() - t_scene,
-                        items=len(shots))
+        # item MediaKind: imagem não tem timeline nem scenes — 1 shot
+        # sintético, a própria imagem como único "keyframe" (embed_images
+        # trata-o como qualquer outro JPEG). detect_shots/extract_keyframes
+        # (ffprobe duration>0 + PySceneDetect + seeks ffmpeg) são
+        # inteiramente video-only e saltados aqui.
+        if media_kind == "image":
+            dur = float(getattr(settings, "image_virtual_duration_default_s", 5.0) or 5.0)
+            shots = [(0.0, dur)]
+            shot_keyframes_meta = [(0, f"{sha[:12]}_000", [media_path], 0.0, dur)]
+        else:
+            t_scene = time.perf_counter()
+            shots = detect_shots(media_path)
+            Profiler.record("ingest_scenedetect", time.perf_counter() - t_scene,
+                            items=len(shots))
 
-        # --- Phase A: extract ALL keyframes per shot (ffmpeg-bound) ---
-        shot_keyframes_meta: list[tuple[int, str, list[Path], float, float]] = []
-        for idx, (t_in, t_out) in enumerate(shots):
-            shot_id = f"{sha[:12]}_{idx:03d}"
-            kf_dir = settings.library_root / "shots" / sha / shot_id
-            t_kf = time.perf_counter()
-            keyframes = extract_keyframes(media_path, t_in, t_out, kf_dir)
-            Profiler.record("keyframes", time.perf_counter() - t_kf,
-                            items=len(keyframes))
-            shot_keyframes_meta.append((idx, shot_id, keyframes, t_in, t_out))
+            # --- Phase A: extract ALL keyframes per shot (ffmpeg-bound) ---
+            shot_keyframes_meta = []
+            for idx, (t_in, t_out) in enumerate(shots):
+                shot_id = f"{sha[:12]}_{idx:03d}"
+                kf_dir = settings.library_root / "shots" / sha / shot_id
+                t_kf = time.perf_counter()
+                keyframes = extract_keyframes(media_path, t_in, t_out, kf_dir)
+                Profiler.record("keyframes", time.perf_counter() - t_kf,
+                                items=len(keyframes))
+                shot_keyframes_meta.append((idx, shot_id, keyframes, t_in, t_out))
 
         # --- Phase B: UMA chamada SigLIP com TODOS os keyframes ---
         all_kf_paths: list[Path] = [kf for _, _, kfs, _, _ in shot_keyframes_meta
@@ -496,7 +514,7 @@ def ingest_file(
                 log.debug("cache_mark_rejected(vision) falhou (não fatal): %s",
                           exc.__class__.__name__)
             rows.append({
-                "shot_id": shot_id, "media_sha": sha,
+                "shot_id": shot_id, "media_sha": sha, "media_kind": media_kind,
                 "t_in": t_in, "t_out": t_out, "vec": vec.tolist(),
                 "summary": meta.summary,
                 "places_csv": ",".join(meta.places),

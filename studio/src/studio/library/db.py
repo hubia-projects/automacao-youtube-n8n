@@ -47,6 +47,7 @@ def _build_iter_clause(where: str, include_restricted: bool) -> str:
 _SCHEMA = pa.schema([
     ("shot_id", pa.string()),
     ("media_sha", pa.string()),
+    ("media_kind", pa.string()),    # "video" | "image" (item MediaKind)
     ("t_in", pa.float32()),
     ("t_out", pa.float32()),
     ("vec", pa.list_(pa.float32(), DIM)),
@@ -106,6 +107,14 @@ class LibraryDB:
         self._db = lancedb.connect(str(library_root / "lancedb"))
         if SHOTS_TABLE in self._db.table_names():
             self._table = self._db.open_table(SHOTS_TABLE)
+            # item MediaKind: migração aditiva — tabelas criadas antes desta
+            # coluna existir (biblioteca real já populada) não a têm no
+            # schema on-disk; LanceDB não re-aplica _SCHEMA a tabelas
+            # existentes. add_columns() faz backfill "video" em todas as
+            # rows antigas (única media kind que existia até agora) sem
+            # perder dados.
+            if "media_kind" not in self._table.schema.names:
+                self._table.add_columns({"media_kind": "'video'"})
         else:
             self._table = self._db.create_table(SHOTS_TABLE, schema=_SCHEMA)
         if CACHE_TABLE in self._db.table_names():

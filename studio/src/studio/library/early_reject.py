@@ -149,6 +149,49 @@ def preflight(path: Path, settings: Settings) -> RejectReason | None:
     return None
 
 
+_ACCEPTABLE_IMAGE_FORMATS = frozenset({"JPEG", "PNG", "WEBP"})
+
+
+def preflight_image(path: Path, settings: Settings) -> RejectReason | None:
+    """Pre-validar IMAGEM antes de ingest (item MediaKind — closure de
+    cobertura multi-provider). Paralelo a `preflight()`, NUNCA partilhado
+    com ele: vídeo exige duration+codec de vídeo (inaplicável a uma
+    still); imagem exige resolução mínima + formato — usa PIL (já
+    dependência existente via embed.py), não ffprobe.
+
+    Returns None se OK; RejectReason caso contrário.
+    """
+    img_min_w = int(getattr(settings, "image_min_width", 1280) or 1280)
+    img_min_h = int(getattr(settings, "image_min_height", 720) or 720)
+
+    if not path.exists():
+        return RejectReason("missing_file", f"path não existe: {path}")
+    if path.stat().st_size < 1024:
+        return RejectReason("empty_file", f"{path.name} < 1 KB")
+
+    try:
+        from PIL import Image
+        with Image.open(path) as img:
+            fmt = (img.format or "").upper()
+            width, height = img.size
+    except Exception as exc:
+        return RejectReason("probe_failed",
+                            f"PIL incapaz de ler {path.name}: "
+                            f"{exc.__class__.__name__}")
+
+    if fmt not in _ACCEPTABLE_IMAGE_FORMATS:
+        return RejectReason(
+            "unsupported_format",
+            f"formato '{fmt}' não está nos aceitáveis "
+            f"{sorted(_ACCEPTABLE_IMAGE_FORMATS)}")
+    if width < img_min_w or height < img_min_h:
+        return RejectReason(
+            "low_resolution",
+            f"{width}x{height} < mínimo {img_min_w}x{img_min_h}")
+
+    return None
+
+
 def postflight(metadata: dict,
                 expected_location: str | None = None) -> RejectReason | None:
     """Pos-validar metadata de Vision: watermark + wrong-location.

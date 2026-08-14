@@ -364,6 +364,25 @@ class Settings(BaseSettings):
         default=20, alias="STUDIO_LIBRARY_TRIAGE_TOP_K")
     library_triage_margin: float = Field(
         default=0.05, alias="STUDIO_LIBRARY_TRIAGE_MARGIN")
+    # item MediaKind (closure de cobertura multi-provider): imagem exacta
+    # licenciada (Wikimedia sobretudo) como fonte visual de 1ª classe
+    # quando não existe vídeo exacto. Duração virtual conservadora — uma
+    # foto nunca pode "contar" como um clip longo.
+    image_virtual_duration_default_s: float = Field(
+        default=5.0, alias="STUDIO_IMAGE_VIRTUAL_DURATION_DEFAULT_S")
+    image_virtual_duration_min_s: float = Field(
+        default=3.0, alias="STUDIO_IMAGE_VIRTUAL_DURATION_MIN_S")
+    image_virtual_duration_max_s: float = Field(
+        default=7.0, alias="STUDIO_IMAGE_VIRTUAL_DURATION_MAX_S")
+    # gate de qualidade de imagem (preflight_image) — equivalente a 16:9
+    # a partir de 720p; preferir 1920px+ mas não exigir.
+    image_min_width: int = Field(default=1280, alias="STUDIO_IMAGE_MIN_WIDTH")
+    image_min_height: int = Field(default=720, alias="STUDIO_IMAGE_MIN_HEIGHT")
+    # diversidade/dinamismo do vídeo final: imagem nunca pode dominar.
+    max_image_share_overall: float = Field(
+        default=0.40, alias="STUDIO_MAX_IMAGE_SHARE_OVERALL")
+    max_images_per_requirement: int = Field(
+        default=5, alias="STUDIO_MAX_IMAGES_PER_REQUIREMENT")
     # True = buckets.py update_topic_hit NÃO copia MP4 para bucket/shots/.
     # Cada MP4 vive UMA única vez em media/<sha>.<ext>; o workset guarda
     # apenas referências (shot_id + media_sha) em topic_topics.json e

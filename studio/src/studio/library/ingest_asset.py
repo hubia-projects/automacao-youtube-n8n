@@ -134,6 +134,7 @@ def ingest_asset(
     requirement_prompts: Optional[dict] = None,
     requirement_embeddings: Optional[dict] = None,
     visual_prompt_embeddings: Optional[dict] = None,
+    media_kind: str = "video",
 ) -> tuple[IngestResult, AssetStateRecord]:
     """Wrapper canónico de ingest_file com P5+P6 invariantes.
 
@@ -148,6 +149,7 @@ def ingest_asset(
         requirement_prompts: dict[canonical_entity -> text_en] para SigLIP
             triage pré-Gemini (HOT path real §P5 2026-08-11). None →
             legacy fallback per-shot analyze_shot.
+        media_kind: "video" (default) ou "image" — propagado a ingest_file.
 
     Returns:
         (IngestResult, AssetStateRecord). Caller usa `record.state` para
@@ -169,6 +171,7 @@ def ingest_asset(
             requirement_prompts=requirement_prompts,
             requirement_embeddings=requirement_embeddings,
             visual_prompt_embeddings=visual_prompt_embeddings,
+            media_kind=media_kind,
         )
     except LicenseError as exc:
         # Permanent failure — license invalid; retry will not change outcome.
