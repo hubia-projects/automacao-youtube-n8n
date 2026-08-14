@@ -118,3 +118,67 @@ def test_wrapper_chama_acquire_for_deficits_com_requirement_index_e_query_histor
     assert captured["requirement_index"] is ri
     assert captured["query_history_db"] is qh
     assert captured["deficit_items"][0].canonical_entity == "A"
+
+
+def test_escalation_para_apos_1o_provider_cobrir(tmp_path, monkeypatch):
+    """item 32: quando o 1º provider da waterfall cobre a requirement,
+    os seguintes nunca são tentados (early-stop, não "continua só porque
+    sim")."""
+    ent = _ent("Livraria Lello", strict=True, deficit=10.0,
+               entity_type="landmark")
+    plan = _plan([ent])
+    ctx = _ctx([_Spec("Livraria Lello", "R01")])
+
+    calls = []
+
+    def fake_acquire(**kwargs):
+        from studio.library.acquisition import AcquisitionReport
+        item = kwargs["deficit_items"][0]
+        calls.append(kwargs["provider_name_for_history"])
+        item.deficit_seconds = 0.0  # 1ª tentativa cobre de facto
+        return AcquisitionReport(coverage_status={}, coverage_ready=True,
+                                 downloads_succeeded=1)
+
+    settings = MagicMock(library_root=tmp_path, mock_mode=False,
+                         pexels_api_key="k")
+    with patch("studio.library.acquisition.make_provider_resolver",
+              return_value=lambda q, lvl: []), \
+         patch("studio.library.acquisition.acquire_for_deficits",
+              side_effect=fake_acquire):
+        run_acquisition_for_workset(
+            plan, ctx, MagicMock(library_root=tmp_path), MagicMock(),
+            settings, requirement_index=MagicMock(),
+        )
+    assert calls == ["wikimedia"], (
+        f"landmark strict: só o 1º provider da waterfall (wikimedia) "
+        f"devia ser tentado, chamou {calls!r}")
+
+
+def test_query_history_recebe_nome_real_do_provider_nao_multi(tmp_path):
+    """item 33: QueryHistory grava o provider REAL da waterfall, não a
+    string genérica 'multi' (usada só no modo legacy sem waterfall)."""
+    ent = _ent("filler:x", strict=False, deficit=10.0,
+               entity_type=FILLER_ENTITY_TYPE)
+    plan = _plan([ent])
+    ctx = _ctx([_Spec("filler:x", "R01")])
+
+    provider_names_seen = []
+
+    def fake_acquire(**kwargs):
+        from studio.library.acquisition import AcquisitionReport
+        provider_names_seen.append(kwargs["provider_name_for_history"])
+        return AcquisitionReport(coverage_status={}, coverage_ready=False,
+                                 downloads_succeeded=0)
+
+    settings = MagicMock(library_root=tmp_path, mock_mode=False,
+                         pexels_api_key="k")
+    with patch("studio.library.acquisition.make_provider_resolver",
+              return_value=lambda q, lvl: []), \
+         patch("studio.library.acquisition.acquire_for_deficits",
+              side_effect=fake_acquire):
+        run_acquisition_for_workset(
+            plan, ctx, MagicMock(library_root=tmp_path), MagicMock(),
+            settings, requirement_index=MagicMock(), max_downloads=200,
+        )
+    assert "multi" not in provider_names_seen
+    assert provider_names_seen == ["pexels", "pixabay", "wikimedia"]

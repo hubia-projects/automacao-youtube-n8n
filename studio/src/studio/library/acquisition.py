@@ -278,6 +278,7 @@ def acquire_for_deficits(
     remeasure_coverage: Optional[Callable[[], bool]] = None,
     refresh_deficit: Optional[Callable[[DeficitItem], float]] = None,
     requirement_index: Optional[object] = None,
+    provider_name_for_history: str = "multi",
 ) -> AcquisitionReport:
     """Pipeline aquisição unificada por deficits.
 
@@ -312,6 +313,12 @@ def acquire_for_deficits(
             matches REAIS, nunca com o anti-padrão "all shots × all
             requirements, similarity=0" (bug histórico, ver reconcile.py).
             None (default) = comportamento anterior, sem persistência.
+        provider_name_for_history: nome real do provider gravado em
+            QueryHistoryEntry (item 33 — closure multi-provider). Default
+            "multi" preserva o comportamento anterior (1 resolver a
+            abranger vários providers internamente); o caller da waterfall
+            (`run_acquisition_for_workset`) passa o nome real quando o
+            `provider_resolver` está scoped a UM único provider.
 
     Returns:
         AcquisitionReport agregado.
@@ -437,7 +444,7 @@ def acquire_for_deficits(
                     query_history_db.record(QueryHistoryEntry(
                         workset_id=workset_ctx.workflow_id,
                         requirement_id=spec.requirement_id,
-                        provider="multi",
+                        provider=provider_name_for_history,
                         query_normalized=query,
                         attempt=lvl,
                         results_count=0,
@@ -454,7 +461,7 @@ def acquire_for_deficits(
                     query_history_db.record(QueryHistoryEntry(
                         workset_id=workset_ctx.workflow_id,
                         requirement_id=spec.requirement_id,
-                        provider="multi",
+                        provider=provider_name_for_history,
                         query_normalized=query,
                         attempt=lvl,
                         results_count=0,
@@ -638,7 +645,7 @@ def acquire_for_deficits(
                 query_history_db.record(QueryHistoryEntry(
                     workset_id=workset_ctx.workflow_id,
                     requirement_id=spec.requirement_id,
-                    provider="multi",
+                    provider=provider_name_for_history,
                     query_normalized=query,
                     attempt=lvl,
                     results_count=len(results),
@@ -758,42 +765,84 @@ def run_acquisition_for_workset(
     def _remeasure() -> bool:
         return all(d.deficit_seconds <= 0 for d in deficit_items)
 
-    # fail-closed: mock_mode ou sem credencial -> resolver stub (nunca
-    # contacta providers reais). Mesmo guard que reconcile.py's P11 já
-    # usava — sem isto, testes com mock_mode=True mas settings carregadas
-    # de .env (chave real) fariam chamadas de rede reais por engano.
-    if settings.mock_mode or not getattr(settings, "pexels_api_key", ""):
-        resolver = lambda q, lvl: []  # noqa: E731
-    else:
-        dest = settings.library_root / "downloads" / (workset_ctx.workflow_id or "shared")
-        # item (post-closure, decisão operador 2026-08-14): default subiu
-        # de 2 para 8 — footage genérico de stock raramente bate um
-        # landmark específico o suficiente para passar o triage SigLIP;
-        # mais candidatos por query aumenta a chance de achar 1 que bata,
-        # ainda dentro do espírito de micro-wave (nunca sweep(50)).
-        # Configurável via settings.acquisition_candidates_per_query
-        # (mesmo padrão soft-override de acquisition_max_waves).
-        count_per_query = max(1, int(
-            getattr(settings, "acquisition_candidates_per_query", 8) or 8))
-        resolver = make_provider_resolver(
-            settings, dest, providers=("pexels",), db=db,
-            count_per_query=count_per_query)
+    # item 30 (fecho de cobertura multi-provider): agrupa deficits pela
+    # MESMA waterfall (provider_policy, por entity_type/strict — sem
+    # hardcode de nome/cidade) e escalona por provider DENTRO de cada
+    # grupo, parando assim que o grupo fica coberto (item 32 — nunca
+    # continua para o próximo provider "só porque sim"). mock_mode
+    # continua fail-closed universal (nenhum provider toca a rede em
+    # testes); um provider individual sem credencial (ex.: pexels sem
+    # key) já faz no-op per-query dentro de make_provider_resolver (log +
+    # continue) — nunca aborta os outros da waterfall.
+    from studio.library.provider_policy import provider_policy
 
-    # bug real (mesma run, 2026-08-14): com o fix de "exhausted" acima
-    # (acquire_for_deficits já não desiste do workset inteiro por 1
-    # entity sem candidatos), cada entity sem sorte consome 1 iteração
-    # antes de passar à seguinte. `exhausted` é local a esta CHAMADA —
-    # com menos iterações do que deficits, os últimos da lista (menor
-    # prioridade/deficit dentro do tier) nunca chegam a ser tentados
-    # nesta wave. Garante ≥1 tentativa por deficit por wave.
-    effective_max_iterations = max(max_iterations, len(deficit_items))
-    return acquire_for_deficits(
-        workset_ctx=workset_ctx, db=db, embedder=embedder, settings=settings,
-        deficit_items=deficit_items, provider_resolver=resolver,
-        query_history_db=query_history, requirement_index=requirement_index,
-        refresh_deficit=_refresh, remeasure_coverage=_remeasure,
-        max_downloads=max_downloads, max_iterations=effective_max_iterations,
-    )
+    groups: dict[tuple[str, ...], list[DeficitItem]] = {}
+    for d in deficit_items:
+        ent = ent_by_canon.get(d.canonical_entity)
+        key = tuple(provider_policy(
+            getattr(ent, "entity_type", "") or "",
+            bool(getattr(ent, "strict", False)) if ent is not None else False))
+        groups.setdefault(key, []).append(d)
+
+    # item (post-closure, decisão operador 2026-08-14): default subiu de 2
+    # para 8 — footage genérico de stock raramente bate um landmark
+    # específico o suficiente para passar o triage SigLIP; mais
+    # candidatos por query aumenta a chance de achar 1 que bata, ainda
+    # dentro do espírito de micro-wave (nunca sweep(50)). Configurável via
+    # settings.acquisition_candidates_per_query (mesmo padrão
+    # soft-override de acquisition_max_waves).
+    count_per_query = max(1, int(
+        getattr(settings, "acquisition_candidates_per_query", 8) or 8))
+    dest = settings.library_root / "downloads" / (workset_ctx.workflow_id or "shared")
+
+    combined = AcquisitionReport(coverage_status={}, coverage_ready=False)
+    remaining_downloads = max_downloads
+    for waterfall, group_items in groups.items():
+        if remaining_downloads <= 0:
+            break
+        for provider_name in waterfall:
+            if remaining_downloads <= 0:
+                break
+            if all(i.deficit_seconds <= 0 for i in group_items):
+                break
+            if settings.mock_mode:
+                resolver = lambda q, lvl: []  # noqa: E731
+            else:
+                resolver = make_provider_resolver(
+                    settings, dest, providers=(provider_name,), db=db,
+                    count_per_query=count_per_query)
+            # bug real (mesma run, 2026-08-14): com o fix de "exhausted"
+            # (acquire_for_deficits já não desiste do grupo inteiro por 1
+            # entity sem candidatos), cada entity sem sorte consome 1
+            # iteração antes de passar à seguinte. `exhausted` é local a
+            # esta CHAMADA — com menos iterações do que deficits do
+            # grupo, os últimos nunca chegam a ser tentados nesta wave.
+            effective_max_iterations = max(max_iterations, len(group_items))
+            rep = acquire_for_deficits(
+                workset_ctx=workset_ctx, db=db, embedder=embedder,
+                settings=settings, deficit_items=group_items,
+                provider_resolver=resolver, query_history_db=query_history,
+                requirement_index=requirement_index, refresh_deficit=_refresh,
+                remeasure_coverage=lambda: all(
+                    i.deficit_seconds <= 0 for i in group_items),
+                max_downloads=remaining_downloads,
+                max_iterations=effective_max_iterations,
+                provider_name_for_history=provider_name,
+            )
+            remaining_downloads -= rep.downloads_succeeded
+            combined.downloads_attempted += rep.downloads_attempted
+            combined.downloads_succeeded += rep.downloads_succeeded
+            combined.downloads_rejected_license += rep.downloads_rejected_license
+            combined.downloads_rejected_provider_dedup += (
+                rep.downloads_rejected_provider_dedup)
+            combined.downloads_rejected_query_history_empty += (
+                rep.downloads_rejected_query_history_empty)
+            combined.shots_ingested += rep.shots_ingested
+            combined.queries_run += rep.queries_run
+            combined.iterations += rep.iterations
+            combined.coverage_status.update(rep.coverage_status or {})
+    combined.coverage_ready = _remeasure()
+    return combined
 
 
 __all__ = [
