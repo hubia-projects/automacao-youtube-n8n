@@ -517,9 +517,21 @@ def ingest_file(
                 "shot_id": shot_id, "media_sha": sha, "media_kind": media_kind,
                 "t_in": t_in, "t_out": t_out, "vec": vec.tolist(),
                 "summary": meta.summary,
-                "places_csv": ",".join(meta.places),
-                "landmarks_csv": ",".join(meta.landmarks),
-                "food_csv": ",".join(meta.food_items),
+                # BUG REAL (microvalidação real, 2026-08-14): Gemini
+                # devolve nomes próprios em title-case natural ("Livraria
+                # Lello"), nunca lowercase — mas TODO o matching a
+                # jusante (confirmation.py::require_entity_confirmation,
+                # coverage_plan.py::_entity_match_clause) assume
+                # explicitamente "places_csv/landmarks_csv/food_csv são
+                # lowercase já" e faz LIKE case-sensitive. Sem
+                # normalizar aqui, confirmação estrita de QUALQUER
+                # landmark/food nomeado com capitalização natural nunca
+                # encontra os seus próprios candidatos — confirmado real
+                # (0 confirmados para "Livraria Lello" apesar do Gemini
+                # já ter identificado correctamente as 2 imagens).
+                "places_csv": ",".join(p.lower() for p in meta.places),
+                "landmarks_csv": ",".join(p.lower() for p in meta.landmarks),
+                "food_csv": ",".join(p.lower() for p in meta.food_items),
                 "objects_csv": ",".join(meta.objects),
                 "shot_type": meta.shot_type, "camera_motion": meta.camera_motion,
                 "time_of_day": meta.time_of_day, "indoor_outdoor": meta.indoor_outdoor,

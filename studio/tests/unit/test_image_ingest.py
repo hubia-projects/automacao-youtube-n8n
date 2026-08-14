@@ -107,3 +107,48 @@ def test_video_default_media_kind_continua_video(tmp_path, settings):
     from studio.library.ingest import ingest_file
     sig = inspect.signature(ingest_file)
     assert sig.parameters["media_kind"].default == "video"
+
+
+def test_landmarks_csv_normalizado_para_lowercase_na_escrita(
+    tmp_path, settings, monkeypatch,
+):
+    """BUG REAL (microvalidação real, 2026-08-14): Gemini devolve nomes
+    próprios em title-case natural ("Livraria Lello"), nunca lowercase —
+    mas confirmation.py/coverage_plan.py assumem explicitamente "já
+    lowercase" e fazem LIKE case-sensitive. Sem normalizar na escrita,
+    confirmação estrita nunca encontra os seus próprios candidatos
+    (confirmado ao vivo: 0 candidatos encontrados para "Livraria Lello"
+    apesar do Gemini já ter identificado correctamente as imagens)."""
+    import studio.library.ingest as ingest_mod
+    from studio.library.db import LibraryDB
+    from studio.library.licenses import LicenseRecord
+    from studio.library.metadata import ShotMetadata
+
+    def _fake_analyze_shot(keyframes, settings, **kwargs):
+        meta = ShotMetadata(
+            summary="fachada da Livraria Lello",
+            landmarks=["Livraria Lello"], places=["Porto"],
+            food_items=["Francesinha"], quality=8,
+        )
+        return meta, 0.001
+    monkeypatch.setattr(ingest_mod, "analyze_shot", _fake_analyze_shot)
+
+    img_path = _make_jpeg(tmp_path / "lello.jpg", 1920, 1080)
+    db = LibraryDB(settings.library_root)
+    lic = LicenseRecord(source="wikimedia", source_url="https://commons...",
+                        license="cc-by-sa", author="John Samuel",
+                        attribution_text="John Samuel, CC BY-SA 4.0")
+    result = ingest_mod.ingest_file(
+        img_path, lic, db, settings, _FakeEmbedder(), media_kind="image",
+    )
+    assert result.status == "ingested"
+    rows = db.iter_rows("1=1", limit=20, include_restricted=True)
+    row = rows[0]
+    assert row["landmarks_csv"] == "livraria lello"
+    assert row["places_csv"] == "porto"
+    assert row["food_csv"] == "francesinha"
+    # a query real de require_entity_confirmation usa .lower() + LIKE —
+    # confirma que agora bate de facto.
+    matches = db.iter_rows("landmarks_csv LIKE '%livraria lello%'",
+                          limit=10, include_restricted=True)
+    assert len(matches) == 1
