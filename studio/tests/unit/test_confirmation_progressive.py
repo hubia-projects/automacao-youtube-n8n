@@ -60,6 +60,22 @@ def test_sem_target_comportamento_legacy_um_unico_batch_top_k_e_limite_total():
     assert len(out) == 4
 
 
+def test_imagem_confirmada_pelo_mesmo_oraculo_vision_sem_tratamento_especial():
+    """item 17/18 (fecho de cobertura multi-provider): require_entity_
+    confirmation é kind-agnostic — um shot media_kind="image" passa pelo
+    MESMO mecanismo de confirmação Vision que vídeo, nunca confia em
+    filename/categoria/provider como verdade absoluta. keyframes_csv de
+    uma imagem é o próprio ficheiro (1 entrada) — funciona sem alteração."""
+    img_shot = _shot("MockOK_francesinha_img")
+    img_shot["media_kind"] = "image"
+    img_shot["keyframes_csv"] = "/media/abc.jpg"
+    db = _db_with([img_shot])
+    out = require_entity_confirmation("Francesinha", "food", db, _settings(),
+                                      top_k=4)
+    assert len(out) == 1
+    assert out[0]["media_kind"] == "image"
+
+
 def test_progressivo_para_assim_que_atinge_target_sem_esgotar_candidatos():
     # 10 candidatos confirmáveis de 3s cada; target=6s, min_shots=2 ->
     # devia parar depois do 1º micro-batch de top_k=2 (2 shots x 3s = 6s).
