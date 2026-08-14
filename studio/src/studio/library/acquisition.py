@@ -766,6 +766,25 @@ def run_acquisition_for_workset(
     def _remeasure() -> bool:
         return all(d.deficit_seconds <= 0 for d in deficit_items)
 
+    # item 34/36 (fecho de cobertura multi-provider): scan do inbox manual
+    # ANTES da waterfall automática — dá prioridade a conteúdo já curado
+    # pelo operador (evita gastar API se o humano já resolveu), nunca um
+    # 2º caminho de ingest (mesmo ingest_asset canónico). Ficheiros novos
+    # ficam indexados/confirmados pelo mesmo _index_existing()/
+    # _run_strict_confirmation() que o caller (S08Matching) já corre
+    # depois de cada wave — sem duplicar essa lógica aqui. Corre SEMPRE
+    # (mesmo mock_mode) — é ingest local, nunca toca a rede.
+    from studio.library.manual_provider import scan_manual_inbox
+    n_manual = scan_manual_inbox(
+        workset_ctx.workflow_id, db, embedder, settings,
+        requirement_prompts=workset_ctx.requirement_prompts,
+        requirement_embeddings=workset_ctx.requirement_embeddings,
+        visual_prompt_embeddings=workset_ctx.visual_prompt_embeddings,
+    )
+    if n_manual:
+        log.info("run_acquisition_for_workset: %d asset(s) manual(is) "
+                "ingerido(s) de manual_inbox_dir()", n_manual)
+
     # item 30 (fecho de cobertura multi-provider): agrupa deficits pela
     # MESMA waterfall (provider_policy, por entity_type/strict — sem
     # hardcode de nome/cidade) e escalona por provider DENTRO de cada

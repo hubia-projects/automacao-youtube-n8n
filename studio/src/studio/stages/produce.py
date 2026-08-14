@@ -874,12 +874,34 @@ class S08Matching:
                         break
                 if not ready_for_gate:
                     covered_n, deficits_msg = _covered_deficits_msg(per_status_gate)
+                    # item 34/35/36 (fecho de cobertura multi-provider):
+                    # providers automáticos esgotados (waterfall inteira
+                    # tentada, incluindo Wikimedia — fonte exacta) — não
+                    # usar conteúdo errado (item 37/38, nunca relaxar
+                    # strict/confidence só para fechar coverage). ACTION
+                    # REQUIRED aponta o caminho exacto do inbox manual;
+                    # frontend mostra a MESMA mensagem (mesmo StageResult).
+                    from studio.library.manual_provider import manual_inbox_dir
+                    inbox_path = manual_inbox_dir(
+                        ctx.settings, workset_result.workset_id)
+                    action_msg = (
+                        f"ACTION REQUIRED: não foi encontrado conteúdo "
+                        f"licenciado suficientemente exacto para: "
+                        f"{deficits_msg}. Adicionar ficheiros a: "
+                        f"{inbox_path}/ — depois executar: "
+                        f"studio resume {ctx.video_id}")
+                    emit_event(ctx.run_dir, ctx.video_id, self.name,
+                              "manual_asset_required", action_msg,
+                              level="ERROR",
+                              payload={"covered": covered_n,
+                                      "total": len(per_status_gate),
+                                      "inbox_path": str(inbox_path)})
                     return StageResult(
                         status="failed",
                         outputs=[d / "coverage_plan.json"],
                         notes=f"aquisição esgotada sem WORKSET_READY "
                               f"({covered_n}/{len(per_status_gate)} "
-                              f"cobertos, {max_waves} waves): {deficits_msg}",
+                              f"cobertos, {max_waves} waves). {action_msg}",
                     )
         else:
             emit_event(ctx.run_dir, ctx.video_id, self.name, "workset_ready",
