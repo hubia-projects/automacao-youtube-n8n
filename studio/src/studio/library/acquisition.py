@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
+from studio.library.provider_errors import ProviderRateLimitedError
 from studio.library.query_translation import (
     translate_query_en, translate_query_variants_en,
 )
@@ -137,6 +138,10 @@ def make_provider_resolver(
                                                canonical_hints=canonical_hints)
                     else:
                         candidates = mod.search(query, count_per_query, settings)
+                except ProviderRateLimitedError as exc:
+                    _emit("provider_rate_limited", str(exc),
+                         {"provider": provider, "query": query})
+                    raise
                 except Exception as exc:
                     log.warning(
                         "make_provider_resolver: %s.search(%r) falhou: %s",
@@ -164,6 +169,11 @@ def make_provider_resolver(
                           "media_kind": media_kind})
                     try:
                         path = mod.download(cand, settings, dest)
+                    except ProviderRateLimitedError as exc:
+                        _emit("provider_rate_limited", str(exc),
+                             {"provider": provider,
+                              "provider_id": cand.provider_id})
+                        raise
                     except Exception as exc:
                         log.warning(
                             "make_provider_resolver: %s.download(%r) falhou: %s",
@@ -222,6 +232,13 @@ class AcquisitionReport:
     wall_s: float = 0.0
     iterations: int = 0
     queries_run: int = 0
+    # item PORTO FINAL ASSET TEST (secções 7-10): nome do provider que
+    # forçou esta chamada a terminar cedo por rate-limit sustentado — o
+    # caller (`run_acquisition_for_workset`) usa isto só para log/eventos;
+    # a waterfall avança para o próximo provider de qualquer forma (o
+    # bound real está em `ProviderRateLimitedError` interromper o loop,
+    # não neste campo).
+    provider_rate_limited: str = ""
 
 
 def query_hierarchy(canonical: str,
@@ -532,6 +549,37 @@ def acquire_for_deficits(
             try:
                 results = _call_resolver(provider_resolver, query, lvl,
                                          canonical_hints)
+            except ProviderRateLimitedError as exc:
+                # item PORTO FINAL ASSET TEST (secções 7-10): provider
+                # rate-limited (sustentado, não transitório) — nunca
+                # continuar a martelar o MESMO provider a torto e a
+                # direito através de todos os restantes níveis de query/
+                # entidades desta chamada (bounded, nunca 2h presos).
+                # status="rate_limited" é DISTINTO de "error"/"empty"
+                # (secção 9): nunca bloqueia permanentemente a query em
+                # QueryHistory.was_tried — pode ser retentada num resume
+                # futuro, quando o cooldown do provider já tiver passado.
+                log.warning("acquire: provider '%s' rate-limited — "
+                           "abandonando esta chamada, waterfall avança "
+                           "para o próximo provider: %s",
+                           provider_name_for_history, exc)
+                if query_history_db is not None and hasattr(
+                        query_history_db, "record"):
+                    from studio.library.requirement_index import (
+                        QueryHistoryEntry,
+                    )
+                    query_history_db.record(QueryHistoryEntry(
+                        workset_id=workset_ctx.workflow_id,
+                        requirement_id=spec.requirement_id,
+                        provider=provider_name_for_history,
+                        query_normalized=query,
+                        attempt=lvl,
+                        results_count=0,
+                        result_provider_ids=(),
+                        status="rate_limited",
+                    ))
+                rep.provider_rate_limited = provider_name_for_history
+                return rep
             except Exception as exc:
                 log.warning("acquire: provider_resolver erro em '%s': %s",
                             query, exc.__class__.__name__)
@@ -959,6 +1007,16 @@ def run_acquisition_for_workset(
                 max_iterations=effective_max_iterations,
                 provider_name_for_history=provider_name,
             )
+            if rep.provider_rate_limited and event_sink is not None:
+                try:
+                    event_sink(
+                        "provider_rate_limited_skip",
+                        f"'{rep.provider_rate_limited}' rate-limited "
+                        f"(temporário) — waterfall avança sem esperar",
+                        {"provider": rep.provider_rate_limited,
+                         "waterfall": list(waterfall)})
+                except Exception:
+                    pass
             remaining_downloads -= rep.downloads_succeeded
             combined.downloads_attempted += rep.downloads_attempted
             combined.downloads_succeeded += rep.downloads_succeeded

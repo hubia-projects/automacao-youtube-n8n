@@ -16,6 +16,13 @@ def _settings():
     return Settings(mock_mode=True)
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limit_state():
+    wikimedia._rate_limited_until = 0.0
+    yield
+    wikimedia._rate_limited_until = 0.0
+
+
 def _fake_search_response(pages: dict) -> dict:
     return {"batchcomplete": "", "query": {"pages": pages}}
 
@@ -246,3 +253,113 @@ def test_download_extrai_extensao_correcta_com_querystring_tracking(
     path = wikimedia.download(cand, _settings(), tmp_path)
     assert path.name == "wikimedia_121506761.jpg"
     assert path.suffix == ".jpg"
+
+
+# === PORTO FINAL ASSET TEST (secções 7-10): failover 429 ====================
+
+def _cand_for_download(provider_id="1"):
+    return wikimedia.CandidateMetadata(
+        provider="wikimedia", provider_id=provider_id,
+        source_url=f"https://commons.wikimedia.org/wiki/File:X{provider_id}.jpg",
+        download_url=f"https://upload.wikimedia.org/x/X{provider_id}.jpg",
+        media_kind="image",
+    )
+
+
+def test_download_429_sustentado_levanta_provider_rate_limited(
+    tmp_path, monkeypatch,
+):
+    """Depois de esgotar as tentativas, TODAS 429, levanta
+    ProviderRateLimitedError (não a HTTPStatusError genérica) — o caller
+    (acquisition.py) distingue isto de uma falha pontual."""
+    from studio.library.provider_errors import ProviderRateLimitedError
+    monkeypatch.setattr(wikimedia, "_sleep_backoff", lambda *a, **kw: None)
+
+    class _FakeStream:
+        status_code = 429
+        request = httpx.Request("GET", "https://x")
+        headers = {}
+
+        def raise_for_status(self): pass
+        def iter_bytes(self, chunk_size): yield b""
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    monkeypatch.setattr(httpx.Client, "stream",
+                        lambda self, method, url, **kw: _FakeStream())
+
+    with pytest.raises(ProviderRateLimitedError):
+        wikimedia.download(_cand_for_download(), _settings(), tmp_path)
+    assert wikimedia._rate_limited_until > 0.0
+
+
+def test_download_apos_rate_limited_nao_toca_rede(tmp_path, monkeypatch):
+    """Uma vez em cooldown, chamadas seguintes falham IMEDIATAMENTE (sem
+    HTTP) — nunca esperar 2h a repetir o mesmo provider."""
+    from studio.library.provider_errors import ProviderRateLimitedError
+    wikimedia._rate_limited_until = wikimedia.time.time() + 300
+
+    calls = {"n": 0}
+
+    def _boom(self, method, url, **kw):
+        calls["n"] += 1
+        raise AssertionError("não devia tocar a rede em cooldown")
+    monkeypatch.setattr(httpx.Client, "stream", _boom)
+
+    with pytest.raises(ProviderRateLimitedError):
+        wikimedia.download(_cand_for_download(), _settings(), tmp_path)
+    assert calls["n"] == 0
+
+
+def test_download_erro_generico_nao_entra_em_cooldown(tmp_path, monkeypatch):
+    """500/timeout continuam a comportar-se como antes (retry normal,
+    excepção genérica) — só 429 SUSTENTADO activa o cooldown de
+    provider."""
+    monkeypatch.setattr(wikimedia, "_sleep_backoff", lambda *a, **kw: None)
+
+    class _FakeStream:
+        status_code = 500
+        request = httpx.Request("GET", "https://x")
+        headers = {}
+
+        def raise_for_status(self): pass
+        def iter_bytes(self, chunk_size): yield b""
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    monkeypatch.setattr(httpx.Client, "stream",
+                        lambda self, method, url, **kw: _FakeStream())
+
+    with pytest.raises(httpx.HTTPStatusError):
+        wikimedia.download(_cand_for_download(), _settings(), tmp_path)
+    assert wikimedia._rate_limited_until == 0.0
+
+
+def test_search_429_sustentado_levanta_provider_rate_limited(monkeypatch):
+    from studio.library.provider_errors import ProviderRateLimitedError
+    monkeypatch.setattr(wikimedia, "_sleep_backoff", lambda *a, **kw: None)
+
+    def _fake_get(self, url, params=None, **kw):
+        return httpx.Response(429, headers={"Retry-After": "1"},
+                              request=httpx.Request("GET", url))
+    monkeypatch.setattr(httpx.Client, "get", _fake_get)
+
+    with pytest.raises(ProviderRateLimitedError):
+        wikimedia.search("Livraria Lello", 5, _settings())
+    assert wikimedia._rate_limited_until > 0.0
+
+
+def test_retry_after_header_respeitado_e_capado(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(wikimedia.time, "sleep", lambda s: sleeps.append(s))
+
+    def _fake_get(self, url, params=None, **kw):
+        return httpx.Response(429, headers={"Retry-After": "9999"},
+                              request=httpx.Request("GET", url))
+    monkeypatch.setattr(httpx.Client, "get", _fake_get)
+
+    from studio.library.provider_errors import ProviderRateLimitedError
+    with pytest.raises(ProviderRateLimitedError):
+        wikimedia.search("Livraria Lello", 5, _settings())
+    assert all(s <= wikimedia._RATE_LIMIT_MAX_RETRY_AFTER_S for s in sleeps)
+    assert sleeps, "devia ter esperado pelo menos 1x antes de desistir"

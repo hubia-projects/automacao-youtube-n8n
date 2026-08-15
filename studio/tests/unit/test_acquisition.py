@@ -18,6 +18,7 @@ from studio.library.acquisition import (
     acquire_for_deficits,
     make_provider_resolver,
     query_hierarchy,
+    run_acquisition_for_workset,
 )
 from studio.library.sources.pexels import CandidateMetadata
 
@@ -227,6 +228,142 @@ def test_max_downloads_safety_cap_para_o_loop_honestamente():
 # remeasure_coverage() devolve True imediatamente (biblioteca já cobre
 # tudo), então o loop nunca deve chamar provider_resolver.
 # ---------------------------------------------------------------------------
+def test_provider_rate_limited_termina_a_chamada_sem_hang(monkeypatch):
+    """item PORTO FINAL ASSET TEST (secções 7-10): quando o
+    provider_resolver levanta ProviderRateLimitedError, acquire_for_deficits
+    tem de terminar IMEDIATAMENTE (nunca continuar a martelar o mesmo
+    provider através dos restantes níveis de query/entidades) — o waterfall
+    (fora desta função, em run_acquisition_for_workset) avança para o
+    próximo provider na iteração seguinte."""
+    from studio.library.provider_errors import ProviderRateLimitedError
+
+    spec = _ReqSpec("Sé do Porto")
+    ctx = _workset_ctx_stub([spec])
+    deficit = DeficitItem(
+        canonical_entity="Sé do Porto", requirement_id=spec.requirement_id,
+        target_seconds=100.0, deficit_seconds=100.0, min_distinct_shots=5,
+    )
+    calls = {"n": 0}
+
+    def resolver(query, level):
+        calls["n"] += 1
+        raise ProviderRateLimitedError("wikimedia", "rate-limited")
+
+    qh = MagicMock()
+    qh.was_tried.return_value = None
+    acq = acquire_for_deficits(
+        workset_ctx=ctx, db=MagicMock(), embedder=MagicMock(),
+        settings=MagicMock(mock_mode=True),
+        deficit_items=[deficit], provider_resolver=resolver,
+        query_history_db=qh,
+        remeasure_coverage=lambda: False,
+        max_iterations=8, provider_name_for_history="wikimedia",
+    )
+    assert calls["n"] == 1, (
+        "devia ter parado ao 1º rate-limit, nunca continuar a tentar mais "
+        "níveis/queries contra o mesmo provider"
+    )
+    assert acq.provider_rate_limited == "wikimedia"
+    recorded = qh.record.call_args_list[0].args[0]
+    assert recorded.status == "rate_limited"
+
+
+def test_query_history_rate_limited_nunca_bloqueia_retry_futuro():
+    """status="rate_limited" é distinto de "empty"/"error" — was_tried()
+    nunca deve fazer skip por causa dele (secção 9: nunca vira EMPTY
+    permanente)."""
+    qh = MagicMock()
+    qh.was_tried.return_value = "rate_limited"
+    spec = _ReqSpec("Sé do Porto")
+    ctx = _workset_ctx_stub([spec])
+    deficit = DeficitItem(
+        canonical_entity="Sé do Porto", requirement_id=spec.requirement_id,
+        target_seconds=100.0, deficit_seconds=100.0, min_distinct_shots=5,
+    )
+    calls = {"n": 0}
+
+    def resolver(query, level):
+        calls["n"] += 1
+        return []
+
+    acquire_for_deficits(
+        workset_ctx=ctx, db=MagicMock(), embedder=MagicMock(),
+        settings=MagicMock(mock_mode=True),
+        deficit_items=[deficit], provider_resolver=resolver,
+        query_history_db=qh,
+        remeasure_coverage=lambda: False,
+        max_iterations=1,
+    )
+    assert calls["n"] > 0, (
+        "query com status anterior 'rate_limited' devia continuar "
+        "elegível para retry — nunca tratada como 'empty'/'error'"
+    )
+
+
+def test_waterfall_avanca_para_proximo_provider_apos_rate_limit():
+    """secção 15: Wikimedia rate-limited -> Pexels devolve candidato ->
+    Pixabay nem chega a ser tentado. Sem hang, sem esperar."""
+    from studio.library.provider_errors import ProviderRateLimitedError
+    from studio.library.requirement_index import RequirementMatch
+
+    spec = _ReqSpec("Sé do Porto")
+    ctx = _workset_ctx_stub([spec])
+    plan = MagicMock()
+    ent = MagicMock(canonical_name="Sé do Porto", entity_type="landmark",
+                    strict=True, deficit_seconds=100.0, target_seconds=100.0,
+                    min_distinct_shots=2, priority_score=1.0)
+    plan.ranked_entities = [ent]
+
+    call_log: list[str] = []
+
+    def fake_make_provider_resolver(settings, dest, *, providers, **kw):
+        provider = providers[0]
+
+        def _resolver(query, level, canonical_hints=()):
+            call_log.append(provider)
+            if provider == "wikimedia":
+                raise ProviderRateLimitedError("wikimedia", "rate-limited")
+            if provider == "pexels":
+                p = Path(f"/tmp/fake_pexels.mp4")
+                return [(p, {"provider": "pexels", "source_url": "http://x/1"})]
+            return []
+        return _resolver
+
+    ri = MagicMock()
+    ri.list_for_requirement.return_value = [
+        RequirementMatch(workset_id="wf-test", requirement_id=spec.requirement_id,
+                         shot_id="s1", media_sha="sha1", similarity=0.9,
+                         duration=5.0, confirmation_status="NOT_REQUIRED",
+                         confirmation_confidence=0.0, strict_eligible=False),
+    ]
+
+    with patch("studio.library.acquisition.make_provider_resolver",
+              side_effect=fake_make_provider_resolver), \
+         patch("studio.library.provider_policy.provider_policy",
+              return_value=["wikimedia", "pexels", "pixabay"]), \
+         patch("studio.library.acquisition.preflight_media",
+              return_value=(True, "")), \
+         patch("studio.library.ingest_asset.ingest_asset") as mock_ingest:
+        mock_ingest.return_value = (
+            MagicMock(status="ingested", media_sha="sha1", shots_added=1),
+            MagicMock(),
+        )
+        rep = run_acquisition_for_workset(
+            plan, ctx, MagicMock(), MagicMock(), MagicMock(mock_mode=False),
+            requirement_index=ri, query_history=MagicMock(
+                was_tried=MagicMock(return_value=None)),
+        )
+    assert call_log.count("wikimedia") == 1, (
+        "rate-limit deve parar a chamada ao 1º hit — nunca martelar o "
+        "mesmo provider repetidamente"
+    )
+    assert "pexels" in call_log, (
+        "waterfall deve avançar para o próximo provider após rate-limit, "
+        "nunca ficar preso no Wikimedia"
+    )
+    assert rep.downloads_succeeded >= 1
+
+
 def test_coverage_ja_pronta_zero_chamadas_ao_provider():
     spec = _ReqSpec("Livraria Lello")
     ctx = _workset_ctx_stub([spec])

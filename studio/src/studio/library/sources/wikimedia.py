@@ -29,6 +29,7 @@ from pathlib import Path
 import httpx
 
 from studio.config import Settings
+from studio.library.provider_errors import ProviderRateLimitedError
 from studio.library.text_match import distinctive_words
 
 log = logging.getLogger("studio.sources.wikimedia")
@@ -38,6 +39,45 @@ _TIMEOUT_S = 30
 _DOWNLOAD_TIMEOUT_S = 120
 _DOWNLOAD_RETRIES = 3
 _IIPROP = "url|mime|size|extmetadata|duration"
+
+# item PORTO FINAL ASSET TEST (secções 7-10): Wikimedia começou a devolver
+# 429 sustentado numa run real (~2h, ~100% dos downloads) — o pipeline
+# ficou preso a repetir o MESMO provider em vez de avançar para
+# Pexels/Pixabay. Estado de cooldown por PROCESSO (nunca persistido —
+# reinicia a cada resume, nunca "esgotado para sempre"): depois de
+# `_RATE_LIMIT_THRESHOLD` 429 consecutivos (download OU search), marca
+# rate-limited por `_RATE_LIMIT_COOLDOWN_S` e levanta
+# `ProviderRateLimitedError` em vez de continuar a tentar — o caller
+# (`acquisition.py`) apanha isto e avança a waterfall imediatamente.
+_RATE_LIMIT_COOLDOWN_S = 300.0
+_RATE_LIMIT_MAX_RETRY_AFTER_S = 60.0
+_rate_limited_until = 0.0
+
+
+def _check_not_rate_limited() -> None:
+    if time.time() < _rate_limited_until:
+        raise ProviderRateLimitedError(
+            "wikimedia",
+            f"wikimedia: em cooldown até {_rate_limited_until:.0f} "
+            "(rate-limit sustentado detectado anteriormente)")
+
+
+def _enter_rate_limited_cooldown() -> None:
+    global _rate_limited_until
+    _rate_limited_until = time.time() + _RATE_LIMIT_COOLDOWN_S
+    log.warning("wikimedia: rate-limit sustentado detectado — cooldown de "
+               "%.0fs (provider marcado temporariamente indisponível)",
+               _RATE_LIMIT_COOLDOWN_S)
+
+
+def _retry_after_seconds(response: httpx.Response) -> float | None:
+    raw = response.headers.get("Retry-After")
+    if not raw:
+        return None
+    try:
+        return min(float(raw), _RATE_LIMIT_MAX_RETRY_AFTER_S)
+    except ValueError:
+        return None
 
 
 def _normalize_license(short_name: str) -> str:
@@ -137,13 +177,33 @@ def _page_to_candidate(page: dict) -> CandidateMetadata | None:
     )
 
 
+_SEARCH_RETRIES = 2
+
+
 def _query(params: dict) -> dict:
+    """item PORTO FINAL ASSET TEST (secções 7-10): 429 na busca (metadata,
+    não download) também entra em cooldown de provider — antes disto,
+    `_search_generator` engolia QUALQUER excepção (incluindo 429) como "0
+    resultados", que o caller regista como QueryHistory status="empty"
+    (bug relacionado: 429 nunca deve virar "empty" permanente, ver secção
+    9)."""
+    _check_not_rate_limited()
+    last_status: int | None = None
     with httpx.Client(timeout=_TIMEOUT_S,
                       headers={"User-Agent": "studio-hubia/0 "
                               "(media acquisition; contact via repo)"}) as c:
-        resp = c.get(API_URL, params=params)
-        resp.raise_for_status()
-        return resp.json()
+        for attempt in range(_SEARCH_RETRIES):
+            resp = c.get(API_URL, params=params)
+            if resp.status_code == 429:
+                last_status = 429
+                _sleep_backoff(attempt, _retry_after_seconds(resp))
+                continue
+            resp.raise_for_status()
+            return resp.json()
+    _enter_rate_limited_cooldown()
+    raise ProviderRateLimitedError(
+        "wikimedia", f"wikimedia search: {_SEARCH_RETRIES} tentativas, "
+        "todas 429 — rate-limit sustentado")
 
 
 def _search_generator(query_en: str, count: int, generator: str,
@@ -158,6 +218,8 @@ def _search_generator(query_en: str, count: int, generator: str,
     }
     try:
         data = _query(params)
+    except ProviderRateLimitedError:
+        raise
     except Exception as exc:
         log.warning("wikimedia: query(%s) falhou para '%s': %s",
                     generator, query_en, exc.__class__.__name__)
@@ -206,6 +268,7 @@ def search(query_en: str, count: int, settings: Settings,
     `canonical_hints` no título/categorias; (4) devolve só os `count`
     melhores — `make_provider_resolver` continua a descarregar tudo o que
     `search()` devolver, contrato intacto."""
+    _check_not_rate_limited()
     t0 = time.perf_counter()
     hints = tuple(h.strip() for h in canonical_hints if h and h.strip())
     pool_limit = max(count, int(getattr(settings, "wikimedia_search_pool", 40)
@@ -252,13 +315,24 @@ def search(query_en: str, count: int, settings: Settings,
     return out
 
 
-def _sleep_backoff(attempt: int) -> None:
+def _sleep_backoff(attempt: int, retry_after: float | None = None) -> None:
+    if retry_after is not None:
+        time.sleep(max(0.0, retry_after))
+        return
     time.sleep({0: 1, 1: 4, 2: 10}.get(attempt, 10))
 
 
 def download(candidate: CandidateMetadata, settings: Settings, dest: Path) -> Path:
     """Fase 2 (só DOWNLOAD): 1 candidato já filtrado por dedup (pre-
-    download). Extensão preservada do download_url (jpg/png/webm/ogg)."""
+    download). Extensão preservada do download_url (jpg/png/webm/ogg).
+
+    item PORTO FINAL ASSET TEST (secções 7-10): 429 respeita `Retry-After`
+    quando presente (capado, nunca espera indefinidamente); poucas
+    tentativas (`_DOWNLOAD_RETRIES`, bounded); se o ÚLTIMO erro continuar a
+    ser 429 especificamente, entra em cooldown de provider e levanta
+    `ProviderRateLimitedError` — o caller avança a waterfall em vez de
+    repetir o mesmo provider indefinidamente."""
+    _check_not_rate_limited()
     dest.mkdir(parents=True, exist_ok=True)
     # BUG REAL (microvalidação real 2026-08-14): download_url do Commons
     # vem SEMPRE com querystring de tracking
@@ -276,6 +350,7 @@ def download(candidate: CandidateMetadata, settings: Settings, dest: Path) -> Pa
         return target
     tmp = target.with_suffix(target.suffix + ".tmp")
     last_exc: Exception | None = None
+    last_status: int | None = None
     with httpx.Client(timeout=_DOWNLOAD_TIMEOUT_S, follow_redirects=True,
                       headers={"User-Agent": "studio-hubia/0"}) as c:
         for attempt in range(_DOWNLOAD_RETRIES):
@@ -283,9 +358,11 @@ def download(candidate: CandidateMetadata, settings: Settings, dest: Path) -> Pa
                 with c.stream("GET", candidate.download_url) as r:
                     if r.status_code in (429, 500, 502, 503, 504):
                         tmp.unlink(missing_ok=True)
+                        last_status = r.status_code
                         last_exc = httpx.HTTPStatusError(
                             f"{r.status_code}", request=r.request, response=r)
-                        _sleep_backoff(attempt)
+                        _sleep_backoff(attempt, _retry_after_seconds(r)
+                                      if r.status_code == 429 else None)
                         continue
                     r.raise_for_status()
                     with tmp.open("wb") as fh:
@@ -297,9 +374,16 @@ def download(candidate: CandidateMetadata, settings: Settings, dest: Path) -> Pa
             except (httpx.TimeoutException, httpx.NetworkError,
                     httpx.RemoteProtocolError, httpx.ConnectError) as exc:
                 last_exc = exc
+                last_status = None
                 tmp.unlink(missing_ok=True)
                 _sleep_backoff(attempt)
             except Exception:
                 tmp.unlink(missing_ok=True)
                 raise
+    if last_status == 429:
+        _enter_rate_limited_cooldown()
+        raise ProviderRateLimitedError(
+            "wikimedia",
+            f"wikimedia: {_DOWNLOAD_RETRIES} tentativas, todas 429 — "
+            "rate-limit sustentado")
     raise last_exc if last_exc else RuntimeError("wikimedia: retries esgotados")
