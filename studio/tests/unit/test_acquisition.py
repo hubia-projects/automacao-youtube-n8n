@@ -16,8 +16,41 @@ from studio.library.acquisition import (
     DeficitItem,
     acquire_for_deficits,
     make_provider_resolver,
+    query_hierarchy,
 )
 from studio.library.sources.pexels import CandidateMetadata
+
+
+def test_query_hierarchy_extra_queries_anexadas_no_fim():
+    levels = query_hierarchy(
+        "gothic cathedral facade Porto", ("Catedral da Sé",), "Porto",
+        n_levels=4,
+        extra_queries=("Porto Cathedral exterior", "Se Cathedral interior"),
+    )
+    assert levels[-2:] == ["Porto Cathedral exterior", "Se Cathedral interior"]
+    assert len(levels) == 6
+
+
+def test_query_hierarchy_extra_queries_dedup_contra_niveis_existentes():
+    levels = query_hierarchy(
+        "Livraria Lello", (), "",
+        n_levels=4,
+        extra_queries=("Livraria Lello", "Lello Bookstore"),
+    )
+    # "Livraria Lello" já é o nível canonical (L1) — não deve duplicar.
+    assert levels.count("Livraria Lello") == 1
+    assert "Lello Bookstore" in levels
+
+
+def test_query_hierarchy_sem_extra_queries_comportamento_legacy_intocado():
+    levels = query_hierarchy("Francesinha", ("comida do Porto",), "Porto",
+                             n_levels=4)
+    assert levels == [
+        "Francesinha Porto",
+        "Francesinha Porto comida do Porto",
+        "Francesinha",
+        "Francesinha",
+    ]
 
 
 def test_make_provider_resolver_chama_sweep_real_com_assinatura_certa(tmp_path):

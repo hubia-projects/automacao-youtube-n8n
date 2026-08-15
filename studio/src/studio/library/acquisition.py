@@ -37,7 +37,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
-from studio.library.query_translation import translate_query_en
+from studio.library.query_translation import (
+    translate_query_en, translate_query_variants_en,
+)
 
 log = logging.getLogger("studio.acquisition")
 
@@ -216,12 +218,19 @@ def query_hierarchy(canonical: str,
                     aliases: tuple[str, ...] = (),
                     location: str = "",
                     *,
-                    n_levels: int = 4) -> list[str]:
+                    n_levels: int = 4,
+                    extra_queries: tuple[str, ...] = ()) -> list[str]:
     """Níveis de pesquisa em hierarquia do mais específico ao mais genérico:
         L1: canonical + location
         L2: canonical + aliases[0] (1 alias)
         L3: canonical
         L4: contextual generic (low-relevance fallback)
+
+    `extra_queries` (item PORTO: search+confirmation calibration) —
+    variantes adicionais (ex.: `translate_query_variants_en`) anexadas
+    DEPOIS da hierarquia base, nunca sujeitas ao corte `n_levels` (esse
+    corte é só para os níveis "core"). Dedup por string normalizada aqui
+    (defesa extra, além do dedup por run que a `QueryHistory` já faz).
     """
     levels: list[str] = []
     if location:
@@ -232,7 +241,15 @@ def query_hierarchy(canonical: str,
         levels.append(f"{canonical} {aliases[0]}")
     levels.append(canonical)
     levels.append(canonical.split()[0] if canonical else canonical)
-    return levels[:n_levels]
+    levels = levels[:n_levels]
+
+    seen = {lv.strip().lower() for lv in levels}
+    for q in extra_queries:
+        qn = (q or "").strip()
+        if qn and qn.lower() not in seen:
+            levels.append(qn)
+            seen.add(qn.lower())
+    return levels
 
 
 # === Provider-level dedup lookup =============================================
@@ -445,11 +462,24 @@ def acquire_for_deficits(
         query_canonical = translate_query_en(
             spec.canonical_entity, getattr(spec, "entity_type", "") or "",
             spec.location, effective_settings)
+        # item PORTO (search+confirmation calibration): variantes extra
+        # (facade/interior/exterior/aliases PT+EN) derivadas de
+        # canonical/aliases/location/visual_prompts_en — nunca hardcode de
+        # entidade específica. Falha (rede/parse) nunca bloqueia a
+        # hierarquia base: fallback determinístico já embutido em
+        # `translate_query_variants_en`.
+        extra_queries = tuple(translate_query_variants_en(
+            spec.canonical_entity, getattr(spec, "entity_type", "") or "",
+            spec.location, spec.aliases,
+            getattr(spec, "visual_prompts_en", ()) or (),
+            effective_settings,
+        ))
         levels = query_hierarchy(
             query_canonical,
             spec.aliases,
             spec.location,
             n_levels=n_levels,
+            extra_queries=extra_queries,
         )
         one_iteration_added = 0
         for lvl, query in enumerate(levels):

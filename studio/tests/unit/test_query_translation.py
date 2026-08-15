@@ -16,6 +16,7 @@ def _settings(tmp_path, **kw):
 
 def setup_function(_):
     qt._MEM_CACHE.clear()
+    qt._VARIANTS_MEM_CACHE.clear()
 
 
 def test_settings_none_devolve_fallback_determinístico():
@@ -108,3 +109,90 @@ def test_cache_em_disco_persiste_entre_instâncias_mem_cache_vazia(
     out = qt.translate_query_en("Ponte Dom Luís I", "landmark", "Porto",
                                 settings)
     assert out == "iron arch bridge Porto"
+
+
+# === translate_query_variants_en (Porto: search+confirmation calibration) ===
+
+def test_variants_settings_none_devolve_fallback_deterministico():
+    out = qt.translate_query_variants_en(
+        "Livraria Lello", "landmark", "Porto",
+        ("Lello Bookstore",), (), None,
+    )
+    assert out == ["Livraria Lello", "Lello Bookstore", "Livraria Lello Porto"]
+
+
+def test_variants_mock_mode_devolve_fallback_sem_chamar_gemini(
+    tmp_path, monkeypatch,
+):
+    settings = _settings(tmp_path)
+
+    def _boom(*a, **kw):
+        raise AssertionError("Gemini não devia ser chamado em mock_mode")
+    monkeypatch.setattr("studio.llm.gemini.generate", _boom)
+
+    out = qt.translate_query_variants_en(
+        "Sé do Porto", "landmark", "Porto", (), (), settings,
+    )
+    assert out == ["Sé do Porto", "Sé do Porto Porto"]
+
+
+def test_variants_gemini_falha_cai_no_fallback_sem_lancar(tmp_path, monkeypatch):
+    from studio.config import Settings
+    settings = Settings(mock_mode=False, data_root=tmp_path / "data",
+                       gemini_api_key="fake-key-nao-usada")
+
+    def _raise(*a, **kw):
+        raise RuntimeError("network down")
+    monkeypatch.setattr("studio.llm.gemini.generate", _raise)
+
+    out = qt.translate_query_variants_en(
+        "Torre dos Clérigos", "landmark", "Porto", (), (), settings,
+    )
+    assert out == ["Torre dos Clérigos", "Torre dos Clérigos Porto"]
+
+
+def test_variants_parseia_multiplas_linhas_e_dedup(tmp_path, monkeypatch):
+    from studio.config import Settings
+    settings = Settings(mock_mode=False, data_root=tmp_path / "data",
+                       gemini_api_key="fake-key-nao-usada")
+
+    def _fake_generate(prompt, settings, **kw):
+        return (
+            "gothic cathedral facade Porto\n"
+            "Porto Cathedral exterior\n"
+            "gothic cathedral facade Porto\n"  # duplicado — deve colapsar
+            "Se Cathedral Porto interior\n"
+        ), 0.001
+    monkeypatch.setattr("studio.llm.gemini.generate", _fake_generate)
+
+    out = qt.translate_query_variants_en(
+        "Sé do Porto", "landmark", "Porto", (), (), settings,
+    )
+    assert out == [
+        "gothic cathedral facade Porto",
+        "Porto Cathedral exterior",
+        "Se Cathedral Porto interior",
+    ]
+
+    cache_file = settings.library_root / "query_variants_en.json"
+    assert cache_file.exists()
+
+
+def test_variants_cache_evita_segunda_chamada_gemini(tmp_path, monkeypatch):
+    from studio.config import Settings
+    settings = Settings(mock_mode=False, data_root=tmp_path / "data",
+                       gemini_api_key="fake-key-nao-usada")
+
+    calls = {"n": 0}
+
+    def _fake_generate(prompt, settings, **kw):
+        calls["n"] += 1
+        return "iron arch bridge Porto\nDom Luis bridge exterior", 0.001
+    monkeypatch.setattr("studio.llm.gemini.generate", _fake_generate)
+
+    out1 = qt.translate_query_variants_en(
+        "Ponte Dom Luís I", "landmark", "Porto", (), (), settings)
+    out2 = qt.translate_query_variants_en(
+        "Ponte Dom Luís I", "landmark", "Porto", (), (), settings)
+    assert out1 == out2
+    assert calls["n"] == 1, "2ª chamada devia vir do cache, não Gemini outra vez"
