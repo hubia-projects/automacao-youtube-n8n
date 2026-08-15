@@ -30,7 +30,7 @@ import httpx
 
 from studio.config import Settings
 from studio.library.provider_errors import ProviderRateLimitedError
-from studio.library.text_match import distinctive_words
+from studio.library.text_match import rank_by_hints
 
 log = logging.getLogger("studio.sources.wikimedia")
 
@@ -232,24 +232,16 @@ def _search_generator(query_en: str, count: int, generator: str,
 
 def _rank_by_hints(pool: list[CandidateMetadata],
                    hints: tuple[str, ...]) -> list[CandidateMetadata]:
-    """Ordena `pool` por match de palavras distintivas de `hints`
-    (canonical + aliases) no título e nas categorias — categoria pesa mais
-    porque é curadoria humana (mais fiável que texto livre de título).
-    `sorted` é estável: candidatos empatados mantêm a ordem original
-    (relevância textual do provider como desempate)."""
-    hint_words: set[str] = set()
-    for h in hints:
-        hint_words |= distinctive_words(h)
-    if not hint_words:
-        return pool
+    """Ordena `pool` por `rank_score_for_hints` (frase completa PRIMEIRO,
+    token-overlap só como desempate — ver text_match.py, secção 16-17 do
+    PORTO FINAL RETRIEVAL FIX: ranking por só-palavras-distintivas era um
+    no-op para "Sé do Porto"/"Porto Cathedral", cujas palavras são todas
+    genéricas). Categorias pesam por entrar na mesma string concatenada
+    com o título — curadoria humana, mais fiável que texto livre."""
+    def _text(cand: CandidateMetadata) -> str:
+        return f"{cand.title} {' '.join(cand.categories)}"
 
-    def _score(cand: CandidateMetadata) -> int:
-        score = 2 * len(distinctive_words(cand.title) & hint_words)
-        for cat in cand.categories:
-            score += 3 * len(distinctive_words(cat) & hint_words)
-        return score
-
-    return sorted(pool, key=_score, reverse=True)
+    return rank_by_hints(pool, hints, _text)
 
 
 def search(query_en: str, count: int, settings: Settings,

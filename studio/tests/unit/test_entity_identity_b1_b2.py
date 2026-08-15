@@ -10,6 +10,8 @@ from studio.library.text_match import (
     csv_columns_for_entity_type,
     is_specific_alias,
     normalize_text,
+    rank_by_hints,
+    rank_score_for_hints,
 )
 
 
@@ -113,3 +115,32 @@ def test_build_candidate_where_clause_inclui_aliases_en():
     )
     assert "landmarks_csv LIKE '%porto cathedral%'" in where
     assert "places_csv LIKE '%porto cathedral%'" in where
+
+
+# === PORTO FINAL RETRIEVAL FIX (secções 16-17): ranking por frase =========
+
+def test_rank_score_zero_sem_hints_ou_texto():
+    assert rank_score_for_hints("qualquer coisa", ()) == 0.0
+    assert rank_score_for_hints("", ("Sé do Porto",)) == 0.0
+
+
+def test_rank_score_frase_completa_supera_overlap_de_palavras():
+    """"Sé do Porto"/"Porto Cathedral" são só palavras genéricas — um
+    ranking por overlap de palavras fica sem sinal; por FRASE COMPLETA
+    continua a distinguir Porto de Viseu."""
+    hints = ("Sé do Porto", "Porto Cathedral")
+    score_correct = rank_score_for_hints("Porto Cathedral aerial view", hints)
+    score_wrong = rank_score_for_hints("Viseu Cathedral facade", hints)
+    assert score_correct > score_wrong
+    assert score_correct >= 8.0  # bateu a frase completa do alias
+
+
+def test_rank_by_hints_ordena_estavel_sem_hints():
+    items = ["a", "b", "c"]
+    assert rank_by_hints(items, (), lambda x: x) == items
+
+
+def test_rank_by_hints_ordena_candidato_certo_primeiro():
+    items = ["Viseu Cathedral facade", "generic bridge photo", "Porto Cathedral aerial"]
+    ranked = rank_by_hints(items, ("Sé do Porto", "Porto Cathedral"), lambda x: x)
+    assert ranked[0] == "Porto Cathedral aerial"

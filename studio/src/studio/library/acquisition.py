@@ -246,6 +246,7 @@ def query_hierarchy(canonical: str,
                     location: str = "",
                     *,
                     n_levels: int = 4,
+                    aliases_en: tuple[str, ...] = (),
                     extra_queries: tuple[str, ...] = ()) -> list[str]:
     """Níveis de pesquisa em hierarquia do mais específico ao mais genérico:
         L1: canonical + location
@@ -253,11 +254,21 @@ def query_hierarchy(canonical: str,
         L3: canonical
         L4: contextual generic (low-relevance fallback)
 
-    `extra_queries` (item PORTO: search+confirmation calibration) —
-    variantes adicionais (ex.: `translate_query_variants_en`) anexadas
-    DEPOIS da hierarquia base, nunca sujeitas ao corte `n_levels` (esse
-    corte é só para os níveis "core"). Dedup por string normalizada aqui
-    (defesa extra, além do dedup por run que a `QueryHistory` já faz).
+    `aliases_en` (PORTO FINAL RETRIEVAL FIX, secções 2-3 — "EXACT FIRST"):
+    nomes próprios em INGLÊS (`translate_entity_aliases_en`) inseridos
+    LOGO A SEGUIR à hierarquia core em PT, ANTES de `extra_queries` —
+    identidade exacta (PT e EN) sempre domina sobre fallback visual
+    genérico. Bug real corrigido aqui: `acquire_for_deficits` passava a
+    FRASE DESCRITIVA traduzida (`translate_query_en`, ex.: "gothic
+    cathedral facade Porto") como a PRÓPRIA base da hierarquia — a
+    primeira query tentada para "Sé do Porto" era genérica antes de
+    qualquer tentativa com o nome exacto (PT ou EN).
+
+    `extra_queries` — variantes VISUAIS/DESCRITIVAS (`translate_query_en`/
+    `translate_query_variants_en`) anexadas por ÚLTIMO (fallback, nunca
+    primeiro) — nunca sujeitas ao corte `n_levels` (esse corte é só para
+    os níveis "core" em PT). Dedup por string normalizada aqui (defesa
+    extra, além do dedup por run que a `QueryHistory` já faz).
     """
     levels: list[str] = []
     if location:
@@ -270,8 +281,17 @@ def query_hierarchy(canonical: str,
     levels.append(canonical.split()[0] if canonical else canonical)
     levels = levels[:n_levels]
 
+    exact_en_levels: list[str] = []
+    for a_en in aliases_en:
+        a_en = (a_en or "").strip()
+        if not a_en:
+            continue
+        exact_en_levels.append(a_en)
+        if location:
+            exact_en_levels.append(f"{a_en} {location}")
+
     seen = {lv.strip().lower() for lv in levels}
-    for q in extra_queries:
+    for q in (*exact_en_levels, *extra_queries):
         qn = (q or "").strip()
         if qn and qn.lower() not in seen:
             levels.append(qn)
@@ -505,6 +525,17 @@ def acquire_for_deficits(
         # canonical_entity em si NUNCA muda — script/matching/Vision
         # continuam a usar o nome original.
         effective_settings = settings or getattr(db, "_settings", None)
+        spec_aliases_en = tuple(getattr(spec, "aliases_en", ()) or ())
+        # PORTO FINAL RETRIEVAL FIX (secções 2-3, "EXACT FIRST"): BUG REAL
+        # corrigido aqui — a hierarquia usava `query_canonical` (frase
+        # DESCRITIVA traduzida, ex.: "gothic cathedral facade Porto") como
+        # a PRÓPRIA BASE da pesquisa; para "Sé do Porto" isso significava
+        # que a 1ª query tentada era genérica, antes de qualquer tentativa
+        # com o nome exacto (PT ou EN). Agora `query_hierarchy` usa o
+        # canonical/aliases REAIS (PT) + `aliases_en` (nomes próprios
+        # exactos em inglês) como níveis PRIORITÁRIOS; `query_canonical` e
+        # as variantes descritivas (`translate_query_variants_en`) só
+        # entram DEPOIS, como fallback visual — nunca primeiro.
         query_canonical = translate_query_en(
             spec.canonical_entity, getattr(spec, "entity_type", "") or "",
             spec.location, effective_settings)
@@ -514,30 +545,39 @@ def acquire_for_deficits(
         # entidade específica. Falha (rede/parse) nunca bloqueia a
         # hierarquia base: fallback determinístico já embutido em
         # `translate_query_variants_en`.
-        extra_queries = tuple(translate_query_variants_en(
+        visual_fallback_queries = tuple(translate_query_variants_en(
             spec.canonical_entity, getattr(spec, "entity_type", "") or "",
             spec.location, spec.aliases,
             getattr(spec, "visual_prompts_en", ()) or (),
             effective_settings,
         ))
         levels = query_hierarchy(
-            query_canonical,
+            spec.canonical_entity,
             spec.aliases,
             spec.location,
             n_levels=n_levels,
-            extra_queries=extra_queries,
+            aliases_en=spec_aliases_en,
+            extra_queries=(query_canonical, *visual_fallback_queries),
         )
-        canonical_hints = (spec.canonical_entity, *spec.aliases)
+        canonical_hints = (spec.canonical_entity, *spec.aliases, *spec_aliases_en)
         one_iteration_added = 0
         for lvl, query in enumerate(levels):
             rep.queries_run += 1
             can_attempt = True
             # query_history dedup (não repete empty/error)
+            # BUG REAL (secção 20, PORTO FINAL RETRIEVAL FIX): was_tried()
+            # consultava sempre provider="multi" hardcoded, mas record()
+            # grava sempre `provider_name_for_history` (nome real —
+            # "wikimedia"/"pexels"/"pixabay" — desde que
+            # run_acquisition_for_workset ficou provider-scoped). O dedup
+            # NUNCA encontrava as próprias entradas gravadas — todas as
+            # queries eram sempre re-tentadas em toda wave/iteração,
+            # mesmo já confirmadas "empty"/"error" antes.
             if query_history_db is not None and hasattr(query_history_db,
                                                        "was_tried"):
                 was = query_history_db.was_tried(
                     workset_ctx.workflow_id, spec.requirement_id,
-                    "multi", query)
+                    provider_name_for_history, query)
                 if was in ("empty", "error"):
                     log.debug(
                         "acquire: query já tentada em '%s' (status=%s) — skip",

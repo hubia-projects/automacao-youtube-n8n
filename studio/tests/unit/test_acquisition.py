@@ -107,6 +107,77 @@ def test_query_hierarchy_extra_queries_dedup_contra_niveis_existentes():
     assert "Lello Bookstore" in levels
 
 
+def test_query_hierarchy_aliases_en_vem_antes_de_extra_queries():
+    """PORTO FINAL RETRIEVAL FIX (secções 2-3, EXACT FIRST): nomes próprios
+    em inglês (aliases_en) são identidade exacta — devem vir ANTES das
+    variantes descritivas/visuais (extra_queries), nunca depois."""
+    levels = query_hierarchy(
+        "Sé do Porto", (), "Porto", n_levels=4,
+        aliases_en=("Porto Cathedral",),
+        extra_queries=("gothic cathedral facade Porto",),
+    )
+    idx_alias_en = levels.index("Porto Cathedral")
+    idx_visual = levels.index("gothic cathedral facade Porto")
+    assert idx_alias_en < idx_visual, (
+        "alias exacto em inglês devia vir antes do fallback visual "
+        "genérico"
+    )
+    assert "Porto Cathedral Porto" in levels  # alias_en + location também
+
+
+def test_query_hierarchy_aliases_en_dedup_contra_niveis_existentes():
+    levels = query_hierarchy(
+        "Livraria Lello", (), "", n_levels=4,
+        aliases_en=("Livraria Lello", "Lello Bookstore"),
+    )
+    assert levels.count("Livraria Lello") == 1
+    assert "Lello Bookstore" in levels
+
+
+def test_acquire_for_deficits_tenta_canonical_exacto_antes_de_query_traduzida(
+    monkeypatch,
+):
+    """PORTO FINAL RETRIEVAL FIX (secções 2-3): BUG REAL corrigido — a
+    hierarquia usava a frase DESCRITIVA traduzida como base, tentando-a
+    ANTES do nome exacto. Prova que agora `spec.canonical_entity` (PT
+    exacto) é tentado antes de qualquer frase traduzida/descritiva."""
+    from studio.library import acquisition as acq_mod
+
+    monkeypatch.setattr(acq_mod, "translate_query_en",
+                        lambda *a, **kw: "gothic cathedral facade Porto")
+    monkeypatch.setattr(acq_mod, "translate_query_variants_en",
+                        lambda *a, **kw: ["romanesque cathedral Porto"])
+
+    spec = _ReqSpec("Sé do Porto")
+    spec.aliases_en = ("Porto Cathedral",)
+    ctx = _workset_ctx_stub([spec])
+    deficit = DeficitItem(
+        canonical_entity="Sé do Porto", requirement_id=spec.requirement_id,
+        target_seconds=100.0, deficit_seconds=100.0, min_distinct_shots=5,
+    )
+    queries_tried: list[str] = []
+
+    def resolver(query, level):
+        queries_tried.append(query)
+        return []
+
+    acquire_for_deficits(
+        workset_ctx=ctx, db=MagicMock(), embedder=MagicMock(),
+        settings=MagicMock(mock_mode=True),
+        deficit_items=[deficit], provider_resolver=resolver,
+        remeasure_coverage=lambda: False, max_iterations=1,
+    )
+    assert queries_tried[0] == "Sé do Porto", (
+        f"1ª query devia ser o nome exacto, foi {queries_tried[0]!r}"
+    )
+    idx_alias_en = queries_tried.index("Porto Cathedral")
+    idx_descriptive = queries_tried.index("gothic cathedral facade Porto")
+    assert idx_alias_en < idx_descriptive, (
+        "alias exacto em inglês devia ser tentado antes da frase "
+        "descritiva traduzida"
+    )
+
+
 def test_query_hierarchy_sem_extra_queries_comportamento_legacy_intocado():
     levels = query_hierarchy("Francesinha", ("comida do Porto",), "Porto",
                              n_levels=4)
@@ -228,6 +299,40 @@ def test_max_downloads_safety_cap_para_o_loop_honestamente():
 # remeasure_coverage() devolve True imediatamente (biblioteca já cobre
 # tudo), então o loop nunca deve chamar provider_resolver.
 # ---------------------------------------------------------------------------
+def test_was_tried_usa_provider_real_nao_multi_hardcoded():
+    """BUG REAL (secção 20, PORTO FINAL RETRIEVAL FIX): was_tried()
+    consultava sempre provider="multi" hardcoded, mas record() grava o
+    provider REAL (provider_name_for_history) — o dedup nunca encontrava
+    as próprias entradas, toda query era sempre re-tentada."""
+    spec = _ReqSpec("Sé do Porto")
+    ctx = _workset_ctx_stub([spec])
+    deficit = DeficitItem(
+        canonical_entity="Sé do Porto", requirement_id=spec.requirement_id,
+        target_seconds=100.0, deficit_seconds=100.0, min_distinct_shots=5,
+    )
+
+    def resolver(query, level):
+        return []
+
+    qh = MagicMock()
+    qh.was_tried.return_value = None
+    acquire_for_deficits(
+        workset_ctx=ctx, db=MagicMock(), embedder=MagicMock(),
+        settings=MagicMock(mock_mode=True),
+        deficit_items=[deficit], provider_resolver=resolver,
+        query_history_db=qh,
+        remeasure_coverage=lambda: False,
+        max_iterations=1, provider_name_for_history="wikimedia",
+    )
+    assert qh.was_tried.call_count > 0
+    for call in qh.was_tried.call_args_list:
+        assert call.args[2] == "wikimedia", (
+            f"was_tried devia usar o provider real 'wikimedia', usou "
+            f"{call.args[2]!r}"
+        )
+        assert call.args[2] != "multi"
+
+
 def test_provider_rate_limited_termina_a_chamada_sem_hang(monkeypatch):
     """item PORTO FINAL ASSET TEST (secções 7-10): quando o
     provider_resolver levanta ProviderRateLimitedError, acquire_for_deficits

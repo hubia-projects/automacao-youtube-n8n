@@ -189,6 +189,70 @@ def test_search_com_canonical_hints_rankeia_match_exacto_primeiro(monkeypatch):
     assert out[0].categories == ("Livraria Lello", "Bookstores in Porto")
 
 
+_PORTO_CATHEDRAL_PAGE = {
+    "3": {
+        "pageid": 3, "ns": 6, "title": "File:Porto Cathedral aerial.jpg",
+        "index": 1,
+        "imageinfo": [{
+            "url": "https://upload.wikimedia.org/x/PortoCathedral.jpg",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:PortoCathedral.jpg",
+            "width": 1920, "height": 1080, "mime": "image/jpeg",
+            "extmetadata": {
+                "LicenseShortName": {"value": "CC0 1.0"},
+                "Categories": {"value": "Sé do Porto"},
+            },
+        }],
+    },
+}
+
+_VISEU_CATHEDRAL_PAGE = {
+    "4": {
+        "pageid": 4, "ns": 6, "title": "File:Viseu Cathedral facade.jpg",
+        "index": 1,
+        "imageinfo": [{
+            "url": "https://upload.wikimedia.org/x/ViseuCathedral.jpg",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:ViseuCathedral.jpg",
+            "width": 1920, "height": 1080, "mime": "image/jpeg",
+            "extmetadata": {
+                "LicenseShortName": {"value": "CC0 1.0"},
+                "Categories": {"value": "Sé de Viseu"},
+            },
+        }],
+    },
+}
+
+
+def test_ranking_se_do_porto_nao_e_no_op_apesar_de_palavras_genericas(
+    monkeypatch,
+):
+    """secção 16-17 (PORTO FINAL RETRIEVAL FIX): "Sé do Porto"/"Porto
+    Cathedral" são compostas inteiramente por palavras GENÉRICAS (sé,
+    catedral/cathedral, porto) — um ranking por overlap de palavras
+    distintivas fica sem sinal nenhum (bug real introduzido pelo próprio
+    fix de B2). Ranking por FRASE COMPLETA continua a funcionar: "Porto
+    Cathedral" bate no candidato certo, "Viseu Cathedral" fica atrás."""
+    def _fake_get(self, url, params=None, **kw):
+        params = params or {}
+        if "gcmtitle" in params and "Porto" in params.get("gcmtitle", ""):
+            return httpx.Response(200, json=_fake_search_response(_PORTO_CATHEDRAL_PAGE),
+                                  request=httpx.Request("GET", url))
+        if "gsrsearch" in params:
+            return httpx.Response(200, json=_fake_search_response(_VISEU_CATHEDRAL_PAGE),
+                                  request=httpx.Request("GET", url))
+        return httpx.Response(200, json=_fake_search_response({}),
+                              request=httpx.Request("GET", url))
+    monkeypatch.setattr(httpx.Client, "get", _fake_get)
+
+    out = wikimedia.search("gothic cathedral facade Porto", 2, _settings(),
+                           canonical_hints=("Sé do Porto", "Porto Cathedral"))
+    assert len(out) == 2
+    assert "Porto Cathedral" in out[0].title, (
+        "candidato correcto (Porto Cathedral) devia vir primeiro, mesmo "
+        "com palavras 100% genéricas no canonical/alias"
+    )
+    assert out[0].categories == ("Sé do Porto",)
+
+
 def test_search_sem_canonical_hints_nao_faz_probe_por_hint(monkeypatch):
     """Sem hints, `search()` só usa o fallback legacy `Category:{query_en}`
     (se necessário) — nunca um probe extra por-hint (esse só existe

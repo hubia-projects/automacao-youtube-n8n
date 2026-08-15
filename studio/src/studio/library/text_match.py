@@ -162,3 +162,55 @@ def build_candidate_where_clause(
         return "1=0"
     conds = [f"{col} LIKE '%{n}%'" for col in cols for n in safe_names]
     return " OR ".join(conds)
+
+
+# === ranking por frase (PORTO FINAL RETRIEVAL FIX, secções 16-17) ==========
+#
+# Bug real introduzido pelo próprio fix de B2: `_rank_by_hints` (Wikimedia)
+# rankeava por OVERLAP DE PALAVRAS DISTINTIVAS — mas "Sé do Porto" e
+# "Porto Cathedral" ficam com distinctive_words() praticamente VAZIO (sé/
+# catedral/porto/cathedral são todas genéricas), tornando o ranking um
+# no-op exactamente para os casos onde mais importa. `rank_score_for_hints`
+# usa FRASE COMPLETA normalizada como sinal PRIMÁRIO (canonical > alias
+# específico > localização), token-overlap só como desempate secundário
+# fraco — "Porto Cathedral" como substring de "porto cathedral photo"
+# pontua alto mesmo com zero palavras "distintivas" sobrando.
+
+
+def rank_score_for_hints(text: str, hints: tuple[str, ...]) -> float:
+    """`text` é texto livre de 1 candidato (título/descrição/tags/slug de
+    URL/categorias) a comparar contra `hints` (canonical + aliases PT/EN —
+    primeiro elemento tratado como canonical, peso máximo).
+
+    Ordem de sinal: frase completa do canonical (peso 10) > frase completa
+    de um alias específico ->=2 palavras, nunca um genérico sozinho (peso
+    8) > overlap de palavras distintivas (peso 0.5/palavra, desempate
+    fraco). Nunca inventa correspondência — hints vazios ou texto vazio
+    dão sempre 0.0."""
+    text_norm = normalize_text(text)
+    if not text_norm or not hints:
+        return 0.0
+    score = 0.0
+    hint_words: set[str] = set()
+    for i, h in enumerate(hints):
+        h_norm = normalize_text(h)
+        if not h_norm:
+            continue
+        is_primary = (i == 0)
+        if is_primary or is_specific_alias(h):
+            if h_norm in text_norm:
+                score += 10.0 if is_primary else 8.0
+        hint_words |= distinctive_words(h)
+    score += 0.5 * len(distinctive_words(text) & hint_words)
+    return score
+
+
+def rank_by_hints(items: list, hints: tuple[str, ...], text_fn) -> list:
+    """Ordena `items` por `rank_score_for_hints(text_fn(item), hints)`
+    (estável — empatados mantêm ordem original, ex.: relevância textual
+    do próprio provider como desempate). Sem hints, devolve `items`
+    inalterado (nunca reordena sem sinal real)."""
+    if not hints:
+        return items
+    return sorted(items, key=lambda it: rank_score_for_hints(text_fn(it), hints),
+                 reverse=True)
