@@ -253,6 +253,78 @@ def test_ranking_se_do_porto_nao_e_no_op_apesar_de_palavras_genericas(
     assert out[0].categories == ("Sé do Porto",)
 
 
+_LELLO_VIDEO_PAGE = {
+    "5": {
+        "pageid": 5, "ns": 6, "title": "File:Livraria Lello walkthrough.webm",
+        "index": 1,
+        "imageinfo": [{
+            "url": "https://upload.wikimedia.org/x/LelloWalkthrough.webm",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:LelloWalkthrough.webm",
+            "width": 1920, "height": 1080, "mime": "video/webm", "duration": 30.0,
+            "extmetadata": {
+                "LicenseShortName": {"value": "CC BY-SA 4.0"},
+                "Categories": {"value": "Livraria Lello"},
+            },
+        }],
+    },
+}
+
+
+def test_search_com_hints_faz_busca_explicita_filetype_video(monkeypatch):
+    """secções 11-13 (PORTO FINAL RETRIEVAL FIX): busca dedicada por
+    vídeo (`filetype:video`) corre ANTES do resto — vídeo não fica à
+    mercê de competir/perder contra um pool cheio de imagens."""
+    seen_queries = []
+
+    def _fake_get(self, url, params=None, **kw):
+        params = params or {}
+        if "gsrsearch" in params:
+            seen_queries.append(params["gsrsearch"])
+        if params.get("gsrsearch", "").endswith("filetype:video"):
+            return httpx.Response(200, json=_fake_search_response(_LELLO_VIDEO_PAGE),
+                                  request=httpx.Request("GET", url))
+        return httpx.Response(200, json=_fake_search_response({}),
+                              request=httpx.Request("GET", url))
+    monkeypatch.setattr(httpx.Client, "get", _fake_get)
+
+    out = wikimedia.search("Lello bookstore Porto", 3, _settings(),
+                           canonical_hints=("Livraria Lello",))
+    assert any(q.endswith("filetype:video") for q in seen_queries), (
+        "devia ter feito pelo menos 1 busca explícita filetype:video"
+    )
+    assert len(out) == 1
+    assert out[0].media_kind == "video"
+
+
+def test_ranking_bonus_video_desempata_mas_nunca_bate_match_de_frase_mais_forte(
+    monkeypatch,
+):
+    """secção 27: vídeo ganha desempate leve, mas um match de FRASE mais
+    forte (imagem com nome exacto) continua a vencer um vídeo genérico
+    sem nenhum match."""
+    def _fake_get(self, url, params=None, **kw):
+        params = params or {}
+        if "gcmtitle" in params and "Lello" in params.get("gcmtitle", ""):
+            return httpx.Response(200, json=_fake_search_response(_LELLO_PAGE),
+                                  request=httpx.Request("GET", url))
+        if params.get("gsrsearch", "").endswith("filetype:video"):
+            return httpx.Response(200, json=_fake_search_response(_VIDEO_PAGE),
+                                  request=httpx.Request("GET", url))
+        return httpx.Response(200, json=_fake_search_response({}),
+                              request=httpx.Request("GET", url))
+    monkeypatch.setattr(httpx.Client, "get", _fake_get)
+
+    out = wikimedia.search("Livraria Lello", 2, _settings(),
+                           canonical_hints=("Livraria Lello",))
+    assert len(out) == 2
+    # _LELLO_PAGE bate a frase completa "Livraria Lello" no título/categoria
+    # (score alto); _VIDEO_PAGE (Bridge.webm, genérico) não bate nada — o
+    # bónus de vídeo NUNCA deve inverter essa ordem.
+    assert "Livraria Lello" in out[0].title, (
+        "match de frase forte (imagem) devia vencer vídeo sem nenhum match"
+    )
+
+
 def test_search_sem_canonical_hints_nao_faz_probe_por_hint(monkeypatch):
     """Sem hints, `search()` só usa o fallback legacy `Category:{query_en}`
     (se necessário) — nunca um probe extra por-hint (esse só existe

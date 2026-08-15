@@ -30,7 +30,7 @@ import httpx
 
 from studio.config import Settings
 from studio.library.provider_errors import ProviderRateLimitedError
-from studio.library.text_match import rank_by_hints
+from studio.library.text_match import rank_score_for_hints
 
 log = logging.getLogger("studio.sources.wikimedia")
 
@@ -230,6 +230,15 @@ def _search_generator(query_en: str, count: int, generator: str,
     return ordered[:count]
 
 
+# secção 27 (PORTO FINAL RETRIEVAL FIX): bónus de desempate para vídeo —
+# "exact video > exact image > generic video". Sempre MENOR que a
+# diferença entre camadas de match de frase em rank_score_for_hints
+# (8-10 pontos) — nunca faz um vídeo genérico (score 0) ultrapassar uma
+# imagem com match exacto de canonical/alias; só desempata candidatos já
+# próximos (ex.: ambos batem o mesmo alias, ou nenhum bate nada).
+_VIDEO_RANK_BONUS = 1.0
+
+
 def _rank_by_hints(pool: list[CandidateMetadata],
                    hints: tuple[str, ...]) -> list[CandidateMetadata]:
     """Ordena `pool` por `rank_score_for_hints` (frase completa PRIMEIRO,
@@ -237,11 +246,20 @@ def _rank_by_hints(pool: list[CandidateMetadata],
     PORTO FINAL RETRIEVAL FIX: ranking por só-palavras-distintivas era um
     no-op para "Sé do Porto"/"Porto Cathedral", cujas palavras são todas
     genéricas). Categorias pesam por entrar na mesma string concatenada
-    com o título — curadoria humana, mais fiável que texto livre."""
-    def _text(cand: CandidateMetadata) -> str:
-        return f"{cand.title} {' '.join(cand.categories)}"
+    com o título — curadoria humana, mais fiável que texto livre. Vídeo
+    ganha um pequeno bónus de desempate (secção 27) — nunca suficiente
+    para bater um match de frase mais forte."""
+    if not hints:
+        return pool
 
-    return rank_by_hints(pool, hints, _text)
+    def _score(cand: CandidateMetadata) -> float:
+        text = f"{cand.title} {' '.join(cand.categories)}"
+        score = rank_score_for_hints(text, hints)
+        if cand.media_kind == "video":
+            score += _VIDEO_RANK_BONUS
+        return score
+
+    return sorted(pool, key=_score, reverse=True)
 
 
 def search(query_en: str, count: int, settings: Settings,
@@ -252,14 +270,20 @@ def search(query_en: str, count: int, settings: Settings,
     Sem `canonical_hints`: comportamento legacy (`generator=search` +
     `Category:{query_en}` fallback, capado a `count`).
 
-    Com `canonical_hints` (item PORTO — entity-aware): (1) probe de
-    categoria EXACTA por hint (`Category:{hint}`, entidade pode ter
-    categoria própria na Commons); (2) pool mais largo
+    Com `canonical_hints` (PORTO FINAL RETRIEVAL FIX, secções 11-13, 27 —
+    "vídeo antes de imagem"): (0) busca EXPLÍCITA de vídeo por hint via
+    `filetype:video` (sintaxe CirrusSearch nativa da Commons) — video e
+    imagem competiam sempre no mesmo pool misto antes disto, 40 fotos
+    podiam encher o pool_limit e nunca sobrar espaço para um vídeo
+    correcto; (1) probe de categoria EXACTA por hint (`Category:{hint}`,
+    entidade pode ter categoria própria na Commons); (2) pool mais largo
     (`settings.wikimedia_search_pool`) via busca textual + fallback de
     categoria da query traduzida; (3) ranking local por match de
-    `canonical_hints` no título/categorias; (4) devolve só os `count`
-    melhores — `make_provider_resolver` continua a descarregar tudo o que
-    `search()` devolver, contrato intacto."""
+    `canonical_hints` no título/categorias, com bónus para
+    `media_kind="video"` (secção 27 — vídeo exacto > imagem exacta >
+    vídeo genérico, nunca um hard-override, só desempate); (4) devolve só
+    os `count` melhores — `make_provider_resolver` continua a descarregar
+    tudo o que `search()` devolver, contrato intacto."""
     _check_not_rate_limited()
     t0 = time.perf_counter()
     hints = tuple(h.strip() for h in canonical_hints if h and h.strip())
@@ -276,6 +300,14 @@ def search(query_en: str, count: int, settings: Settings,
                 continue
             seen_ids.add(cand.provider_id)
             pool.append(cand)
+
+    for hint in hints:
+        if len(pool) >= pool_limit:
+            break
+        _add(_search_generator(
+            hint, pool_limit - len(pool), "search",
+            {"gsrsearch": f"{hint} filetype:video", "gsrnamespace": 6,
+             "gsrlimit": pool_limit - len(pool)}))
 
     for hint in hints:
         if len(pool) >= pool_limit:
