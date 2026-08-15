@@ -748,6 +748,13 @@ class S08Matching:
                   f"{len(confirmed_entities)} entities strict com candidatos "
                   f"confirmados", payload={"n_confirmed": len(confirmed_entities)})
 
+        # último confirmed_index_for_gate calculado por _measure_ready()
+        # (holder mutável — closure só pode ATRIBUIR a nomes locais próprios,
+        # não a variáveis da função externa; um dict de 1 chave contorna
+        # sem precisar de `nonlocal`). Usado no caminho de falha abaixo
+        # para persistir coverage.json com o estado real, sem recalcular.
+        _last_confirmed_index_for_gate: dict[str, list[str]] = {}
+
         def _measure_ready():
             # BUG REAL (PORTO FINAL RETRIEVAL FIX): `confirmed_entities`
             # é preenchido por `_run_strict_confirmation()`, mas
@@ -786,6 +793,8 @@ class S08Matching:
                     shot_ids = []
                 if shot_ids:
                     confirmed_index_for_gate[ent.canonical_name.strip().lower()] = shot_ids
+            _last_confirmed_index_for_gate.clear()
+            _last_confirmed_index_for_gate.update(confirmed_index_for_gate)
             ready, per_status, strict_uncovered = is_workset_ready(
                 plan, db, ctx.settings, confirmed_index=confirmed_index_for_gate,
                 remeasure=False,
@@ -939,6 +948,26 @@ class S08Matching:
                               payload={"covered": covered_n,
                                       "total": len(per_status_gate),
                                       "inbox_path": str(inbox_path)})
+                    # BUG REAL (PORTO FINAL RETRIEVAL FIX): no caminho de
+                    # falha (aquisição esgotada), coverage.json em disco
+                    # NUNCA era re-escrito com o `per_status_gate` real
+                    # (o único write vinha de `build_workset()`, sempre com
+                    # confirmed_index={} — nunca reflecte confirmações reais
+                    # ganhas durante as waves). Operador/CLI que lê
+                    # coverage.json via ficheiro via nunca vê o estado
+                    # verdadeiro. Persistir aqui também, mesmo em falha.
+                    try:
+                        from studio.matching.coverage_plan import write_workset_readiness
+                        write_workset_readiness(
+                            plan, db, ctx.settings,
+                            workset_result.workset_dir / "coverage.json",
+                            confirmed_index=_last_confirmed_index_for_gate,
+                            remeasure=False,
+                        )
+                    except Exception as exc:
+                        log.warning("S08: write_workset_readiness na falha "
+                                   "não conseguiu persistir (não fatal): %s",
+                                   exc.__class__.__name__)
                     return StageResult(
                         status="failed",
                         outputs=[d / "coverage_plan.json"],
