@@ -14,11 +14,75 @@ from unittest.mock import MagicMock, patch
 
 from studio.library.acquisition import (
     DeficitItem,
+    _call_resolver,
     acquire_for_deficits,
     make_provider_resolver,
     query_hierarchy,
 )
 from studio.library.sources.pexels import CandidateMetadata
+
+
+def test_call_resolver_com_resolver_que_aceita_hints():
+    calls = []
+
+    def resolver(query, level, canonical_hints=()):
+        calls.append((query, level, canonical_hints))
+        return []
+
+    _call_resolver(resolver, "q", 1, ("Alias A",))
+    assert calls == [("q", 1, ("Alias A",))]
+
+
+def test_call_resolver_com_resolver_legacy_2_args_nao_quebra():
+    calls = []
+
+    def resolver(query, level):
+        calls.append((query, level))
+        return []
+
+    _call_resolver(resolver, "q", 1, ("Alias A",))
+    assert calls == [("q", 1)]
+
+
+def test_make_provider_resolver_passa_canonical_hints_so_para_wikimedia(
+    tmp_path,
+):
+    """item PORTO (search+confirmation calibration): resolver aceita
+    `canonical_hints` opcional; só é reencaminhado para `wikimedia.search()`
+    (entity-aware) — outros providers (pexels/pixabay) nunca recebem esse
+    kwarg (as suas `search()` não o aceitam)."""
+    search_calls = []
+
+    def fake_wikimedia_search(query, count, settings, **kw):
+        search_calls.append((query, count, kw))
+        return []
+
+    with patch("studio.library.sources.wikimedia.search",
+              side_effect=fake_wikimedia_search):
+        resolver = make_provider_resolver(
+            MagicMock(), tmp_path / "dest", providers=("wikimedia",),
+            db=MagicMock(), count_per_query=3)
+        resolver("Livraria Lello", 0,
+                 canonical_hints=("Livraria Lello", "Lello Bookstore"))
+
+    assert len(search_calls) == 1
+    _query, _count, kw = search_calls[0]
+    assert kw.get("canonical_hints") == ("Livraria Lello", "Lello Bookstore")
+
+
+def test_make_provider_resolver_sem_canonical_hints_nao_quebra(tmp_path):
+    """Chamada legacy `resolver(query, level)` (sem canonical_hints)
+    continua a funcionar — nunca obrigatório."""
+    def fake_wikimedia_search(query, count, settings, **kw):
+        assert "canonical_hints" not in kw
+        return []
+
+    with patch("studio.library.sources.wikimedia.search",
+              side_effect=fake_wikimedia_search):
+        resolver = make_provider_resolver(
+            MagicMock(), tmp_path / "dest", providers=("wikimedia",),
+            db=MagicMock(), count_per_query=3)
+        resolver("Sé do Porto", 0)
 
 
 def test_query_hierarchy_extra_queries_anexadas_no_fim():

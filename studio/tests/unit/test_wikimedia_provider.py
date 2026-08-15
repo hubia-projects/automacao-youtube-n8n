@@ -126,6 +126,85 @@ def test_search_tenta_categoria_quando_keyword_insuficiente(monkeypatch):
         "0 resultados de keyword search devia tentar categorymembers")
 
 
+_LOOKALIKE_PAGE = {
+    "1": {
+        "pageid": 1, "ns": 6, "title": "File:Generic old bookstore.jpg",
+        "index": 1,
+        "imageinfo": [{
+            "url": "https://upload.wikimedia.org/x/Generic_old_bookstore.jpg",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Generic_old_bookstore.jpg",
+            "width": 1920, "height": 1080, "mime": "image/jpeg",
+            "extmetadata": {
+                "LicenseShortName": {"value": "CC0 1.0"},
+                "Categories": {"value": "Bookstores"},
+            },
+        }],
+    },
+}
+
+_LELLO_PAGE = {
+    "2": {
+        "pageid": 2, "ns": 6, "title": "File:Exterior view of Livraria Lello 01.jpg",
+        "index": 2,
+        "imageinfo": [{
+            "url": "https://upload.wikimedia.org/x/Lello_02.jpg",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Lello_02.jpg",
+            "width": 1920, "height": 1080, "mime": "image/jpeg",
+            "extmetadata": {
+                "LicenseShortName": {"value": "CC0 1.0"},
+                "Categories": {"value": "Livraria Lello|Bookstores in Porto"},
+            },
+        }],
+    },
+}
+
+
+def test_search_com_canonical_hints_rankeia_match_exacto_primeiro(monkeypatch):
+    """Pool tem 1 candidato genérico (sem match) + 1 candidato real da
+    Lello (título + categoria batem) — com canonical_hints, o real deve
+    vir PRIMEIRO mesmo chegando depois na resposta textual genérica."""
+    def _fake_get(self, url, params=None, **kw):
+        params = params or {}
+        if "gcmtitle" in params and "Lello" in params["gcmtitle"]:
+            return httpx.Response(200, json=_fake_search_response(_LELLO_PAGE),
+                                  request=httpx.Request("GET", url))
+        if "gsrsearch" in params:
+            return httpx.Response(200, json=_fake_search_response(_LOOKALIKE_PAGE),
+                                  request=httpx.Request("GET", url))
+        return httpx.Response(200, json=_fake_search_response({}),
+                              request=httpx.Request("GET", url))
+    monkeypatch.setattr(httpx.Client, "get", _fake_get)
+
+    out = wikimedia.search("old bookstore Porto", 2, _settings(),
+                           canonical_hints=("Livraria Lello",))
+    assert len(out) == 2
+    assert "Lello" in out[0].title
+    assert out[0].categories == ("Livraria Lello", "Bookstores in Porto")
+
+
+def test_search_sem_canonical_hints_nao_faz_probe_por_hint(monkeypatch):
+    """Sem hints, `search()` só usa o fallback legacy `Category:{query_en}`
+    (se necessário) — nunca um probe extra por-hint (esse só existe
+    quando `canonical_hints` é passado)."""
+    calls = []
+
+    def _fake_get(self, url, params=None, **kw):
+        calls.append(dict(params or {}))
+        if "gsrsearch" in (params or {}):
+            return httpx.Response(200, json=_fake_search_response({}),
+                                  request=httpx.Request("GET", url))
+        return httpx.Response(200, json=_fake_search_response(_IMAGE_PAGE),
+                              request=httpx.Request("GET", url))
+    monkeypatch.setattr(httpx.Client, "get", _fake_get)
+
+    out = wikimedia.search("Livraria Lello", 5, _settings())
+    assert len(out) == 1
+    gcmtitles = [c["gcmtitle"] for c in calls if "gcmtitle" in c]
+    # único probe de categoria é o fallback legacy da própria query, nunca
+    # um probe adicional (que só existiria por-hint, quando há hints).
+    assert gcmtitles == ["Category:Livraria Lello"]
+
+
 def test_normalize_license_mapping():
     assert wikimedia._normalize_license("CC BY-SA 4.0") == "cc-by-sa"
     assert wikimedia._normalize_license("CC BY 2.0") == "cc-by"

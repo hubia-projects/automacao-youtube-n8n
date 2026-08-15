@@ -392,6 +392,17 @@ class Settings(BaseSettings):
     bucket_logical_only: bool = Field(
         default=True, alias="STUDIO_BUCKET_LOGICAL_ONLY")
 
+    # item PORTO (search+confirmation calibration): tamanho do pool de
+    # candidatos que `wikimedia.search()` examina ANTES de rankear e
+    # devolver só os top-`count` pedidos por `make_provider_resolver`
+    # (que continua a descarregar tudo o que search() devolver — o
+    # contrato não muda, só fica mais largo internamente). Maior que
+    # `count` para dar espaço real ao ranking por canonical_hints (nome/
+    # aliases exactos no título ou categorias) encontrar o candidato
+    # certo, sem baixar a categoria inteira.
+    wikimedia_search_pool: int = Field(
+        default=40, alias="STUDIO_WIKIMEDIA_SEARCH_POOL")
+
     @property
     def runs_root(self) -> Path:
         return self.data_root / "runs"

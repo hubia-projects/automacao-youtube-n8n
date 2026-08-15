@@ -29,6 +29,7 @@ Atomicidade:
 """
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import re
@@ -110,7 +111,8 @@ def make_provider_resolver(
         except Exception:
             pass
 
-    def _resolver(query: str, level: int) -> list[tuple[Path, dict]]:
+    def _resolver(query: str, level: int,
+                  canonical_hints: tuple[str, ...] = ()) -> list[tuple[Path, dict]]:
         out: list[tuple[Path, dict]] = []
         for provider in providers:
             try:
@@ -126,7 +128,15 @@ def make_provider_resolver(
                 _emit("provider_search_started", f"{provider}: '{query}'",
                      {"provider": provider, "query": query, "level": level})
                 try:
-                    candidates = mod.search(query, count_per_query, settings)
+                    # item PORTO (search+confirmation calibration):
+                    # canonical_hints só é entendido por wikimedia.search()
+                    # (entity-aware ranking/probe) — outros providers
+                    # (pexels/pixabay) recebem a assinatura de sempre.
+                    if provider == "wikimedia" and canonical_hints:
+                        candidates = mod.search(query, count_per_query, settings,
+                                               canonical_hints=canonical_hints)
+                    else:
+                        candidates = mod.search(query, count_per_query, settings)
                 except Exception as exc:
                     log.warning(
                         "make_provider_resolver: %s.search(%r) falhou: %s",
@@ -250,6 +260,25 @@ def query_hierarchy(canonical: str,
             levels.append(qn)
             seen.add(qn.lower())
     return levels
+
+
+def _call_resolver(provider_resolver, query: str, level: int,
+                   canonical_hints: tuple[str, ...]):
+    """Chama `provider_resolver(query, level)` — opcionalmente com
+    `canonical_hints=` se o resolver aceitar esse parâmetro (só o resolver
+    REAL de `make_provider_resolver`, item PORTO, aceita; resolvers de
+    teste/mocks com assinatura `(query, level)` continuam a funcionar sem
+    alteração nenhuma). Introspecção em vez de mudar a assinatura pública
+    de `provider_resolver` — nunca partir os ~2 args já usados em todos os
+    callers/testes existentes."""
+    try:
+        sig = inspect.signature(provider_resolver)
+        accepts_hints = "canonical_hints" in sig.parameters
+    except (TypeError, ValueError):
+        accepts_hints = False
+    if accepts_hints:
+        return provider_resolver(query, level, canonical_hints=canonical_hints)
+    return provider_resolver(query, level)
 
 
 # === Provider-level dedup lookup =============================================
@@ -481,6 +510,7 @@ def acquire_for_deficits(
             n_levels=n_levels,
             extra_queries=extra_queries,
         )
+        canonical_hints = (spec.canonical_entity, *spec.aliases)
         one_iteration_added = 0
         for lvl, query in enumerate(levels):
             rep.queries_run += 1
@@ -500,7 +530,8 @@ def acquire_for_deficits(
             if not can_attempt:
                 continue
             try:
-                results = provider_resolver(query, lvl)
+                results = _call_resolver(provider_resolver, query, lvl,
+                                         canonical_hints)
             except Exception as exc:
                 log.warning("acquire: provider_resolver erro em '%s': %s",
                             query, exc.__class__.__name__)

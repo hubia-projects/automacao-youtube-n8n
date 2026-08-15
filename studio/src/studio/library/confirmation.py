@@ -20,7 +20,6 @@ import asyncio
 import base64
 import json
 import logging
-import re
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,6 +32,7 @@ from studio.config import Settings
 from studio.library.db import LibraryDB
 from studio.library.metadata import DetectedEntity
 from studio.library.rate_limit import get_gemini_limiter
+from studio.library.text_match import distinctive_words
 
 log = logging.getLogger("studio.confirmation")
 
@@ -445,26 +445,6 @@ def _confirm_batch(
 # 0.70 é fixo (doutrina explícita do pedido), independente de min_conf.
 _CORROBORATION_FLOOR = 0.70
 
-# palavras genéricas de tipo-de-edifício/localização — filtradas do match
-# de palavras distintivas para evitar falso positivo por coincidência de
-# palavra comum (ex: "Torre" sozinho não corrobora "Torre dos Clérigos"
-# contra qualquer outra torre; "Porto" sozinho não corrobora nenhuma
-# entity específica do Porto). Lista genérica de linguagem, não
-# específica de nenhuma entidade (nada de "Lello" aqui).
-_GENERIC_NAME_WORDS = frozenset({
-    "rua", "avenida", "praca", "praça", "ponte", "torre", "capela",
-    "catedral", "se", "sé", "igreja", "estacao", "estação", "miradouro",
-    "galeria", "galerias", "livraria", "casa", "palacio", "palácio",
-    "mercado", "jardim", "praia", "forte", "castelo", "museu", "teatro",
-    "mosteiro", "convento", "porto", "lisboa", "portugal", "dom", "dona",
-    "santo", "santa", "sao", "são", "view", "exterior", "interior",
-})
-
-
-def _distinctive_words(text: str) -> set[str]:
-    words = re.findall(r"[a-zà-öø-ÿ]+", (text or "").lower())
-    return {w for w in words if len(w) >= 4 and w not in _GENERIC_NAME_WORDS}
-
 
 def _source_title(source_url: str) -> str:
     """Extrai título legível do `source_url` já existente na tabela shots
@@ -490,14 +470,14 @@ def _corroboration_families(
     nunca contar duas vezes o mesmo campo/origem como duas famílias."""
     name_words: set[str] = set()
     for n in (canonical, *aliases):
-        name_words |= _distinctive_words(n)
+        name_words |= distinctive_words(n)
     if not name_words:
         return set()
 
     families: set[str] = set()
-    if any(_distinctive_words(t) & name_words for t in (det.ocr_text_found or ())):
+    if any(distinctive_words(t) & name_words for t in (det.ocr_text_found or ())):
         families.add("OCR_EXACT")
-    if _distinctive_words(_source_title(shot.get("source_url", ""))) & name_words:
+    if distinctive_words(_source_title(shot.get("source_url", ""))) & name_words:
         families.add("SOURCE_TITLE_MATCH")
     return families
 

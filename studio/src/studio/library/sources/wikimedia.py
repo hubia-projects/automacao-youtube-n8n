@@ -29,6 +29,7 @@ from pathlib import Path
 import httpx
 
 from studio.config import Settings
+from studio.library.text_match import distinctive_words
 
 log = logging.getLogger("studio.sources.wikimedia")
 
@@ -67,6 +68,13 @@ class CandidateMetadata:
     width: int = 0
     height: int = 0
     duration: float = 0.0
+    # item PORTO (search+confirmation calibration): título da página +
+    # categorias Commons (extmetadata.Categories, antes ignorado) — usados
+    # só para ranking local por `canonical_hints` em `search()`, nunca
+    # persistidos como license/proveniência (esses campos continuam os
+    # mesmos de sempre).
+    title: str = ""
+    categories: tuple[str, ...] = ()
 
 
 def _page_to_candidate(page: dict) -> CandidateMetadata | None:
@@ -94,8 +102,16 @@ def _page_to_candidate(page: dict) -> CandidateMetadata | None:
     author = re.sub(r"<[^>]+>", "", author_raw).strip()
     attribution_required = norm_license in ("cc-by", "cc-by-sa")
     page_id = str(page.get("pageid", ""))
+    title = page.get("title", "")
     descriptionurl = info.get("descriptionurl") or (
-        f"https://commons.wikimedia.org/wiki/{page.get('title', '')}")
+        f"https://commons.wikimedia.org/wiki/{title}")
+    # extmetadata.Categories vem como string "Cat1|Cat2|Cat3" (raw HTML
+    # às vezes) — nunca visto até agora (item 10-11), usado só p/ ranking.
+    categories_raw = (meta.get("Categories") or {}).get("value", "")
+    categories = tuple(
+        re.sub(r"<[^>]+>", "", c).strip()
+        for c in categories_raw.split("|") if c.strip()
+    )
 
     return CandidateMetadata(
         provider="wikimedia",
@@ -106,6 +122,8 @@ def _page_to_candidate(page: dict) -> CandidateMetadata | None:
         width=int(info.get("width", 0) or 0),
         height=int(info.get("height", 0) or 0),
         duration=float(info.get("duration", 0.0) or 0.0),
+        title=title,
+        categories=categories,
         license={
             "source": "wikimedia",
             "source_url": descriptionurl,
@@ -150,40 +168,87 @@ def _search_generator(query_en: str, count: int, generator: str,
     return ordered[:count]
 
 
-def search(query_en: str, count: int, settings: Settings) -> list[CandidateMetadata]:
+def _rank_by_hints(pool: list[CandidateMetadata],
+                   hints: tuple[str, ...]) -> list[CandidateMetadata]:
+    """Ordena `pool` por match de palavras distintivas de `hints`
+    (canonical + aliases) no título e nas categorias — categoria pesa mais
+    porque é curadoria humana (mais fiável que texto livre de título).
+    `sorted` é estável: candidatos empatados mantêm a ordem original
+    (relevância textual do provider como desempate)."""
+    hint_words: set[str] = set()
+    for h in hints:
+        hint_words |= distinctive_words(h)
+    if not hint_words:
+        return pool
+
+    def _score(cand: CandidateMetadata) -> int:
+        score = 2 * len(distinctive_words(cand.title) & hint_words)
+        for cat in cand.categories:
+            score += 3 * len(distinctive_words(cat) & hint_words)
+        return score
+
+    return sorted(pool, key=_score, reverse=True)
+
+
+def search(query_en: str, count: int, settings: Settings,
+          *, canonical_hints: tuple[str, ...] = ()) -> list[CandidateMetadata]:
     """Fase 1 (só SEARCH): API oficial MediaWiki, zero bytes de media
-    transferidos. `generator=search` (namespace File=6) + `Category:` best-
-    effort (item 9 — category-aware, capado a `count`, nunca a categoria
-    inteira)."""
+    transferidos.
+
+    Sem `canonical_hints`: comportamento legacy (`generator=search` +
+    `Category:{query_en}` fallback, capado a `count`).
+
+    Com `canonical_hints` (item PORTO — entity-aware): (1) probe de
+    categoria EXACTA por hint (`Category:{hint}`, entidade pode ter
+    categoria própria na Commons); (2) pool mais largo
+    (`settings.wikimedia_search_pool`) via busca textual + fallback de
+    categoria da query traduzida; (3) ranking local por match de
+    `canonical_hints` no título/categorias; (4) devolve só os `count`
+    melhores — `make_provider_resolver` continua a descarregar tudo o que
+    `search()` devolver, contrato intacto."""
     t0 = time.perf_counter()
-    pages = _search_generator(
-        query_en, count, "search",
-        {"gsrsearch": query_en, "gsrnamespace": 6, "gsrlimit": count})
+    hints = tuple(h.strip() for h in canonical_hints if h and h.strip())
+    pool_limit = max(count, int(getattr(settings, "wikimedia_search_pool", 40)
+                                or 40)) if hints else count
 
     seen_ids: set[str] = set()
-    out: list[CandidateMetadata] = []
-    for page in pages:
-        cand = _page_to_candidate(page)
-        if cand is None or cand.provider_id in seen_ids:
-            continue
-        seen_ids.add(cand.provider_id)
-        out.append(cand)
+    pool: list[CandidateMetadata] = []
 
-    if len(out) < count:
-        cat_pages = _search_generator(
-            query_en, count - len(out), "categorymembers",
-            {"gcmtitle": f"Category:{query_en}", "gcmnamespace": 6,
-             "gcmlimit": count - len(out)})
-        for page in cat_pages:
+    def _add(pages: list[dict]) -> None:
+        for page in pages:
             cand = _page_to_candidate(page)
             if cand is None or cand.provider_id in seen_ids:
                 continue
             seen_ids.add(cand.provider_id)
-            out.append(cand)
+            pool.append(cand)
+
+    for hint in hints:
+        if len(pool) >= pool_limit:
+            break
+        _add(_search_generator(
+            hint, pool_limit - len(pool), "categorymembers",
+            {"gcmtitle": f"Category:{hint}", "gcmnamespace": 6,
+             "gcmlimit": pool_limit - len(pool)}))
+
+    if len(pool) < pool_limit:
+        _add(_search_generator(
+            query_en, pool_limit - len(pool), "search",
+            {"gsrsearch": query_en, "gsrnamespace": 6,
+             "gsrlimit": pool_limit - len(pool)}))
+
+    if len(pool) < pool_limit:
+        _add(_search_generator(
+            query_en, pool_limit - len(pool), "categorymembers",
+            {"gcmtitle": f"Category:{query_en}", "gcmnamespace": 6,
+             "gcmlimit": pool_limit - len(pool)}))
+
+    ranked = _rank_by_hints(pool, hints) if hints else pool
+    out = ranked[:count]
 
     search_elapsed = time.perf_counter() - t0
-    log.info("wikimedia-search '%s': %d candidatos (search=%.1fs) — "
-             "0 bytes de media transferidos", query_en, len(out), search_elapsed)
+    log.info("wikimedia-search '%s' (hints=%s): pool=%d -> top=%d candidatos "
+             "(search=%.1fs) — 0 bytes de media transferidos",
+             query_en, hints, len(pool), len(out), search_elapsed)
     return out
 
 
