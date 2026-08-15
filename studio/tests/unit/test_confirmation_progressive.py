@@ -19,16 +19,16 @@ from studio.config import Settings
 from studio.library.confirmation import _local_cache, require_entity_confirmation
 from studio.library.metadata import DetectedEntity
 from studio.library.requirement_index import (
-    CS_CONFIRMED, CS_FAILED_RETRYABLE, CS_REJECTED,
+    CS_CONFIRMED, CS_CONFIRMED_CORROBORATED, CS_FAILED_RETRYABLE, CS_REJECTED,
 )
 
 
-def _shot(id_, t_in=0.0, t_out=1.0, media_sha="sha"):
+def _shot(id_, t_in=0.0, t_out=1.0, media_sha="sha", source_url=""):
     return {
         "shot_id": id_, "media_path": "", "keyframes_csv": "",
         "food_csv": "Francesinha", "landmarks_csv": "", "places_csv": "Porto",
         "meta_json": json.dumps({}), "t_in": t_in, "t_out": t_out,
-        "media_sha": media_sha,
+        "media_sha": media_sha, "source_url": source_url,
     }
 
 
@@ -256,3 +256,179 @@ def test_batch_vision_dict_unico_sem_shot_id_aplica_se_a_todos_os_shots(
         assert det.rejected is False, f"{sid} devia estar confirmado"
         assert det.infra_failure is False
         assert det.confidence == 1.0
+
+
+# ---------------------------------------------------------------------------
+# item PORTO (search+confirmation calibration) — decisão em camadas A/B/C.
+# Zona A (>=min_conf=0.85): confirma puro. Zona B (0.70-0.849): só
+# CONFIRMED_CORROBORATED com >=2 famílias INDEPENDENTES (OCR_EXACT +
+# SOURCE_TITLE_MATCH). Zona C (<0.70): rejeita sempre, sem excepção.
+# ---------------------------------------------------------------------------
+
+def _confirm_with(det: DetectedEntity, canonical="Livraria Lello",
+                  entity_type="landmark", aliases=(), shot_kwargs=None):
+    shot_kwargs = shot_kwargs or {}
+    candidates = [_shot("shot_a", **shot_kwargs)]
+    db = _db_with(candidates)
+    ri = MagicMock()
+    ri.list_for_requirement.return_value = []
+
+    with patch("studio.library.confirmation._confirm_batch",
+              return_value={"shot_a": det}):
+        require_entity_confirmation(
+            canonical, entity_type, db, _settings(), top_k=4,
+            target_seconds=100.0, min_distinct_shots=100,
+            requirement_id="R01", workset_id="w1", requirement_index=ri,
+            aliases=aliases,
+        )
+    call = ri.upsert_match.call_args_list[0].args[0]
+    return call.confirmation_status, call.confirmation_confidence
+
+
+def test_zona_a_confidence_alta_confirma_puro_sem_precisar_de_familias():
+    det = DetectedEntity(name="Livraria Lello", confidence=0.92, rejected=False)
+    status, conf = _confirm_with(det)
+    assert status == CS_CONFIRMED
+    assert conf == 0.92
+
+
+def test_zona_b_com_2_familias_independentes_corrobora():
+    """Caso real que motivou o pedido: foto real da Wikimedia da Livraria
+    Lello, confidence=0.80 (abaixo de 0.85), OCR real 'LELLO & IRMÃO' +
+    título do provider também batendo — devia ser CONFIRMED_CORROBORATED,
+    não REJECTED."""
+    det = DetectedEntity(
+        name="Livraria Lello", confidence=0.80, rejected=False,
+        ocr_text_found=["LELLO & IRMÃO"],
+    )
+    status, conf = _confirm_with(
+        det, shot_kwargs={
+            "source_url": "https://commons.wikimedia.org/wiki/"
+                          "File:Exterior_view_of_Livraria_Lello_01.jpg",
+        },
+    )
+    assert status == CS_CONFIRMED_CORROBORATED
+    assert conf == 0.80
+
+
+def test_zona_b_com_apenas_1_familia_continua_rejeitado():
+    """OCR bate mas source_url é genérico (sem match) — só 1 família
+    independente, insuficiente para corroborar (nunca aceitar por
+    facilitismo)."""
+    det = DetectedEntity(
+        name="Livraria Lello", confidence=0.80, rejected=False,
+        ocr_text_found=["LELLO & IRMÃO"],
+    )
+    status, _conf = _confirm_with(
+        det, shot_kwargs={"source_url": "https://example.com/generic_photo.jpg"},
+    )
+    assert status == CS_REJECTED
+
+
+def test_zona_b_sem_nenhuma_familia_rejeitado():
+    det = DetectedEntity(name="Livraria Lello", confidence=0.80, rejected=False)
+    status, _conf = _confirm_with(det)
+    assert status == CS_REJECTED
+
+
+def test_zona_c_confidence_baixa_rejeita_mesmo_com_evidencia_forte():
+    """Doutrina explícita: <0.70 rejeita SEMPRE, sem excepção — mesmo que
+    OCR e título batam (não pode compensar confidence genuinamente baixa
+    com corroboração)."""
+    det = DetectedEntity(
+        name="Livraria Lello", confidence=0.5, rejected=False,
+        ocr_text_found=["LELLO & IRMÃO"],
+    )
+    status, _conf = _confirm_with(
+        det, shot_kwargs={
+            "source_url": "https://commons.wikimedia.org/wiki/"
+                          "File:Livraria_Lello_interior.jpg",
+        },
+    )
+    assert status == CS_REJECTED
+
+
+def test_vision_rejected_true_nunca_confirma_mesmo_com_confidence_alta():
+    det = DetectedEntity(name="", confidence=0.9, rejected=True,
+                         rejection_reason="entidade errada")
+    status, _conf = _confirm_with(det)
+    assert status == CS_REJECTED
+
+
+def test_falso_positivo_livraria_generica_nao_confirma_como_lello():
+    """'livraria bonita em Lisboa' genérica: confidence moderado (0.80,
+    zona B) mas ZERO evidência específica da Lello — nunca confirmar só
+    porque SigLIP/Vision achou parecido."""
+    det = DetectedEntity(name="Livraria Lello", confidence=0.80, rejected=False,
+                         ocr_text_found=["Livraria Chiado"])
+    status, _conf = _confirm_with(
+        det, shot_kwargs={
+            "source_url": "https://commons.wikimedia.org/wiki/"
+                          "File:Generic_bookstore_Lisbon.jpg",
+        },
+    )
+    assert status == CS_REJECTED
+
+
+def test_falso_positivo_catedral_generica_nao_confirma_como_se_do_porto():
+    """catedral gótica genérica na Espanha: confidence moderado (0.80,
+    zona B), OCR sem nada específico da Sé do Porto -> rejeitado."""
+    det = DetectedEntity(name="Sé do Porto", confidence=0.80, rejected=False)
+    status, _conf = _confirm_with(
+        det, canonical="Sé do Porto", entity_type="landmark",
+        shot_kwargs={
+            "source_url": "https://commons.wikimedia.org/wiki/"
+                          "File:Generic_gothic_cathedral_Spain.jpg",
+        },
+    )
+    assert status == CS_REJECTED
+
+
+def test_corroboracao_usa_aliases_nao_so_canonical():
+    """OCR/título batem num ALIAS ('Lello'), não no canonical completo
+    ('Livraria Lello') — corroboração deve reconhecer aliases, não só a
+    string canonical exacta."""
+    det = DetectedEntity(
+        name="Livraria Lello", confidence=0.80, rejected=False,
+        ocr_text_found=["LELLO"],
+    )
+    status, _conf = _confirm_with(
+        det, aliases=("Lello",),
+        shot_kwargs={
+            "source_url": "https://commons.wikimedia.org/wiki/File:Lello_03.jpg",
+        },
+    )
+    assert status == CS_CONFIRMED_CORROBORATED
+
+
+def test_known_status_exclui_corroborated_do_proximo_batch():
+    """CS_CONFIRMED_CORROBORATED conta como 'já resolvido' — não deve ser
+    re-Vision'd num próximo run (mesma doutrina de CONFIRMED/REJECTED)."""
+    from studio.library.requirement_index import (
+        CS_CONFIRMED_CORROBORATED as _CSCC,
+        RequirementMatch,
+    )
+    candidates = [_shot("shot_a")]
+    db = _db_with(candidates)
+    ri = MagicMock()
+    ri.list_for_requirement.return_value = [
+        RequirementMatch(workset_id="w1", requirement_id="R01",
+                         shot_id="shot_a", media_sha="sha",
+                         similarity=0.0, duration=1.0,
+                         confirmation_status=_CSCC,
+                         confirmation_confidence=0.80, strict_eligible=True),
+    ]
+    calls = []
+
+    def fake_confirm_batch(batch, canonical, entity_type, settings):
+        calls.append([c["shot_id"] for c in batch])
+        return {}
+
+    with patch("studio.library.confirmation._confirm_batch",
+              side_effect=fake_confirm_batch):
+        require_entity_confirmation(
+            "Livraria Lello", "landmark", db, _settings(), top_k=4,
+            target_seconds=100.0, min_distinct_shots=100,
+            requirement_id="R01", workset_id="w1", requirement_index=ri,
+        )
+    assert calls == [], "shot já CONFIRMED_CORROBORATED não devia ir a Vision outra vez"
