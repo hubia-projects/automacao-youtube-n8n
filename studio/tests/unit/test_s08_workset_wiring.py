@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import re
 from pathlib import Path
 
 from studio.stages import produce
@@ -26,6 +27,42 @@ def test_s08_matching_chama_build_workset_e_load_workset_context():
     )
     assert "from studio.matching.coverage_plan import build_coverage_plan" \
         not in source
+
+
+def test_s08_reindexa_apos_confirmacao_antes_do_gate():
+    """BUG REAL (PORTO FINAL RETRIEVAL FIX): `_index_existing()` refresca
+    `ent.available_shot_ids` a partir da RequirementIndex TAL COMO ESTAVA
+    antes de `_run_strict_confirmation()` escrever novas confirmações.
+    `is_workset_ready()` intersecta `confirmed_index` (fresco, lido da
+    RequirementIndex depois da confirmação) com `available_shot_ids`
+    (stale, de antes) — shots confirmados NA PRÓPRIA WAVE nunca entram em
+    `strict_set`, o gate reporta NOT_FOUND/UNCONFIRMED apesar de cobertura
+    estrita real persistida suficiente (caso real: Torre dos Clérigos/
+    Miradouro da Serra do Pilar/Ponte Dom Luís I excediam o target e ainda
+    assim apareciam NOT_FOUND numa run ao vivo). Cada
+    `_run_strict_confirmation()` tem de ser seguido por outro
+    `_index_existing()` antes do próximo `_measure_ready()`.
+    """
+    source = inspect.getsource(produce.S08Matching.run)
+    code_only = "\n".join(
+        line for line in source.splitlines()
+        if not line.strip().startswith("#") and not line.strip().startswith("def ")
+    )
+    calls = re.findall(
+        r"_run_strict_confirmation\(\)|_index_existing\(\)|_measure_ready\(\)",
+        code_only,
+    )
+    assert calls.count("_run_strict_confirmation()") >= 2, (
+        "esperava pelo menos 2 chamadas (pré-loop + dentro do wave loop)"
+    )
+    for i, call in enumerate(calls):
+        if call == "_run_strict_confirmation()":
+            assert calls[i + 1] == "_index_existing()", (
+                f"_run_strict_confirmation() na posição {i} não é seguido "
+                f"por _index_existing() — regressão do bug de staleness "
+                f"de available_shot_ids (ver comentário BUG REAL em "
+                f"produce.py junto a _run_strict_confirmation())"
+            )
 
 
 def test_s08_matching_integration_cria_workset_no_disco(tmp_path, monkeypatch):

@@ -743,6 +743,20 @@ class S08Matching:
                                 exc.__class__.__name__)
 
         _run_strict_confirmation()
+        # BUG REAL (PORTO FINAL RETRIEVAL FIX): _index_existing() (linha
+        # acima, antes de _run_strict_confirmation()) refresca
+        # ent.available_shot_ids a partir da RequirementIndex tal como
+        # estava ANTES desta ronda de confirmações. is_workset_ready()
+        # (chamada por _measure_ready() com remeasure=False) intersecta
+        # confirmed_index (fresco, inclui as confirmações que acabámos de
+        # escrever) com ent.available_shot_ids (stale) — shots confirmados
+        # NESTA chamada nunca entram em strict_set, o gate reporta
+        # NOT_FOUND/UNCONFIRMED mesmo com cobertura real persistida
+        # suficiente (caso real: Torre dos Clérigos/Miradouro da Serra do
+        # Pilar/Ponte Dom Luís I). Reindexar outra vez aqui para que
+        # available_shot_ids reflicta as confirmações que acabaram de sair
+        # do forno.
+        _index_existing()
         emit_event(ctx.run_dir, ctx.video_id, self.name,
                   "strict_confirmation_batch",
                   f"{len(confirmed_entities)} entities strict com candidatos "
@@ -909,6 +923,11 @@ class S08Matching:
                     # REAIS (idempotente via upsert_match).
                     _index_existing()
                     _run_strict_confirmation()
+                    # ver comentário acima (pré-loop): reindexar de novo
+                    # DEPOIS da confirmação, para available_shot_ids
+                    # incluir os shots confirmados nesta mesma wave antes
+                    # de _measure_ready() os intersectar.
+                    _index_existing()
                     ready_for_gate, per_status_gate, _ = _measure_ready()
                     log.info("acquisition wave %d/%d: coverage_ready=%s "
                              "downloads=%d", wave + 1, max_waves,
