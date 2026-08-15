@@ -730,6 +730,7 @@ class S08Matching:
                         workset_id=workset_ctx.workset_id,
                         requirement_index=ri,
                         aliases=ent.aliases,
+                        aliases_en=ent.aliases_en,
                     )
                     if confirmed:
                         confirmed_entities[ent.canonical_name.strip().lower()] = confirmed

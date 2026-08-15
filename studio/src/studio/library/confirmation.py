@@ -32,7 +32,11 @@ from studio.config import Settings
 from studio.library.db import LibraryDB
 from studio.library.metadata import DetectedEntity
 from studio.library.rate_limit import get_gemini_limiter
-from studio.library.text_match import distinctive_words
+from studio.library.text_match import (
+    build_candidate_where_clause,
+    candidate_matches_entity,
+    distinctive_words,
+)
 
 log = logging.getLogger("studio.confirmation")
 
@@ -459,17 +463,17 @@ def _source_title(source_url: str) -> str:
 
 def _corroboration_families(
     det: DetectedEntity, shot: dict, canonical: str,
-    aliases: tuple[str, ...],
+    aliases: tuple[str, ...], aliases_en: tuple[str, ...] = (),
 ) -> set[str]:
     """Famílias de evidência INDEPENDENTES (não-Vision) corroborando
-    `canonical`/`aliases` — usadas só na zona borderline (ver
+    `canonical`/`aliases`/`aliases_en` — usadas só na zona borderline (ver
     `_CORROBORATION_FLOOR`). Cada família vem de um campo/fonte distinto:
     `OCR_EXACT` (texto lido na imagem pelo próprio Vision call, campo
     estruturado `ocr_text_found`) e `SOURCE_TITLE_MATCH` (metadata do
     provider já persistida em `source_url`, nunca gerada pelo Vision) —
     nunca contar duas vezes o mesmo campo/origem como duas famílias."""
     name_words: set[str] = set()
-    for n in (canonical, *aliases):
+    for n in (canonical, *aliases, *aliases_en):
         name_words |= distinctive_words(n)
     if not name_words:
         return set()
@@ -494,6 +498,7 @@ def require_entity_confirmation(
     requirement_index: object | None = None,
     max_batches: int = 5,
     aliases: tuple[str, ...] = (),
+    aliases_en: tuple[str, ...] = (),
 ) -> list[dict]:
     """Devolve shots candidatos confirmados (confidence >= min_confidence).
 
@@ -524,31 +529,42 @@ def require_entity_confirmation(
             (confirmado OU rejeitado) é sincronizado de volta via
             `ri.upsert_match` com o `confirmation_status` REAL — não só o
             cache local/`meta_json` (que só guarda os confirmados).
-        aliases: nomes alternativos da mesma entidade (de
-            `EntityCoverage.aliases`) — usados só na zona de corroboração
-            (confidence entre `_CORROBORATION_FLOOR` e min_conf) para
-            `_corroboration_families`; nunca afecta zona A (>=min_conf) nem
-            zona C (<0.70).
+        aliases: nomes alternativos em PORTUGUÊS da mesma entidade (de
+            `EntityCoverage.aliases`) — usados na retrieval de candidatos
+            (identidade partilhada, ver `text_match.py`) e na zona de
+            corroboração (confidence entre `_CORROBORATION_FLOOR` e
+            min_conf) para `_corroboration_families`; nunca afecta zona A
+            (>=min_conf) nem zona C (<0.70).
+        aliases_en: nomes próprios em INGLÊS da mesma entidade (de
+            `EntityCoverage.aliases_en`, `translate_entity_aliases_en`) —
+            bug B2 (PORTO FINAL ASSET TEST): o classificador de ingest
+            escreve `landmarks_csv`/`places_csv`/`food_csv` em inglês
+            ("porto cathedral"), mas o `canonical`/`aliases` do requirement
+            estão na língua do roteiro (português) — sem isto, um asset
+            real e correcto fica invisível à retrieval de candidatos.
     Returns:
         Lista de shots com meta '__confirmation: DetectedEntity' anexada.
     """
     top_k = top_k or settings.entity_confirm_max_k
     min_conf = min_confidence or settings.entity_confirm_min_confidence
-    safe = canonical.replace("'", "").strip().lower()
-    if not safe:
+    if not canonical.strip():
         return []
-    # colunas CSV por entity_type
-    csv_col = {"food": "food_csv", "landmark": "landmarks_csv",
-               "building": "landmarks_csv",
-               "attraction": "landmarks_csv",
-               "place": "places_csv"}.get(entity_type)
-    if csv_col:
-        where = f"{csv_col} LIKE '%{safe}%'"
-    else:
-        where = (f"places_csv LIKE '%{safe}%' OR "
-                 f"landmarks_csv LIKE '%{safe}%' OR "
-                 f"food_csv LIKE '%{safe}%'")
-    candidates_all = list(db.iter_rows(where, limit=200))
+    # bug B2 (PORTO FINAL ASSET TEST): retrieval de candidatos usa
+    # identidade partilhada (canonical + aliases PT + aliases EN,
+    # normalizada) em vez de comparar só o canonical literal em português
+    # contra colunas escritas em inglês pelo classificador de ingest.
+    # `where` é um recall BROAD (substring simples, sem normalização de
+    # acentos — o SQL engine não tem); a precisão real vem do post-filter
+    # `candidate_matches_entity()` logo a seguir.
+    where = build_candidate_where_clause(entity_type, canonical, aliases, aliases_en)
+    candidates_all = [
+        c for c in db.iter_rows(where, limit=200)
+        if candidate_matches_entity(
+            ",".join(str(c.get(col, "") or "") for col in
+                     ("landmarks_csv", "places_csv", "food_csv")),
+            canonical, aliases, aliases_en,
+        )
+    ]
     if not candidates_all:
         return []
 
@@ -614,7 +630,8 @@ def require_entity_confirmation(
             families: set[str] = set()
             if (not zone_a and not det.rejected and bool(det.name)
                     and _CORROBORATION_FLOOR <= det.confidence < min_conf):
-                families = _corroboration_families(det, cand, canonical, aliases)
+                families = _corroboration_families(det, cand, canonical, aliases,
+                                                   aliases_en)
                 corroborated = len(families) >= 2
             confirmed = zone_a or corroborated
 

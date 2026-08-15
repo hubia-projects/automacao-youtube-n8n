@@ -107,6 +107,16 @@ class EntityCoverage(BaseModel):
     requirement duplicado. Também alimenta a expansão de queries
     (variantes de busca por entidade, sem hardcode)."""
     aliases: tuple[str, ...] = ()
+    """bug B2 (PORTO FINAL ASSET TEST): nomes próprios em INGLÊS
+    (`translate_entity_aliases_en`, populado por
+    `workset_builder.py::_ensure_aliases_en`) — identidade partilhada
+    entre requirement/Vision/CSV do ingest/metadata do provider. Bug real
+    confirmado: foto correcta da Sé do Porto ficou invisível ao matching
+    porque `landmarks_csv` tinha "porto cathedral" (inglês, escrito pelo
+    classificador de ingest) e a comparação usava só o canonical em
+    português. Nunca inclui alias genérico de 1 palavra só (filtrado na
+    origem — evita "Cathedral" sozinho corresponder a qualquer catedral)."""
+    aliases_en: tuple[str, ...] = ()
     """strict_visual ⇒ entity NÃO pode cair para genérico em cobertura
     insuficiente; top-up é obrigatório."""
     strict: bool = True

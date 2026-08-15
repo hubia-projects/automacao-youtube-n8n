@@ -84,6 +84,7 @@ class RequirementSpec:
     narration_t_in: float
     narration_t_out: float
     aliases: tuple[str, ...] = ()
+    aliases_en: tuple[str, ...] = ()
     location: str = ""
     narration_seconds: float = 0.0    # computed (out - in) — convenience
     visual_prompts_en: tuple[str, ...] = ()
@@ -176,6 +177,7 @@ def _coerce_requirement(raw: dict, idx: int) -> Optional[RequirementSpec]:
         narration_t_out=t_out,
         narration_seconds=nar_s,
         aliases=tuple(a for a in (raw.get("aliases") or []) if a),
+        aliases_en=tuple(a for a in (raw.get("aliases_en") or []) if a),
         location=str(raw.get("location", "") or ""),
         visual_prompts_en=visual_prompts,
     )

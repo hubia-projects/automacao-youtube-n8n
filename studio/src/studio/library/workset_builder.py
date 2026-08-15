@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -40,6 +41,8 @@ from studio.script.entities import EntitySpan
 from studio.script.scenes import Scene
 from studio.script.validate_topics import is_topic_present
 from studio.theme import ThemeSpec
+
+log = logging.getLogger("studio.workset_builder")
 
 
 class MandatoryTopicUnresolvedError(RuntimeError):
@@ -106,6 +109,9 @@ def _ensure_mandatory_topics(
     scenes: list[Scene],
     db: LibraryDB,
     settings: Settings,
+    *,
+    theme: str = "",
+    location: str = "",
 ) -> None:
     """item D: `mandatory_topics` do ThemeSpec NUNCA podem desaparecer do
     workset — mesmo quando o extractor de entidades os perdeu (miss real,
@@ -156,8 +162,14 @@ def _ensure_mandatory_topics(
             continue
         required_s = round(
             sum(max(0.0, sc.t_out - sc.t_in) for sc in matching_scenes), 3)
+        # bug B1 (PORTO FINAL ASSET TEST): "place" era hardcoded aqui para
+        # QUALQUER mandatory_topic sem EntitySpan — classificação real
+        # (Gemini, cache disco+memória, sem keyword de tópico específico)
+        # substitui o hardcode; funciona para qualquer vídeo/tema.
+        from studio.library.query_translation import classify_entity_type
+        inferred_type = classify_entity_type(topic, theme, location, settings)
         ent = EntityCoverage(
-            canonical_name=topic, entity_type="place",
+            canonical_name=topic, entity_type=inferred_type,
             priority_score=1.0, mention_count=len(matching_scenes),
             required_seconds=required_s, target_seconds=0.0,
             min_distinct_shots=0, strict=True,
@@ -183,6 +195,28 @@ def _ensure_mandatory_topics(
         existing[key] = ent
     if unresolved:
         raise MandatoryTopicUnresolvedError(unresolved)
+
+
+def _ensure_aliases_en(plan: CoveragePlan, settings: Settings) -> None:
+    """Bug B2 (PORTO FINAL ASSET TEST): populate `EntityCoverage.aliases_en`
+    para TODA entity (real ou sintética) que ainda não o tenha — nomes
+    próprios em inglês usados como identidade partilhada entre requirement/
+    Vision/CSV do classificador de ingest/metadata do provider. Corre uma
+    única vez por entity (cache disco+memória em `translate_entity_aliases_en`
+    torna reruns idempotentes/baratos)."""
+    from studio.library.query_translation import translate_entity_aliases_en
+    for ent in plan.ranked_entities:
+        if ent.aliases_en:
+            continue
+        try:
+            ent.aliases_en = tuple(translate_entity_aliases_en(
+                ent.canonical_name, ent.entity_type, ent.location,
+                ent.aliases, settings,
+            ))
+        except Exception as exc:
+            log.warning("_ensure_aliases_en: falhou para '%s' (%s) — "
+                       "aliases_en fica vazio (fail-soft)",
+                       ent.canonical_name, exc.__class__.__name__)
 
 
 def _topic_id(index: int, canonical: str) -> str:
@@ -247,7 +281,11 @@ def build_workset(
         include_filler=True,
         location=theme_spec.location or "",
     )
-    _ensure_mandatory_topics(plan, theme_spec.mandatory_topics, scenes, db, settings)
+    _ensure_mandatory_topics(
+        plan, theme_spec.mandatory_topics, scenes, db, settings,
+        theme=theme_spec.theme, location=theme_spec.location or "",
+    )
+    _ensure_aliases_en(plan, settings)
 
     topic_ids = [_topic_id(i, ent.canonical_name)
                 for i, ent in enumerate(plan.ranked_entities)]
@@ -293,6 +331,7 @@ def build_workset(
                 # escritos aqui — ficavam sempre vazios a jusante,
                 # incluindo na expansão de queries (Fase C).
                 "aliases": list(ent.aliases),
+                "aliases_en": list(ent.aliases_en),
                 "location": ent.location,
             }
             for tid, ent in zip(topic_ids, plan.ranked_entities)

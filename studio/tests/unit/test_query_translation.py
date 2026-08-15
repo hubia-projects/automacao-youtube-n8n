@@ -17,6 +17,7 @@ def _settings(tmp_path, **kw):
 def setup_function(_):
     qt._MEM_CACHE.clear()
     qt._VARIANTS_MEM_CACHE.clear()
+    qt._ALIASES_EN_MEM_CACHE.clear()
 
 
 def test_settings_none_devolve_fallback_determinístico():
@@ -196,3 +197,73 @@ def test_variants_cache_evita_segunda_chamada_gemini(tmp_path, monkeypatch):
         "Ponte Dom Luís I", "landmark", "Porto", (), (), settings)
     assert out1 == out2
     assert calls["n"] == 1, "2ª chamada devia vir do cache, não Gemini outra vez"
+
+
+# === translate_entity_aliases_en (bug B2: PORTO FINAL ASSET TEST) ===========
+
+def test_aliases_en_settings_none_devolve_vazio():
+    assert qt.translate_entity_aliases_en(
+        "Sé do Porto", "landmark", "Porto", (), None) == []
+
+
+def test_aliases_en_mock_mode_devolve_vazio_sem_chamar_gemini(
+    tmp_path, monkeypatch,
+):
+    settings = _settings(tmp_path)
+
+    def _boom(*a, **kw):
+        raise AssertionError("Gemini não devia ser chamado em mock_mode")
+    monkeypatch.setattr("studio.llm.gemini.generate", _boom)
+
+    out = qt.translate_entity_aliases_en(
+        "Sé do Porto", "landmark", "Porto", (), settings)
+    assert out == []
+
+
+def test_aliases_en_filtra_alias_generico_de_1_palavra(tmp_path, monkeypatch):
+    from studio.config import Settings
+    settings = Settings(mock_mode=False, data_root=tmp_path / "data",
+                       gemini_api_key="fake-key-nao-usada")
+
+    def _fake_generate(prompt, settings, **kw):
+        return "Porto Cathedral\nCathedral\nSe Cathedral Porto", 0.001
+    monkeypatch.setattr("studio.llm.gemini.generate", _fake_generate)
+
+    out = qt.translate_entity_aliases_en(
+        "Sé do Porto", "landmark", "Porto", (), settings)
+    assert out == ["Porto Cathedral", "Se Cathedral Porto"]
+    assert "Cathedral" not in out
+
+
+def test_aliases_en_gemini_falha_cai_em_lista_vazia(tmp_path, monkeypatch):
+    from studio.config import Settings
+    settings = Settings(mock_mode=False, data_root=tmp_path / "data",
+                       gemini_api_key="fake-key-nao-usada")
+
+    def _raise(*a, **kw):
+        raise RuntimeError("network down")
+    monkeypatch.setattr("studio.llm.gemini.generate", _raise)
+
+    out = qt.translate_entity_aliases_en(
+        "Torre dos Clérigos", "landmark", "Porto", (), settings)
+    assert out == []
+
+
+def test_aliases_en_cache_evita_segunda_chamada_gemini(tmp_path, monkeypatch):
+    from studio.config import Settings
+    settings = Settings(mock_mode=False, data_root=tmp_path / "data",
+                       gemini_api_key="fake-key-nao-usada")
+
+    calls = {"n": 0}
+
+    def _fake_generate(prompt, settings, **kw):
+        calls["n"] += 1
+        return "Sao Bento Station\nSao Bento railway station", 0.001
+    monkeypatch.setattr("studio.llm.gemini.generate", _fake_generate)
+
+    out1 = qt.translate_entity_aliases_en(
+        "Estação de São Bento", "landmark", "Porto", (), settings)
+    out2 = qt.translate_entity_aliases_en(
+        "Estação de São Bento", "landmark", "Porto", (), settings)
+    assert out1 == out2
+    assert calls["n"] == 1

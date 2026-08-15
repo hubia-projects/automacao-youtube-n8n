@@ -23,10 +23,12 @@ from studio.library.requirement_index import (
 )
 
 
-def _shot(id_, t_in=0.0, t_out=1.0, media_sha="sha", source_url=""):
+def _shot(id_, t_in=0.0, t_out=1.0, media_sha="sha", source_url="",
+         landmarks_csv="", places_csv="Porto", food_csv="Francesinha"):
     return {
         "shot_id": id_, "media_path": "", "keyframes_csv": "",
-        "food_csv": "Francesinha", "landmarks_csv": "", "places_csv": "Porto",
+        "food_csv": food_csv, "landmarks_csv": landmarks_csv,
+        "places_csv": places_csv,
         "meta_json": json.dumps({}), "t_in": t_in, "t_out": t_out,
         "media_sha": media_sha, "source_url": source_url,
     }
@@ -266,8 +268,15 @@ def test_batch_vision_dict_unico_sem_shot_id_aplica_se_a_todos_os_shots(
 # ---------------------------------------------------------------------------
 
 def _confirm_with(det: DetectedEntity, canonical="Livraria Lello",
-                  entity_type="landmark", aliases=(), shot_kwargs=None):
-    shot_kwargs = shot_kwargs or {}
+                  entity_type="landmark", aliases=(), aliases_en=(),
+                  shot_kwargs=None):
+    shot_kwargs = dict(shot_kwargs or {})
+    # bug B2 fix: retrieval agora é REAL (candidate_matches_entity), não
+    # bypassed pelo mock — por defeito o shot fica tagueado com o próprio
+    # canonical (simula retrieval bem sucedida) para estes testes
+    # exercitarem a camada de DECISÃO (zona A/B/C), não a retrieval em si
+    # (essa tem testes próprios, ver test_candidate_matches_entity_*).
+    shot_kwargs.setdefault("landmarks_csv", canonical.lower())
     candidates = [_shot("shot_a", **shot_kwargs)]
     db = _db_with(candidates)
     ri = MagicMock()
@@ -279,7 +288,7 @@ def _confirm_with(det: DetectedEntity, canonical="Livraria Lello",
             canonical, entity_type, db, _settings(), top_k=4,
             target_seconds=100.0, min_distinct_shots=100,
             requirement_id="R01", workset_id="w1", requirement_index=ri,
-            aliases=aliases,
+            aliases=aliases, aliases_en=aliases_en,
         )
     call = ri.upsert_match.call_args_list[0].args[0]
     return call.confirmation_status, call.confirmation_confidence

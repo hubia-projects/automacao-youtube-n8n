@@ -272,3 +272,242 @@ def _save_disk_cache_variants(settings: Settings,
     except Exception as exc:
         log.debug("query_translation: variants cache write falhou (não "
                   "fatal): %s", exc.__class__.__name__)
+
+
+# === classify_entity_type (bug B1: PORTO FINAL ASSET TEST) ===========
+#
+# `_ensure_mandatory_topics` hardcodava `entity_type="place"` para QUALQUER
+# mandatory_topic sem EntitySpan correspondente (o extractor nunca o viu no
+# roteiro) — confirmado em produção real: "Bacalhau com natas" (comida)
+# ficava "place", usando a waterfall de provider errada (Wikimedia antes de
+# Pexels) e a coluna CSV errada em `require_entity_confirmation`
+# (`places_csv` em vez de `food_csv`). Esta função substitui o hardcode por
+# 1 classificação real (Gemini), sem qualquer keyword específica de tópico
+# — funciona para qualquer vídeo/tema, não só Porto.
+
+_ENTITY_TYPES = ("landmark", "place", "food", "attraction", "building")
+_TYPE_MEM_CACHE: dict[str, str] = {}
+
+
+def _type_cache_path(settings: Settings) -> Path:
+    return settings.library_root / "entity_type_classifications.json"
+
+
+def _type_cache_key(topic: str, theme: str, location: str) -> str:
+    return (f"{topic.strip().lower()}|{(theme or '').strip().lower()}"
+            f"|{(location or '').strip().lower()}")
+
+
+def classify_entity_type(topic: str, theme: str, location: str,
+                         settings: Settings | None) -> str:
+    """topic (mandatory_topic sem EntitySpan) -> um de `_ENTITY_TYPES`.
+
+    1 chamada Gemini por tópico ÚNICO (cache disco+memória, mesmo padrão de
+    `translate_query_en`). Fallback determinístico (mock_mode/sem key/
+    settings=None): "place" — comportamento legacy conservador, nunca
+    bloqueia produção sem credencial; nunca inventa uma categoria sem
+    sinal real."""
+    topic = str(topic) if topic else ""
+    theme = str(theme) if theme else ""
+    location = str(location) if location else ""
+    fallback = "place"
+    if not topic or settings is None:
+        return fallback
+
+    key = _type_cache_key(topic, theme, location)
+    if key in _TYPE_MEM_CACHE:
+        return _TYPE_MEM_CACHE[key]
+    disk_cache = _load_disk_cache_types(settings)
+    if key in disk_cache:
+        _TYPE_MEM_CACHE[key] = disk_cache[key]
+        return disk_cache[key]
+
+    if settings.mock_mode or not settings.gemini_api_key:
+        _TYPE_MEM_CACHE[key] = fallback
+        return fallback
+
+    prompt = (
+        "Classify this REQUIRED visual topic for a video into EXACTLY one "
+        "category from this list: landmark, place, food, attraction, "
+        "building.\n"
+        f"Topic: \"{topic}\"\n"
+        f"Video theme: {theme or 'unknown'}\n"
+        f"Location: {location or 'unknown'}\n"
+        "- landmark: a specific named monument/structure (bridge, tower, "
+        "statue, cathedral as a structure)\n"
+        "- building: a specific named building that is not a landmark "
+        "monument (shop, station, library, house)\n"
+        "- place: a street, square, neighborhood, viewpoint, or generic "
+        "area (not one specific building)\n"
+        "- food: a dish, drink, or specific food item\n"
+        "- attraction: a viewpoint/park/generic tourist attraction that "
+        "isn't a single building\n"
+        "Reply with ONLY the single lowercase category word, nothing else."
+    )
+    try:
+        from studio.llm.gemini import generate
+        text, _cost = generate(prompt, settings, temperature=0.0,
+                               tag="classify_entity_type")
+        word = text.strip().lower().split()[0] if text.strip() else ""
+        word = word.strip(".,;:\"'")
+        category = word if word in _ENTITY_TYPES else fallback
+    except Exception as exc:
+        log.warning(
+            "classify_entity_type: Gemini falhou para '%s' (%s) — "
+            "fallback '%s'", topic, exc.__class__.__name__, fallback)
+        category = fallback
+
+    _TYPE_MEM_CACHE[key] = category
+    disk_cache[key] = category
+    _save_disk_cache_types(settings, disk_cache)
+    return category
+
+
+def _load_disk_cache_types(settings: Settings) -> dict[str, str]:
+    p = _type_cache_path(settings)
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text("utf-8"))
+    except Exception as exc:
+        log.debug("classify_entity_type: cache read falhou (não fatal): %s",
+                  exc.__class__.__name__)
+        return {}
+
+
+def _save_disk_cache_types(settings: Settings, cache: dict[str, str]) -> None:
+    p = _type_cache_path(settings)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(cache, ensure_ascii=False, indent=2), "utf-8")
+    except Exception as exc:
+        log.debug("classify_entity_type: cache write falhou (não fatal): %s",
+                  exc.__class__.__name__)
+
+
+# === translate_entity_aliases_en (bug B2: PORTO FINAL ASSET TEST) =====
+#
+# Diferente de `translate_query_variants_en` (frases DESCRITIVAS de busca,
+# ex.: "gothic cathedral facade Porto") — esta função pede o NOME PRÓPRIO
+# em inglês da entidade (ex.: "Porto Cathedral"), usado para IDENTIDADE
+# (matching contra labels que o classificador de ingest escreve em
+# inglês), não para queries de busca. Bug real confirmado: uma foto real e
+# correcta da Sé do Porto foi ingerida com `landmarks_csv="porto
+# cathedral,..."` — `require_entity_confirmation` comparava literalmente
+# contra "sé do porto" e nunca encontrava essa foto, mesmo já estando na
+# biblioteca.
+
+_ALIASES_EN_MEM_CACHE: dict[str, tuple[str, ...]] = {}
+
+
+def _aliases_en_cache_path(settings: Settings) -> Path:
+    return settings.library_root / "entity_aliases_en.json"
+
+
+def _aliases_en_cache_key(canonical: str, entity_type: str, location: str,
+                          aliases_pt: tuple[str, ...]) -> str:
+    return "|".join([
+        canonical.strip().lower(), (entity_type or "").strip().lower(),
+        (location or "").strip().lower(),
+        ",".join(sorted(a.strip().lower() for a in aliases_pt if a and a.strip())),
+    ])
+
+
+def _specific_enough(name: str) -> bool:
+    """>=2 palavras — nunca aceitar um alias genérico de 1 palavra sozinho
+    (ex.: "Cathedral" sozinho corresponderia a QUALQUER catedral; "Porto
+    Cathedral" é específico o suficiente). Regra geral por contagem de
+    palavras, não por lista de palavras proibidas — funciona em qualquer
+    língua/tema sem hardcode."""
+    return len(name.strip().split()) >= 2
+
+
+def translate_entity_aliases_en(
+    canonical: str, entity_type: str, location: str,
+    aliases_pt: tuple[str, ...], settings: Settings | None,
+) -> list[str]:
+    """canonical (+ aliases_pt) -> nomes próprios em inglês conhecidos
+    (não frases descritivas) — usados para IDENTIDADE/matching, nunca só
+    para busca. 1 chamada Gemini por entidade única (cache próprio).
+
+    Filtra aliases de 1 palavra só (`_specific_enough`) — nunca devolve um
+    alias genérico que poderia corresponder a qualquer entidade do mesmo
+    tipo. mock_mode/sem key/settings=None: lista vazia (fail-soft — nunca
+    inventa nome próprio sem sinal real; matching cai de volta só para
+    canonical/aliases_pt)."""
+    canonical = str(canonical) if canonical else ""
+    entity_type = str(entity_type) if entity_type else ""
+    location = str(location) if location else ""
+    aliases_pt = tuple(a for a in (aliases_pt or ()) if a)
+    if not canonical or settings is None:
+        return []
+
+    key = _aliases_en_cache_key(canonical, entity_type, location, aliases_pt)
+    if key in _ALIASES_EN_MEM_CACHE:
+        return list(_ALIASES_EN_MEM_CACHE[key])
+    disk_cache = _load_disk_cache_aliases_en(settings)
+    if key in disk_cache:
+        _ALIASES_EN_MEM_CACHE[key] = tuple(disk_cache[key])
+        return list(disk_cache[key])
+
+    if settings.mock_mode or not settings.gemini_api_key:
+        _ALIASES_EN_MEM_CACHE[key] = ()
+        return []
+
+    alias_str = ", ".join(aliases_pt) or "(none)"
+    prompt = (
+        "You identify the common ENGLISH proper name(s) of a landmark/"
+        "place/food, if any — NOT a description, the actual name(s) used "
+        "in English text/signage/travel guides.\n"
+        f"Name (may be in Portuguese or another language): \"{canonical}\"\n"
+        f"Known alternate names: {alias_str}\n"
+        f"Type: {entity_type or 'unknown'}\n"
+        f"Location: {location or 'unknown'}\n"
+        "Reply with 1 to 5 English proper-name variants, one per line, no "
+        "numbering, no quotes, no explanation. Each must be at least 2 "
+        "words (never a single generic word like just \"Cathedral\" or "
+        "just \"Station\" — always include enough of the name to be "
+        "specific, e.g. \"Porto Cathedral\"). If there is no distinct "
+        "English name, give a literal transliteration instead. If you "
+        "are not confident, reply with an empty line."
+    )
+    try:
+        from studio.llm.gemini import generate
+        text, _cost = generate(prompt, settings, temperature=0.0,
+                               tag="translate_entity_aliases_en")
+        lines = [" ".join(ln.strip().split())[:120] for ln in text.splitlines()]
+        aliases_en = [ln for ln in lines if ln and _specific_enough(ln)]
+        aliases_en = _dedup_preserve_order(aliases_en)[:5]
+    except Exception as exc:
+        log.warning(
+            "translate_entity_aliases_en: Gemini falhou para '%s' (%s) — "
+            "sem aliases_en (fail-soft)", canonical, exc.__class__.__name__)
+        aliases_en = []
+
+    _ALIASES_EN_MEM_CACHE[key] = tuple(aliases_en)
+    disk_cache[key] = aliases_en
+    _save_disk_cache_aliases_en(settings, disk_cache)
+    return aliases_en
+
+
+def _load_disk_cache_aliases_en(settings: Settings) -> dict[str, list[str]]:
+    p = _aliases_en_cache_path(settings)
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text("utf-8"))
+    except Exception as exc:
+        log.debug("translate_entity_aliases_en: cache read falhou (não "
+                  "fatal): %s", exc.__class__.__name__)
+        return {}
+
+
+def _save_disk_cache_aliases_en(settings: Settings,
+                                cache: dict[str, list[str]]) -> None:
+    p = _aliases_en_cache_path(settings)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(cache, ensure_ascii=False, indent=2), "utf-8")
+    except Exception as exc:
+        log.debug("translate_entity_aliases_en: cache write falhou (não "
+                  "fatal): %s", exc.__class__.__name__)
