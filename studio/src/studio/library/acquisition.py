@@ -129,13 +129,21 @@ def make_provider_resolver(
                 _emit("provider_search_started", f"{provider}: '{query}'",
                      {"provider": provider, "query": query, "level": level})
                 try:
-                    # item PORTO (search+confirmation calibration):
-                    # canonical_hints só é entendido por wikimedia.search()
-                    # (entity-aware ranking/probe) — outros providers
-                    # (pexels/pixabay) recebem a assinatura de sempre.
-                    if provider == "wikimedia" and canonical_hints:
-                        candidates = mod.search(query, count_per_query, settings,
-                                               canonical_hints=canonical_hints)
+                    # PORTO FINAL RETRIEVAL FIX (secções 4, 8, 9): wikimedia/
+                    # pexels/pixabay aceitam `canonical_hints` (pool maior +
+                    # ranking local); providers sem esse suporte (ex.: vimeo)
+                    # usam a assinatura de sempre — introspecção em vez de
+                    # try/except TypeError (nunca mascarar um TypeError REAL
+                    # de dentro de search(), mesmo padrão de `_call_resolver`).
+                    _search_params = inspect.signature(mod.search).parameters
+                    accepts_hints = (
+                        "canonical_hints" in _search_params
+                        or any(p.kind == inspect.Parameter.VAR_KEYWORD
+                              for p in _search_params.values()))
+                    if canonical_hints and accepts_hints:
+                        candidates = mod.search(
+                            query, count_per_query, settings,
+                            canonical_hints=canonical_hints)
                     else:
                         candidates = mod.search(query, count_per_query, settings)
                 except ProviderRateLimitedError as exc:

@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from studio.library.sources.pexels import sweep, _download_one
+from studio.library.sources.pexels import sweep, search, _download_one
 
 
 # ---------- fixtures ----------
@@ -183,3 +183,118 @@ def test_sweep_zero_videos_returns_empty(tmp_path: Path):
         ClientClass.return_value.get.return_value = _FakeSearchResp([])
         out = sweep("Nada-aqui", 3, _settings(tmp_path), tmp_path)
     assert out == []
+
+
+# === PORTO FINAL RETRIEVAL FIX (secções 4, 5, 8, 24) ========================
+
+def _fake_video_with_url(vid_id: int, slug: str) -> dict:
+    return {
+        "id": vid_id,
+        "url": f"https://www.pexels.com/video/{slug}-{vid_id}/",
+        "image": f"https://images.pexels.com/videos/{vid_id}/preview.jpg",
+        "duration": 12.0, "width": 1920, "height": 1080,
+        "user": {"name": f"author_{vid_id}"},
+        "video_files": [{"id": 1, "link": f"https://videos.pexels.com/{vid_id}.mp4",
+                        "width": 1920, "height": 1080}],
+    }
+
+
+def test_search_sem_hints_nunca_envia_orientation(tmp_path):
+    """secção 5: orientation NUNCA é enviado como filtro de discovery —
+    um vídeo vertical certo é melhor que um landscape errado."""
+    captured_params = {}
+
+    def _fake_get(url, headers=None, params=None):
+        captured_params.update(params or {})
+        return _FakeSearchResp([_fake_video_with_url(1, "generic-city")])
+
+    with patch("httpx.Client") as ClientClass:
+        ClientClass.return_value.__enter__ = lambda s: s
+        ClientClass.return_value.__exit__ = lambda s, *a: False
+        ClientClass.return_value.get.side_effect = _fake_get
+        search("Porto", 5, _settings(tmp_path))
+    assert "orientation" not in captured_params
+
+
+def test_search_com_hints_pagina_ate_pool_limit(tmp_path):
+    """secção 4, 24: com canonical_hints, search() pagina até
+    `pexels_search_pool` (não fica preso a 1 página de per_page pequeno)."""
+    settings = _settings(tmp_path)
+    settings.pexels_search_pool = 5
+    settings.pexels_search_max_pages = 3
+
+    pages_requested = []
+
+    def _fake_get(url, headers=None, params=None):
+        pages_requested.append(params["page"])
+        page = params["page"]
+        # 2 vídeos por página, até esgotar 5 (pool_limit)
+        videos = [_fake_video_with_url(page * 10 + i, "porto video")
+                 for i in range(2)]
+        return _FakeSearchResp(videos)
+
+    with patch("httpx.Client") as ClientClass:
+        ClientClass.return_value.__enter__ = lambda s: s
+        ClientClass.return_value.__exit__ = lambda s, *a: False
+        ClientClass.return_value.get.side_effect = _fake_get
+        out = search("Porto Cathedral", 3, settings,
+                     canonical_hints=("Sé do Porto",))
+    assert len(pages_requested) >= 2, "devia ter paginado para atingir o pool"
+    assert len(out) == 3  # devolve só count=3, mesmo com pool maior
+
+
+def test_search_com_hints_para_cedo_se_pagina_vazia(tmp_path):
+    settings = _settings(tmp_path)
+    settings.pexels_search_pool = 60
+    settings.pexels_search_max_pages = 5
+
+    call_count = {"n": 0}
+
+    def _fake_get(url, headers=None, params=None):
+        call_count["n"] += 1
+        if params["page"] == 1:
+            return _FakeSearchResp([_fake_video_with_url(1, "porto")])
+        return _FakeSearchResp([])  # página 2 vazia — deve parar aqui
+    with patch("httpx.Client") as ClientClass:
+        ClientClass.return_value.__enter__ = lambda s: s
+        ClientClass.return_value.__exit__ = lambda s, *a: False
+        ClientClass.return_value.get.side_effect = _fake_get
+        search("Porto Cathedral", 10, settings,
+              canonical_hints=("Sé do Porto",))
+    assert call_count["n"] == 2, "devia parar na 1ª página vazia, não continuar até max_pages"
+
+
+def test_search_com_hints_rankeia_candidato_com_titulo_certo_primeiro(tmp_path):
+    settings = _settings(tmp_path)
+    settings.pexels_search_pool = 60
+    settings.pexels_search_max_pages = 1
+
+    def _fake_get(url, headers=None, params=None):
+        return _FakeSearchResp([
+            _fake_video_with_url(1, "generic-old-bookstore"),
+            _fake_video_with_url(2, "livraria-lello-exterior"),
+        ])
+    with patch("httpx.Client") as ClientClass:
+        ClientClass.return_value.__enter__ = lambda s: s
+        ClientClass.return_value.__exit__ = lambda s, *a: False
+        ClientClass.return_value.get.side_effect = _fake_get
+        out = search("historic bookstore Porto", 2, settings,
+                     canonical_hints=("Livraria Lello",))
+    assert out[0].provider_id == "2", (
+        "candidato com 'livraria lello' no título (via slug da URL) devia "
+        "vir primeiro"
+    )
+
+
+def test_search_preserva_title_e_preview_url(tmp_path):
+    def _fake_get(url, headers=None, params=None):
+        return _FakeSearchResp([_fake_video_with_url(7, "porto-cathedral-aerial")])
+    with patch("httpx.Client") as ClientClass:
+        ClientClass.return_value.__enter__ = lambda s: s
+        ClientClass.return_value.__exit__ = lambda s, *a: False
+        ClientClass.return_value.get.side_effect = _fake_get
+        out = search("Porto Cathedral", 5, _settings(tmp_path))
+    assert len(out) == 1
+    assert "porto cathedral aerial" in out[0].title
+    assert out[0].preview_url.startswith("https://images.pexels.com")
+    assert out[0].duration == 12.0

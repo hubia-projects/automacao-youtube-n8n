@@ -45,13 +45,15 @@ def test_call_resolver_com_resolver_legacy_2_args_nao_quebra():
     assert calls == [("q", 1)]
 
 
-def test_make_provider_resolver_passa_canonical_hints_so_para_wikimedia(
+def test_make_provider_resolver_passa_canonical_hints_a_wikimedia(
     tmp_path,
 ):
-    """item PORTO (search+confirmation calibration): resolver aceita
-    `canonical_hints` opcional; só é reencaminhado para `wikimedia.search()`
-    (entity-aware) — outros providers (pexels/pixabay) nunca recebem esse
-    kwarg (as suas `search()` não o aceitam)."""
+    """PORTO FINAL RETRIEVAL FIX (secções 4, 8, 9): resolver aceita
+    `canonical_hints` opcional e reencaminha-o para `search()` de QUALQUER
+    provider cuja assinatura o aceite (wikimedia/pexels/pixabay — via
+    introspecção, nunca hardcode de nome de provider); providers sem
+    suporte (ex.: um `search()` sem canonical_hints nem **kwargs) usam a
+    assinatura de sempre."""
     search_calls = []
 
     def fake_wikimedia_search(query, count, settings, **kw):
@@ -69,6 +71,50 @@ def test_make_provider_resolver_passa_canonical_hints_so_para_wikimedia(
     assert len(search_calls) == 1
     _query, _count, kw = search_calls[0]
     assert kw.get("canonical_hints") == ("Livraria Lello", "Lello Bookstore")
+
+
+def test_make_provider_resolver_passa_canonical_hints_a_pexels_e_pixabay(
+    tmp_path,
+):
+    """PORTO FINAL RETRIEVAL FIX (secções 8, 9): pexels/pixabay agora
+    também aceitam canonical_hints (ranking local, mesmo padrão de
+    wikimedia) — o resolver reencaminha para AMBOS, não só wikimedia."""
+    calls = {}
+
+    def fake_search(provider):
+        def _search(query, count, settings, *, canonical_hints=()):
+            calls[provider] = canonical_hints
+            return []
+        return _search
+
+    with patch("studio.library.sources.pexels.search",
+              side_effect=fake_search("pexels")), \
+         patch("studio.library.sources.pixabay.search",
+              side_effect=fake_search("pixabay")):
+        resolver = make_provider_resolver(
+            MagicMock(), tmp_path / "dest", providers=("pexels", "pixabay"),
+            db=MagicMock(), count_per_query=3)
+        resolver("Sé do Porto", 0, canonical_hints=("Sé do Porto", "Porto Cathedral"))
+
+    assert calls["pexels"] == ("Sé do Porto", "Porto Cathedral")
+    assert calls["pixabay"] == ("Sé do Porto", "Porto Cathedral")
+
+
+def test_make_provider_resolver_nao_passa_hints_a_provider_sem_suporte(
+    tmp_path,
+):
+    """Provider cujo search() não tem `canonical_hints` NEM **kwargs nunca
+    recebe o kwarg (evita TypeError real) — introspecção, não hardcode."""
+    def _search_sem_hints(query, count, settings):
+        return []
+
+    with patch("studio.library.sources.pexels.search",
+              side_effect=_search_sem_hints):
+        resolver = make_provider_resolver(
+            MagicMock(), tmp_path / "dest", providers=("pexels",),
+            db=MagicMock(), count_per_query=3)
+        # não deve levantar TypeError
+        resolver("Sé do Porto", 0, canonical_hints=("Sé do Porto",))
 
 
 def test_make_provider_resolver_sem_canonical_hints_nao_quebra(tmp_path):

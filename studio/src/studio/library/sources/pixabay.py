@@ -19,6 +19,7 @@ from pathlib import Path
 import httpx
 
 from studio.config import Settings
+from studio.library.text_match import rank_by_hints
 
 log = logging.getLogger("studio.sources.pixabay")
 
@@ -29,53 +30,101 @@ _DOWNLOAD_RETRIES = 3
 
 @dataclass
 class CandidateMetadata:
-    """Espelha `pexels.py::CandidateMetadata` (mesmo contrato two-phase)."""
+    """Espelha `pexels.py::CandidateMetadata` (mesmo contrato two-phase).
+
+    `tags`/`duration`/`width`/`height` (PORTO FINAL RETRIEVAL FIX, secção
+    9): Pixabay devolve tags reais (curadoria humana, ao contrário do
+    slug de URL do Pexels) — antes descartadas; agora preservadas para
+    ranking (`rank_by_hints`) e observabilidade/proveniência."""
     provider: str
     provider_id: str
     source_url: str
     download_url: str
     license: dict = field(default_factory=dict)
+    tags: str = ""
+    duration: float = 0.0
+    width: int = 0
+    height: int = 0
 
 
-def search(query_en: str, count: int, settings: Settings) -> list[CandidateMetadata]:
-    """Fase 1 (só SEARCH): 1 GET à SEARCH_URL, zero downloads de vídeo."""
+def search(query_en: str, count: int, settings: Settings,
+          *, canonical_hints: tuple[str, ...] = ()) -> list[CandidateMetadata]:
+    """Fase 1 (só SEARCH): zero downloads de vídeo.
+
+    Sem `canonical_hints`: comportamento legacy (1 página, `per_page=
+    min(max(count,3),200)`).
+
+    Com `canonical_hints` (PORTO FINAL RETRIEVAL FIX, secções 9, 24-26):
+    pool de metadata maior (`settings.pixabay_search_pool`, default 60)
+    via paginação (até `settings.pixabay_search_max_pages`, default 3,
+    pára cedo numa página vazia), ranking local por `rank_by_hints`
+    (tags + pageURL — tags são curadoria humana, sinal forte), devolve só
+    os `count` melhores."""
     if not settings.pixabay_api_key:
         raise RuntimeError("PIXABAY_API_KEY em falta")
 
+    hints = tuple(h.strip() for h in canonical_hints if h and h.strip())
+    pool_limit = max(count, int(getattr(settings, "pixabay_search_pool", 60)
+                                or 60)) if hints else count
+    max_pages = int(getattr(settings, "pixabay_search_max_pages", 3)
+                    or 3) if hints else 1
+
     t0 = time.perf_counter()
+    pool: list[CandidateMetadata] = []
+    seen_ids: set[str] = set()
+    page = 1
     with httpx.Client(timeout=30) as c:
-        resp = c.get(
-            SEARCH_URL,
-            params={"key": settings.pixabay_api_key, "q": query_en,
-                    "per_page": min(max(count, 3), 200), "safesearch": "true"},
-        )
-        resp.raise_for_status()
-    hits = resp.json().get("hits", [])[:count]
+        while len(pool) < pool_limit and page <= max_pages:
+            per_page = min(max(pool_limit - len(pool), 3), 200)
+            resp = c.get(
+                SEARCH_URL,
+                params={"key": settings.pixabay_api_key, "q": query_en,
+                        "per_page": per_page, "page": page,
+                        "safesearch": "true"},
+            )
+            resp.raise_for_status()
+            hits = resp.json().get("hits", [])
+            if not hits:
+                break
+            for hit in hits:
+                hit_id = str(hit["id"])
+                if hit_id in seen_ids:
+                    continue
+                videos = hit.get("videos", {})
+                variant = (videos.get("large") or videos.get("medium")
+                          or videos.get("small"))
+                if not variant or not variant.get("url"):
+                    continue
+                page_url = hit.get("pageURL", "")
+                seen_ids.add(hit_id)
+                pool.append(CandidateMetadata(
+                    provider="pixabay",
+                    provider_id=hit_id,
+                    source_url=page_url,
+                    download_url=variant["url"],
+                    tags=hit.get("tags", "") or "",
+                    duration=float(hit.get("duration", 0.0) or 0.0),
+                    width=int(variant.get("width", 0) or 0),
+                    height=int(variant.get("height", 0) or 0),
+                    license={
+                        "source": "pixabay",
+                        "source_url": page_url,
+                        "license": "pixabay",
+                        "author": hit.get("user", ""),
+                        "verified_by": "api",
+                    },
+                ))
+            page += 1
     search_elapsed = time.perf_counter() - t0
 
-    out: list[CandidateMetadata] = []
-    for hit in hits:
-        videos = hit.get("videos", {})
-        variant = videos.get("large") or videos.get("medium") or videos.get("small")
-        if not variant or not variant.get("url"):
-            continue
-        hit_id = str(hit["id"])
-        page_url = hit.get("pageURL", "")
-        out.append(CandidateMetadata(
-            provider="pixabay",
-            provider_id=hit_id,
-            source_url=page_url,
-            download_url=variant["url"],
-            license={
-                "source": "pixabay",
-                "source_url": page_url,
-                "license": "pixabay",
-                "author": hit.get("user", ""),
-                "verified_by": "api",
-            },
-        ))
-    log.info("pixabay-search '%s': %d candidatos (search=%.1fs) — "
-             "0 bytes de vídeo transferidos", query_en, len(out), search_elapsed)
+    def _text(c: CandidateMetadata) -> str:
+        return f"{c.tags} {c.source_url}"
+
+    ranked = rank_by_hints(pool, hints, _text) if hints else pool
+    out = ranked[:count]
+    log.info("pixabay-search '%s' (hints=%s): pool=%d -> top=%d candidatos "
+             "(search=%.1fs, pages=%d) — 0 bytes de vídeo transferidos",
+             query_en, hints, len(pool), len(out), search_elapsed, page - 1)
     return out
 
 

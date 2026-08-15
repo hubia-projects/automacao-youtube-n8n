@@ -30,6 +30,7 @@ from pathlib import Path
 import httpx
 
 from studio.config import Settings
+from studio.library.text_match import rank_by_hints
 
 log = logging.getLogger("studio.sources.pexels")
 
@@ -112,56 +113,121 @@ def _download_one(url: str, target: Path) -> Path:
 class CandidateMetadata:
     """Resultado de `search()` — ZERO bytes de vídeo transferidos ainda
     (item P do closure pass: separa search de download para permitir
-    dedup ANTES do byte vir da rede)."""
+    dedup ANTES do byte vir da rede).
+
+    `title`/`preview_url` (PORTO FINAL RETRIEVAL FIX, secções 6-8):
+    Pexels não tem campo "title" explícito para vídeo, mas `url` (página
+    do vídeo) embute um slug descritivo (ex.: ".../video/gothic-cathedral-
+    aerial-view-12345/") — `title` extrai esse slug para permitir ranking
+    textual (`rank_by_hints`) igual ao já feito para Wikimedia, ANTES de
+    gastar bytes a descarregar o MP4. `preview_url` (campo `image` da API)
+    persiste a preview JPEG — base para triage visual futura (SigLIP
+    sobre preview), não usada nesta passagem."""
     provider: str
     provider_id: str
     source_url: str
     download_url: str
     license: dict = field(default_factory=dict)
+    title: str = ""
+    preview_url: str = ""
+    duration: float = 0.0
+    width: int = 0
+    height: int = 0
 
 
-def search(query_en: str, count: int, settings: Settings) -> list[CandidateMetadata]:
-    """Fase 1 (só SEARCH): 1 GET à SEARCH_URL, zero downloads de vídeo.
-    Devolve candidatos NA ORDEM do ranking Pexels."""
+def _title_from_pexels_url(url: str) -> str:
+    """".../video/gothic-cathedral-aerial-view-12345/" -> "gothic cathedral
+    aerial view 12345" — mesmo padrão de `_source_title` (confirmation.py)/
+    parsing de slug do Wikimedia, aplicado à URL de página do Pexels."""
+    if not url:
+        return ""
+    path = url.rstrip("/").rsplit("/", 1)[-1]
+    return path.replace("-", " ").replace("_", " ").strip()
+
+
+def search(query_en: str, count: int, settings: Settings,
+          *, canonical_hints: tuple[str, ...] = ()) -> list[CandidateMetadata]:
+    """Fase 1 (só SEARCH): zero downloads de vídeo.
+
+    Sem `canonical_hints`: comportamento legacy (1 página, `per_page=
+    min(count,80)`, devolve tal como o ranking Pexels ordenou).
+
+    Com `canonical_hints` (PORTO FINAL RETRIEVAL FIX, secções 4-8, 24-26 —
+    "EXACT FIRST" + "high recall, low bandwidth"): pool de METADATA maior
+    (`settings.pexels_search_pool`, default 60) via paginação (até
+    `settings.pexels_search_max_pages`, default 3, pára cedo se uma
+    página vier vazia), SEM filtro de orientação (secção 5 — um vídeo
+    vertical certo é melhor que um landscape errado), ranking local por
+    `rank_by_hints` (título derivado do slug da URL — secção 8), devolve
+    só os `count` melhores. `sweep()`/callers legacy sem hints ficam
+    intocados (mesmo nº de pedidos HTTP de sempre)."""
     if not settings.pexels_api_key:
         raise RuntimeError("PEXELS_API_KEY em falta")
 
+    hints = tuple(h.strip() for h in canonical_hints if h and h.strip())
+    pool_limit = max(count, int(getattr(settings, "pexels_search_pool", 60)
+                                or 60)) if hints else count
+    max_pages = int(getattr(settings, "pexels_search_max_pages", 3)
+                    or 3) if hints else 1
+
     t0 = time.perf_counter()
+    pool: list[CandidateMetadata] = []
+    seen_ids: set[int] = set()
+    page = 1
     with httpx.Client(timeout=30) as c:
-        resp = c.get(
-            SEARCH_URL,
-            headers={"Authorization": settings.pexels_api_key},
-            params={"query": query_en, "per_page": min(count, 80),
-                    "orientation": "landscape"},
-        )
-        resp.raise_for_status()
-    videos = resp.json().get("videos", [])[:count]
+        while len(pool) < pool_limit and page <= max_pages:
+            per_page = min(pool_limit - len(pool), 80)
+            params = {"query": query_en, "per_page": per_page, "page": page}
+            # secção 5: orientation NUNCA enviado como filtro de discovery
+            # — identidade certa importa mais que orientação; preferência
+            # de orientação (se algum dia necessária) entra depois, na
+            # selecção/ranking, nunca aqui excluindo candidatos à partida.
+            resp = c.get(SEARCH_URL,
+                        headers={"Authorization": settings.pexels_api_key},
+                        params=params)
+            resp.raise_for_status()
+            videos = resp.json().get("videos", [])
+            if not videos:
+                break
+            for video in videos:
+                vid_id = int(video["id"])
+                if vid_id in seen_ids:
+                    continue
+                files = [f for f in video.get("video_files", [])
+                         if f.get("height") and f["height"] <= MAX_HEIGHT]
+                if not files:
+                    continue
+                best = max(files, key=lambda f: f["height"])
+                author = (video.get("user") or {}).get("name", "")
+                page_url = video.get("url", "") or \
+                    f"https://www.pexels.com/video/{vid_id}/"
+                seen_ids.add(vid_id)
+                pool.append(CandidateMetadata(
+                    provider="pexels",
+                    provider_id=str(vid_id),
+                    source_url=page_url,
+                    download_url=best["link"],
+                    title=_title_from_pexels_url(page_url),
+                    preview_url=video.get("image", "") or "",
+                    duration=float(video.get("duration", 0.0) or 0.0),
+                    width=int(video.get("width", 0) or 0),
+                    height=int(video.get("height", 0) or 0),
+                    license={
+                        "source": "pexels",
+                        "source_url": page_url,
+                        "license": "pexels",
+                        "author": author,
+                        "verified_by": "api",
+                    },
+                ))
+            page += 1
     search_elapsed = time.perf_counter() - t0
 
-    out: list[CandidateMetadata] = []
-    for video in videos:
-        files = [f for f in video.get("video_files", [])
-                 if f.get("height") and f["height"] <= MAX_HEIGHT]
-        if not files:
-            continue
-        best = max(files, key=lambda f: f["height"])
-        vid_id = int(video["id"])
-        author = (video.get("user") or {}).get("name", "")
-        out.append(CandidateMetadata(
-            provider="pexels",
-            provider_id=str(vid_id),
-            source_url=f"https://www.pexels.com/video/{vid_id}/",
-            download_url=best["link"],
-            license={
-                "source": "pexels",
-                "source_url": f"https://www.pexels.com/video/{vid_id}/",
-                "license": "pexels",
-                "author": author,
-                "verified_by": "api",
-            },
-        ))
-    log.info("pexels-search '%s': %d candidatos (search=%.1fs) — "
-             "0 bytes de vídeo transferidos", query_en, len(out), search_elapsed)
+    ranked = rank_by_hints(pool, hints, lambda c: c.title) if hints else pool
+    out = ranked[:count]
+    log.info("pexels-search '%s' (hints=%s): pool=%d -> top=%d candidatos "
+             "(search=%.1fs, pages=%d) — 0 bytes de vídeo transferidos",
+             query_en, hints, len(pool), len(out), search_elapsed, page - 1)
     return out
 
 

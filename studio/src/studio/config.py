@@ -403,6 +403,22 @@ class Settings(BaseSettings):
     wikimedia_search_pool: int = Field(
         default=40, alias="STUDIO_WIKIMEDIA_SEARCH_POOL")
 
+    # PORTO FINAL RETRIEVAL FIX (secções 4, 9, 24): mesmo padrão do
+    # wikimedia_search_pool acima, agora também para Pexels/Pixabay —
+    # separa "quantos metadata candidates examinar" (search_pool) de
+    # "quantos descarregar" (count_per_query/acquisition_candidates_per_
+    # query) — antes eram o MESMO número (per_page=count_per_query,
+    # tipicamente 8), impedindo o ranking de ter pool suficiente para
+    # escolher bem antes de gastar bytes.
+    pexels_search_pool: int = Field(
+        default=60, alias="STUDIO_PEXELS_SEARCH_POOL")
+    pexels_search_max_pages: int = Field(
+        default=3, alias="STUDIO_PEXELS_SEARCH_MAX_PAGES")
+    pixabay_search_pool: int = Field(
+        default=60, alias="STUDIO_PIXABAY_SEARCH_POOL")
+    pixabay_search_max_pages: int = Field(
+        default=3, alias="STUDIO_PIXABAY_SEARCH_MAX_PAGES")
+
     @property
     def runs_root(self) -> Path:
         return self.data_root / "runs"
