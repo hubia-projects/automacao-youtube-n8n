@@ -612,5 +612,74 @@ class TestContextualFiller(unittest.TestCase):
         self.assertFalse(filler.strict)
 
 
+class TestMeasureCoverageIdentityB2(unittest.TestCase):
+    """PORTO FINAL RETRIEVAL FIX: bug real — `measure_coverage()` só
+    comparava o canonical em português contra as colunas CSV (escritas em
+    inglês pelo classificador de ingest), deixando `available_shot_ids`
+    incompleto mesmo quando o shot estava genuinamente confirmado —
+    quebrava o overlap `confirmed_set & available_shot_ids` em
+    `is_workset_ready`, fazendo requirements com cobertura estrita REAL
+    (Torre dos Clérigos, Miradouro da Serra do Pilar, Ponte Dom Luís I)
+    aparecerem NOT_FOUND/UNCONFIRMED em coverage.json."""
+
+    def test_measure_coverage_encontra_shot_via_aliases_en(self):
+        rows = [{
+            "shot_id": "s1", "media_sha": "sha1", "t_in": 0.0, "t_out": 10.0,
+            "quality": 5, "revoked": False,
+            "landmarks_csv": "porto cathedral,douro river",
+            "places_csv": "porto", "food_csv": "",
+        }]
+        db = _fake_db(rows)
+        ent = EntityCoverage(
+            canonical_name="Sé do Porto", entity_type="landmark",
+            priority_score=1.0, mention_count=1,
+            required_seconds=10.0, target_seconds=10.0, min_distinct_shots=1,
+            strict=True, aliases_en=("Porto Cathedral",),
+        )
+        measure_coverage(ent, db)
+        self.assertEqual(ent.available_distinct_shots, 1)
+        self.assertIn("s1", ent.available_shot_ids)
+        self.assertGreater(ent.available_seconds, 0.0)
+
+    def test_measure_coverage_sem_aliases_en_nao_encontra_label_ingles(self):
+        """Regressão do estado ANTES do fix (sem alias_en, o mismatch
+        original persiste) — prova que o alias_en é o que resolve, não
+        normalização/coincidência."""
+        rows = [{
+            "shot_id": "s1", "media_sha": "sha1", "t_in": 0.0, "t_out": 10.0,
+            "quality": 5, "revoked": False,
+            "landmarks_csv": "porto cathedral,douro river",
+            "places_csv": "porto", "food_csv": "",
+        }]
+        db = _fake_db(rows)
+        ent = EntityCoverage(
+            canonical_name="Sé do Porto", entity_type="landmark",
+            priority_score=1.0, mention_count=1,
+            required_seconds=10.0, target_seconds=10.0, min_distinct_shots=1,
+            strict=True,
+        )
+        measure_coverage(ent, db)
+        self.assertEqual(ent.available_distinct_shots, 0)
+
+    def test_measure_coverage_falso_positivo_catedral_diferente_continua_fora(self):
+        rows = [{
+            "shot_id": "s_wrong", "media_sha": "sha_wrong", "t_in": 0.0,
+            "t_out": 10.0, "quality": 5, "revoked": False,
+            "landmarks_csv": "viseu cathedral", "places_csv": "", "food_csv": "",
+        }]
+        db = _fake_db(rows)
+        ent = EntityCoverage(
+            canonical_name="Sé do Porto", entity_type="landmark",
+            priority_score=1.0, mention_count=1,
+            required_seconds=10.0, target_seconds=10.0, min_distinct_shots=1,
+            strict=True, aliases_en=("Porto Cathedral",),
+        )
+        measure_coverage(ent, db)
+        self.assertEqual(ent.available_distinct_shots, 0, (
+            "catedral errada (Viseu) nunca deve contar para Sé do Porto, "
+            "mesmo com aliases_en definido"
+        ))
+
+
 if __name__ == "__main__":
     unittest.main()

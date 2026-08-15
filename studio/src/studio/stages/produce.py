@@ -749,10 +749,43 @@ class S08Matching:
                   f"confirmados", payload={"n_confirmed": len(confirmed_entities)})
 
         def _measure_ready():
-            confirmed_index_for_gate = {
-                canon: [row.get("shot_id") for row in rows if row.get("shot_id")]
-                for canon, rows in confirmed_entities.items()
-            }
+            # BUG REAL (PORTO FINAL RETRIEVAL FIX): `confirmed_entities`
+            # é preenchido por `_run_strict_confirmation()`, mas
+            # `require_entity_confirmation()` só devolve os shots
+            # CONFIRMADOS NAQUELA CHAMADA — `known_status` exclui shots
+            # já CS_CONFIRMED/CS_CONFIRMED_CORROBORATED de serem
+            # reprocessados, logo nunca voltam a aparecer no `confirmed`
+            # devolvido numa wave seguinte. Como `confirmed_entities[canon]
+            # = confirmed` SOBRESCREVE (não acumula), uma entity confirmada
+            # em waves anteriores mas sem NOVOS candidatos na wave actual
+            # ficava com `confirmed_entities[canon]` vazio/ausente — o gate
+            # tratava-a como "não confirmada" apesar de ter cobertura
+            # estrita REAL e persistida (caso real confirmado: Torre dos
+            # Clérigos/Miradouro da Serra do Pilar/Ponte Dom Luís I tinham
+            # >100% do target confirmado em RequirementIndex mas apareciam
+            # NOT_FOUND em coverage.json). Fonte de verdade correcta é a
+            # RequirementIndex persistida (cumulativa, todas as waves),
+            # não o dict efémero acumulado por chamada.
+            confirmed_index_for_gate: dict[str, list[str]] = {}
+            for ent in plan.ranked_entities:
+                if not ent.strict:
+                    continue
+                _spec = workset_ctx.req_by_canonical(ent.canonical_name)
+                if _spec is None:
+                    continue
+                try:
+                    from studio.library.requirement_index import STRICT_STATUSES
+                    ri_matches = ri.list_for_requirement(
+                        workset_ctx.workset_id, _spec.requirement_id)
+                    shot_ids = [m.shot_id for m in ri_matches
+                               if m.confirmation_status in STRICT_STATUSES]
+                except Exception as exc:
+                    log.debug("_measure_ready: RequirementIndex lookup "
+                             "falhou para '%s' (não fatal): %s",
+                             ent.canonical_name, exc.__class__.__name__)
+                    shot_ids = []
+                if shot_ids:
+                    confirmed_index_for_gate[ent.canonical_name.strip().lower()] = shot_ids
             ready, per_status, strict_uncovered = is_workset_ready(
                 plan, db, ctx.settings, confirmed_index=confirmed_index_for_gate,
                 remeasure=False,

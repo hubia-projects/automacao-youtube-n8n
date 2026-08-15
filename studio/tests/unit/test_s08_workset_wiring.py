@@ -95,6 +95,28 @@ def test_s08_matching_integration_cria_workset_no_disco(tmp_path, monkeypatch):
 
     def _fake_confirm(canonical, entity_type, db, settings, **kwargs):
         if canonical.strip().lower() == "francesinha":
+            # PORTO FINAL RETRIEVAL FIX: o gate real (_measure_ready em
+            # produce.py) passou a ler a RequirementIndex persistida
+            # (cumulativa, correcta) em vez do dict efémero por-chamada —
+            # o mock precisa de escrever lá também, tal como
+            # require_entity_confirmation() real sempre fez quando
+            # requirement_index/workset_id/requirement_id são passados.
+            ri_kw = kwargs.get("requirement_index")
+            if ri_kw is not None and kwargs.get("requirement_id"):
+                from studio.library.requirement_index import (
+                    CS_CONFIRMED, RequirementMatch,
+                )
+                ri_kw.upsert_match(RequirementMatch(
+                    workset_id=kwargs.get("workset_id", ""),
+                    requirement_id=kwargs["requirement_id"],
+                    shot_id=_matching_row["shot_id"],
+                    media_sha=_matching_row["media_sha"],
+                    similarity=0.0,
+                    duration=_matching_row["t_out"] - _matching_row["t_in"],
+                    confirmation_status=CS_CONFIRMED,
+                    confirmation_confidence=0.95,
+                    strict_eligible=True,
+                ))
             return [_matching_row]
         return []
     monkeypatch.setattr(conf_mod, "require_entity_confirmation", _fake_confirm)

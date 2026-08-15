@@ -44,6 +44,7 @@ from pydantic import BaseModel, Field, PrivateAttr
 from studio.config import Settings
 from studio.library.db import LibraryDB
 from studio.library.requirement_index import CS_NOT_REQUIRED, STRICT_STATUSES
+from studio.library.text_match import build_candidate_where_clause, candidate_matches_entity
 from studio.perf import Profiler
 from studio.script.entities import EntitySpan
 
@@ -255,32 +256,29 @@ def rank_entity_importance(
 
 
 # ----------------- measure coverage -----------------
-# mapeamento EntityType → coluna CSV de metadados (mesmo padrão de search.py)
-_ENTITY_TYPE_TO_COLUMN = {
-    "food": "food_csv",
-    "landmark": "landmarks_csv",
-    "building": "landmarks_csv",
-    "attraction": "landmarks_csv",
-    "place": "places_csv",
-    # "other_visual" e desconhecidos usam 3-caminho (places|landmarks|food)
-}
+# Mapeamento entity_type -> coluna(s) CSV: `csv_columns_for_entity_type`
+# (text_match.py), partilhado com `require_entity_confirmation` — ver
+# `_entity_match_clause` abaixo.
 
 
-def _entity_match_clause(canonical: str, entity_type: str) -> str:
-    """Gera cláusula LanceDB WHERE para encontrar shots da entity.
-    entity_type conhecido ⇒ LIKE directo na coluna certa; senão tenta
-    nas 3 colunas (places|landmarks|food). Match por substring case-
-    insensitive (places_csv/landmarks_csv/food_csv são lowercase já)."""
-    safe = canonical.replace("'", "").strip().lower()
-    if not safe:
-        return "1 = 0"  # canonical vazio → nada (fail-closed)
-    col = _ENTITY_TYPE_TO_COLUMN.get(entity_type)
-    if col:
-        return f"{col} LIKE '%{safe}%'"
-    # 3-caminho
-    return (f"places_csv LIKE '%{safe}%' OR "
-            f"landmarks_csv LIKE '%{safe}%' OR "
-            f"food_csv LIKE '%{safe}%'")
+def _entity_match_clause(canonical: str, entity_type: str,
+                         aliases: tuple[str, ...] = (),
+                         aliases_en: tuple[str, ...] = ()) -> str:
+    """Gera cláusula LanceDB WHERE (recall BROAD) para encontrar shots da
+    entity — identidade partilhada (text_match.py), mesma usada por
+    `require_entity_confirmation` (bug B2, PORTO FINAL RETRIEVAL FIX).
+
+    BUG REAL corrigido aqui: esta função só comparava o canonical em
+    PORTUGUÊS, literal, contra as colunas CSV escritas em INGLÊS pelo
+    classificador de ingest — `measure_coverage()`/`available_shot_ids`
+    nunca incluíam shots reais e correctamente confirmados (ex.: "Torre
+    dos Clérigos" com `landmarks_csv="clérigos tower"`), quebrando o
+    overlap `confirmed_set & available_shot_ids` em `is_workset_ready` —
+    entities com cobertura estrita REAL e persistida apareciam
+    UNCONFIRMED/NOT_FOUND. Precisão real fica no post-filter Python
+    (`candidate_matches_entity`, aplicado pelo caller) — esta função é só
+    o recall SQL, tal como em `build_candidate_where_clause`."""
+    return build_candidate_where_clause(entity_type, canonical, aliases, aliases_en)
 
 
 def _union_seconds(intervals: list[tuple[float, float]]) -> float:
@@ -313,10 +311,21 @@ def measure_coverage(
     para uma entity. Não bloqueante — usa search_vec com vec dummy ou
     conta via scan directo. Para Fase C usa scan via tabela para
     simplicidade/LanceDB não-vector-searchable nativamente."""
-    clause = (f"({_entity_match_clause(coverage.canonical_name, coverage.entity_type)})"
+    clause = (f"({_entity_match_clause(coverage.canonical_name, coverage.entity_type, coverage.aliases, coverage.aliases_en)})"
               f" AND quality >= {int(min_quality)} AND revoked = false")
     # code-reviewer item #1+#2: API pública + união de intervalos por media_sha
     rows = db.iter_rows(clause, limit=20_000)
+    # bug B2 (PORTO FINAL RETRIEVAL FIX): a cláusula SQL acima é recall
+    # BROAD (mesmo padrão de require_entity_confirmation) — precisão real
+    # via post-filter Python, nunca confiar só no LIKE agregado.
+    rows = [
+        r for r in rows
+        if candidate_matches_entity(
+            ",".join(str(r.get(col, "") or "") for col in
+                     ("landmarks_csv", "places_csv", "food_csv")),
+            coverage.canonical_name, coverage.aliases, coverage.aliases_en,
+        )
+    ]
     if not rows:
         coverage.notes.append("sem shots na biblioteca — top-up obrigatório")
     dist_shots: set[str] = set()
