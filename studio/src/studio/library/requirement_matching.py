@@ -22,8 +22,23 @@ import numpy as np
 from studio.library.requirement_index import (
     CS_NOT_REQUIRED,
     CS_PENDING,
+    CS_REJECTED,
+    STRICT_STATUSES,
     RequirementMatch,
 )
+
+# BUG REAL (PORTO FINAL RETRIEVAL FIX, 2026-08-16): pares (requirement_id,
+# shot_id) já DECIDIDOS por Vision (confirmado, corroborado ou rejeitado)
+# nunca podem voltar a PENDING só porque `index_existing_shots_against_
+# workset()` re-scaneia a biblioteca — matches_for_shot() sempre gera
+# status=CS_PENDING para strict, e upsert_match() é delete+add (apaga o
+# CONFIRMED anterior). Confirmado em produção: `_index_existing()` corre
+# no início de CADA wave (e agora também depois de cada confirmação) — em
+# cada chamada, TODOS os shots confirmados em waves/runs anteriores eram
+# rebaixados a PENDING antes do gate os poder contar, fazendo entities
+# com cobertura estrita real (>100% do target) reportarem NOT_FOUND numa
+# run ao vivo. Ver `_decided_pairs()` abaixo.
+_DECIDED_STATUSES = STRICT_STATUSES | {CS_REJECTED}
 
 # RECALIBRADO 2026-08-14 (mesma evidência empírica de config.py::
 # library_triage_possible_threshold — 0.18 nunca validado contra a escala
@@ -121,6 +136,16 @@ def index_existing_shots_against_workset(
     stats = {"shots_scanned": 0, "matches_written": 0}
     if workset_ctx is None:
         return stats
+    # BUG REAL (PORTO FINAL RETRIEVAL FIX): pares já DECIDIDOS por Vision
+    # (CONFIRMED/CONFIRMED_CORROBORATED/REJECTED) nunca podem ser
+    # reescritos como PENDING por este re-scan semântico barato — ver
+    # comentário de `_DECIDED_STATUSES` acima. `ri.list_for_workset()`
+    # custa 1 query (não 1 por shot) — build do set feito uma vez aqui.
+    decided_pairs: set[tuple[str, str]] = {
+        (m.requirement_id, m.shot_id)
+        for m in ri.list_for_workset(workset_ctx.workset_id)
+        if m.confirmation_status in _DECIDED_STATUSES
+    }
     rows = db.iter_rows(
         f"quality >= {int(min_quality)} AND revoked = false", limit=limit)
     stats["shots_scanned"] = len(rows)
@@ -139,6 +164,8 @@ def index_existing_shots_against_workset(
             media_kind=row.get("media_kind") or "video",
         )
         for m in matches:
+            if (m.requirement_id, m.shot_id) in decided_pairs:
+                continue
             if ri.upsert_match(m):
                 stats["matches_written"] += 1
     return stats

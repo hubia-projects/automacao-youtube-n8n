@@ -97,6 +97,42 @@ def test_index_existing_shots_against_workset_persiste_apenas_matches_relevantes
     assert written[0].requirement_id == "R01"
 
 
+def test_index_existing_nao_rebaixa_match_ja_confirmado_para_pending():
+    """BUG REAL (PORTO FINAL RETRIEVAL FIX, 2026-08-16): matches_for_shot()
+    sempre gera CS_PENDING para strict — upsert_match() é delete+add, logo
+    re-indexar a biblioteca (que corre no início de CADA wave) apagava
+    silenciosamente qualquer confirmação Vision anterior, voltando-a a
+    PENDING. Confirmado em produção: entities com cobertura estrita real
+    (>100% do target, confirmada em waves anteriores) reportavam NOT_FOUND
+    numa run ao vivo porque a confirmação nunca sobrevivia até ao gate.
+    index_existing_shots_against_workset() tem de saltar pares
+    (requirement_id, shot_id) já CONFIRMED/CONFIRMED_CORROBORATED/REJECTED."""
+    spec = _Spec("Livraria Lello", "R01")
+    ctx = _ctx([spec], {"Livraria Lello": _vec_cos(1.0)})
+    db = MagicMock()
+    db.iter_rows.return_value = [
+        {"shot_id": "shot_a", "media_sha": "shaA", "t_in": 0.0, "t_out": 3.0,
+         "vec": _vec_cos(0.95)},
+    ]
+    ri = RequirementIndex(db=MagicMock(library_root=None))
+    ri.list_for_workset = lambda wid: [
+        RequirementMatch(
+            workset_id="wid-1", requirement_id="R01", shot_id="shot_a",
+            media_sha="shaA", similarity=0.9, duration=3.0,
+            confirmation_status=CS_CONFIRMED, confirmation_confidence=0.95,
+            strict_eligible=True,
+        )
+    ]
+    written = []
+    ri.upsert_match = lambda m: (written.append(m) or True)
+
+    stats = index_existing_shots_against_workset(ctx, db, ri)
+    assert stats["matches_written"] == 0, (
+        "shot_a já está CONFIRMED — re-scan não pode rebaixar para PENDING"
+    )
+    assert written == []
+
+
 def test_measure_coverage_from_index_usa_matches_confirmados_strict(tmp_path):
     from studio.library.db import LibraryDB
     db = LibraryDB(tmp_path / "lib")
