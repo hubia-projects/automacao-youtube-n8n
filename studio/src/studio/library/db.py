@@ -328,6 +328,17 @@ class LibraryDB:
             pruned = len(old_rows)
             log.info("LibraryDB.cache_prune_by_ttl: pruned %d rows older than %dd",
                      pruned, days)
+            # BUG REAL (PORTO FINAL RETRIEVAL FIX, 2026-08-16): delete()
+            # também cria uma versão nova sem compactar as antigas — mesma
+            # classe de bug encontrada em RequirementIndex.upsert_match
+            # (246805 versões acumuladas para 8610 linhas reais, disco
+            # raiz esgotado). Compactar aqui também (fail-soft).
+            try:
+                self._cache_tbl.optimize(
+                    cleanup_older_than=_td(0), delete_unverified=True)
+            except Exception as exc:
+                log.debug("cache_prune_by_ttl: optimize() falhou (não "
+                         "fatal): %s", exc.__class__.__name__)
             return pruned
         except AttributeError as exc:
             # FAIL-LOUD (code-reviewer Fase 2 Pass 3): log.error + ingest_log
