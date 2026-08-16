@@ -266,6 +266,34 @@ class RequirementIndex:
                             "falhou (%s)", exc)
         return False
 
+    def compact(self) -> bool:
+        """BUG REAL (PORTO FINAL RETRIEVAL FIX, 2026-08-16): `upsert_match()`
+        faz `_delete_match()` + `tab.add([row])` — DUAS escritas versionadas
+        por chamada, sem NUNCA compactar/limpar versões antigas do LanceDB.
+        Confirmado em produção: tabela `requirement_matches` com 8610 linhas
+        REAIS acumulou 246805 versões (163G em `_versions/`, disco raiz foi
+        a 0 bytes livres e bloqueou um `studio resume` a meio, com escritas
+        a falharem em cascata para o fallback JSONL). `optimize()` do
+        LanceDB compacta fragmentos + remove versões supersedidas sem
+        perder a linha actual de nenhuma — seguro chamar periodicamente
+        (mesmo padrão fail-soft de `cache_prune_by_ttl`, chamado a partir
+        do mesmo sítio em produce.py::S08Matching).
+
+        Devolve True se compactou (ou não havia nada a compactar), False se
+        a tabela LanceDB não está disponível (fallback JSONL activo).
+        """
+        tab = self._table()
+        if tab is None:
+            return False
+        try:
+            from datetime import timedelta
+            tab.optimize(cleanup_older_than=timedelta(0), delete_unverified=True)
+            return True
+        except Exception as exc:
+            log.warning("RequirementIndex.compact: optimize() falhou "
+                       "(não fatal): %s", exc.__class__.__name__)
+            return False
+
     def _delete_match(self, tab, workset_id: str, requirement_id: str,
                       shot_id: str) -> None:
         try:

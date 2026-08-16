@@ -29,6 +29,16 @@ def test_s08_matching_chama_build_workset_e_load_workset_context():
         not in source
 
 
+def test_s08_compacta_requirement_index_periodicamente():
+    """BUG REAL (PORTO FINAL RETRIEVAL FIX, 2026-08-16): upsert_match() sem
+    vacuum acumulou 246805 versões LanceDB para 8610 linhas reais (163G,
+    disco raiz a 0 bytes livres, resume real travado a meio). S08 tem de
+    chamar ri.compact() no mesmo ponto de manutenção periódica que já
+    chama db.cache_prune_by_ttl()."""
+    source = inspect.getsource(produce.S08Matching.run)
+    assert "ri.compact()" in source
+
+
 def test_s08_reindexa_apos_confirmacao_antes_do_gate():
     """BUG REAL (PORTO FINAL RETRIEVAL FIX): `_index_existing()` refresca
     `ent.available_shot_ids` a partir da RequirementIndex TAL COMO ESTAVA

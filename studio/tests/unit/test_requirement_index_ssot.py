@@ -41,6 +41,41 @@ def _ctx(specs, embeddings):
     return ctx
 
 
+def test_compact_chama_optimize_com_cleanup_imediato():
+    """BUG REAL (PORTO FINAL RETRIEVAL FIX, 2026-08-16): upsert_match() é
+    2 escritas versionadas (delete+add) sem vacuum nenhum — em produção a
+    tabela requirement_matches acumulou 246805 versões para 8610 linhas
+    reais (163G, disco raiz a 0 bytes livres). compact() tem de chamar
+    optimize(cleanup_older_than=timedelta(0)) para remover versões
+    supersedidas imediatamente (sem janela de time-travel — este projecto
+    não depende de rollback histórico da RequirementIndex)."""
+    from datetime import timedelta
+
+    ri = RequirementIndex(db=MagicMock(library_root=None))
+    fake_tab = MagicMock()
+    ri._table = lambda: fake_tab
+
+    assert ri.compact() is True
+    fake_tab.optimize.assert_called_once_with(
+        cleanup_older_than=timedelta(0), delete_unverified=True)
+
+
+def test_compact_sem_tabela_lancedb_devolve_false_sem_rebentar():
+    ri = RequirementIndex(db=MagicMock(library_root=None))
+    ri._table = lambda: None
+
+    assert ri.compact() is False
+
+
+def test_compact_optimize_falha_nao_propaga_excepcao():
+    ri = RequirementIndex(db=MagicMock(library_root=None))
+    fake_tab = MagicMock()
+    fake_tab.optimize.side_effect = RuntimeError("boom")
+    ri._table = lambda: fake_tab
+
+    assert ri.compact() is False
+
+
 def test_index_existing_shots_against_workset_persiste_apenas_matches_relevantes():
     spec = _Spec("Livraria Lello", "R01")
     ctx = _ctx([spec], {"Livraria Lello": _vec_cos(1.0)})

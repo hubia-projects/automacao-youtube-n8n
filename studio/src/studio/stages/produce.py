@@ -693,6 +693,19 @@ class S08Matching:
             log.debug("cache_prune_by_ttl falhou (não fatal): %s",
                       exc.__class__.__name__)
 
+        # BUG REAL (PORTO FINAL RETRIEVAL FIX): RequirementIndex.upsert_match
+        # nunca compacta o LanceDB — cada chamada é 2 escritas versionadas
+        # (delete+add) sem vacuum, e ao fim de muitas runs/waves a tabela
+        # `requirement_matches` acumula centenas de milhares de versões
+        # (caso real: 8610 linhas, 246805 versões, 163G em disco — encheu o
+        # disco raiz a 0 bytes livres e travou um resume a meio). Compactar
+        # aqui, mesmo ponto de manutenção periódica que cache_prune_by_ttl.
+        try:
+            ri.compact()
+        except Exception as exc:
+            log.debug("RequirementIndex.compact falhou (não fatal): %s",
+                      exc.__class__.__name__)
+
         # Fase E — strict_only wiring: cenas com brief.strict_entity=True
         # DEVEM ter confirmação visual antes do assign (lazy confirm); cenas
         # não-strict usam B-roll genérico do Phase C. Confirmação Vision
